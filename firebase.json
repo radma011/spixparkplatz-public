@@ -1,0 +1,12 @@
+{
+  "react-native": {
+    "messaging_ios_auto_register_for_remote_messages": false
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
+

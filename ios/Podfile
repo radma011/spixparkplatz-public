@@ -1,0 +1,391 @@
+# Resolve react_native_pods.rb with node to allow for hoisting
+require Pod::Executable.execute_command('node', ['-p',
+  'require.resolve(
+    "react-native/scripts/react_native_pods.rb",
+    {paths: [process.argv[1]]},
+  )', __dir__]).strip
+
+require 'fileutils'
+
+platform :ios, '18.0'
+prepare_react_native_project!
+
+# Required for Firebase Swift pods when building Pods as static libraries.
+# (Without this, CocoaPods errors that FirebaseAuth/FirebaseFirestore deps do not define modules.)
+use_modular_headers!
+
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+end
+
+target 'spixparkplatz' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+end
+
+post_install do |installer|
+  # IMPORTANT: React Native's CocoaPods scripts expect REACT_NATIVE_PATH to be
+  # relative (e.g. ../node_modules/react-native). If we set an absolute path here,
+  # Hermes' script phase will incorrectly prepend ${PODS_ROOT}/.. and break.
+  react_native_path = File.join('..', 'node_modules', 'react-native')
+  react_native_post_install(
+    installer,
+    react_native_path,
+    :mac_catalyst_enabled => false,
+    # :ccache_enabled => true
+  )
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      # Set minimum deployment target to 18.0 for all pods
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '18.0'
+      # Allow non-modular includes in framework modules
+      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      
+      # Fix for FirebaseAuth Swift headers
+      if target.name == 'FirebaseAuth' || target.name == 'RNFBAuth'
+        config.build_settings['SWIFT_VERSION'] = '5.0'
+        config.build_settings['DEFINES_MODULE'] = 'YES'
+        config.build_settings['SWIFT_OBJC_INTERFACE_HEADER_NAME'] = '$(SWIFT_MODULE_NAME)-Swift.h'
+      end
+      
+      # Ensure all Firebase targets generate Swift headers
+      if target.name.start_with?('Firebase')
+        config.build_settings['DEFINES_MODULE'] = 'YES'
+        config.build_settings['SWIFT_OBJC_INTERFACE_HEADER_NAME'] = '$(SWIFT_MODULE_NAME)-Swift.h'
+      end
+    end
+  end
+  
+  # Fix for gRPC-C++ modulemap path issue
+  # gRPC-C++ expects the modulemap at Headers/Private/grpc/gRPC-Core.modulemap
+  # but CocoaPods places it at Target Support Files/gRPC-Core/gRPC-Core.modulemap
+  grpc_modulemap_source = File.join(installer.sandbox.root, 'Target Support Files/gRPC-Core/gRPC-Core.modulemap')
+  grpc_modulemap_dest_dir = File.join(installer.sandbox.root, 'Headers/Private/grpc')
+  grpc_modulemap_dest = File.join(grpc_modulemap_dest_dir, 'gRPC-Core.modulemap')
+  
+  if File.exist?(grpc_modulemap_source)
+    FileUtils.mkdir_p(grpc_modulemap_dest_dir)
+    # Remove symlink if it exists (CocoaPods might create a symlink)
+    if File.symlink?(grpc_modulemap_dest) || File.exist?(grpc_modulemap_dest)
+      FileUtils.rm_f(grpc_modulemap_dest)
+    end
+    # Copy the actual file (not a symlink)
+    FileUtils.cp(grpc_modulemap_source, grpc_modulemap_dest)
+    puts "Fixed gRPC-C++ modulemap path".green
+  end
+  
+  # Fix for react_runtime module redefinition issue
+  # React-jsitooling and React-RuntimeCore both define react_runtime module
+  # We need to rename React-jsitooling's module to avoid conflict
+  # Also, React-jsitooling.modulemap is in the react_runtime directory which is covered by React-RuntimeCore's umbrella
+  # We need to remove the umbrella header from React-jsitooling to avoid the conflict
+  jsitooling_modulemap = File.join(installer.sandbox.root, 'Target Support Files/React-jsitooling/React-jsitooling.modulemap')
+  if File.exist?(jsitooling_modulemap)
+    content = File.read(jsitooling_modulemap)
+    original_content = content.dup
+    # Always fix if it defines react_runtime (even if already fixed, to ensure consistency)
+    if content.include?('module react_runtime')
+      content.gsub!(/module react_runtime/, 'module React_jsitooling')
+    end
+    # Remove umbrella header since this modulemap is in a directory already covered by react_runtime umbrella
+    if content.include?('umbrella header')
+      # Replace umbrella with explicit module
+      content = "module React_jsitooling {\n  explicit module React_jsitooling {\n    header \"React-jsitooling-umbrella.h\"\n    export *\n  }\n}\n"
+    end
+    if content != original_content
+      File.write(jsitooling_modulemap, content)
+      puts "Fixed React-jsitooling modulemap to avoid react_runtime umbrella conflict".green
+    end
+  end
+  
+  # Fix ReactCommon module issues:
+  # - ReactCommon.modulemap and React-RuntimeApple.modulemap both declare `module ReactCommon` (redefinition)
+  # - React-RuntimeApple.modulemap lives under Headers/Public/ReactCommon, which is already covered by the
+  #   ReactCommon umbrella → "Umbrella already covers this directory" errors.
+  # Solution: rewrite React-RuntimeApple.modulemap to a *non-umbrella* explicit module with a unique name.
+  runtime_apple_modulemap = File.join(installer.sandbox.root, 'Target Support Files/React-RuntimeApple/React-RuntimeApple.modulemap')
+  if File.exist?(runtime_apple_modulemap)
+    desired = <<~MMAP
+      module React_RuntimeApple {
+        explicit module React_RuntimeApple {
+          header "React-RuntimeApple-umbrella.h"
+          export *
+        }
+      }
+    MMAP
+
+    existing = File.read(runtime_apple_modulemap)
+    if existing != desired
+      File.write(runtime_apple_modulemap, desired)
+      puts "Fixed React-RuntimeApple modulemap to avoid ReactCommon redefinition/umbrella conflict".green
+    end
+  end
+
+  # Fix for React-RuntimeHermes, React-RuntimeApple, React-RCTRuntime, and React-RCTAppDelegate umbrella conflicts
+  # Remove react_runtime modulemap references from xcconfig files
+  ['React-RuntimeHermes', 'React-RuntimeApple', 'React-RCTRuntime', 'React-RCTAppDelegate'].each do |target_name|
+    ['debug', 'release'].each do |config|
+      xcconfig = File.join(installer.sandbox.root, "Target Support Files/#{target_name}/#{target_name}.#{config}.xcconfig")
+      if File.exist?(xcconfig)
+        content = File.read(xcconfig)
+        original_content = content.dup
+        # Remove the problematic modulemap references that cause umbrella conflicts
+        content.gsub!(/-fmodule-map-file="\$\{PODS_ROOT\}\/Headers\/Public\/react_runtime\/React-RuntimeCore\.modulemap"\s+/, '')
+        content.gsub!(/-fmodule-map-file="\$\{PODS_ROOT\}\/Headers\/Public\/react_runtime\/React-jsitooling\.modulemap"\s+/, '')
+        # Fix ReactCommon redefinition in React-RCTRuntime, React-RCTAppDelegate, and ReactCodegen
+        # Remove React-RuntimeApple.modulemap reference since it also defines ReactCommon module
+        if target_name == 'React-RCTRuntime' || target_name == 'React-RCTAppDelegate' || target_name == 'ReactCodegen'
+          # Remove the React-RuntimeApple.modulemap reference that causes ReactCommon redefinition
+          content.gsub!(/-fmodule-map-file="\$\{PODS_ROOT\}\/Headers\/Public\/ReactCommon\/React-RuntimeApple\.modulemap"\s+/, '')
+        end
+        if content != original_content
+          File.write(xcconfig, content)
+          puts "Fixed #{target_name} xcconfig to avoid umbrella conflict".green
+        end
+      end
+    end
+  end
+
+      # Fix: FirebaseFirestoreInternal is a CocoaPods static library target, but the generated
+      # Pods-spixparkplatz xcconfig weak-links it as a framework, which breaks linking:
+      #   ld: framework 'FirebaseFirestoreInternal' not found
+      ['debug', 'release'].each do |cfg|
+        pods_xcconfig = File.join(installer.sandbox.root, "Target Support Files/Pods-spixparkplatz/Pods-spixparkplatz.#{cfg}.xcconfig")
+        next unless File.exist?(pods_xcconfig)
+
+        content = File.read(pods_xcconfig)
+        original = content.dup
+        # Remove any weak framework reference (with or without quotes)
+        content.gsub!(/\s*-weak_framework\s+"?FirebaseFirestoreInternal"?/, '')
+
+        if content != original
+          File.write(pods_xcconfig, content)
+          puts "Fixed Pods-spixparkplatz xcconfig to remove weak FirebaseFirestoreInternal framework link".green
+        end
+      end
+end
+
+# CocoaPods may re-generate header symlinks during integration; ensure the gRPC
+# modulemap exists after integration as well.
+post_integrate do |installer|
+  grpc_modulemap_source = File.join(installer.sandbox.root, 'Target Support Files/gRPC-Core/gRPC-Core.modulemap')
+  grpc_modulemap_dest_dir = File.join(installer.sandbox.root, 'Headers/Private/grpc')
+  grpc_modulemap_dest = File.join(grpc_modulemap_dest_dir, 'gRPC-Core.modulemap')
+
+  if File.exist?(grpc_modulemap_source)
+    FileUtils.mkdir_p(grpc_modulemap_dest_dir)
+    FileUtils.rm_f(grpc_modulemap_dest)
+    FileUtils.cp(grpc_modulemap_source, grpc_modulemap_dest)
+    puts "Ensured gRPC-C++ modulemap path (post_integrate)".green
+  end
+
+  # Fix: RNFBMessaging uses FIRAuth (FirebaseAuth) APIs that are no longer exposed as Objective-C
+  # in FirebaseAuth 12.x headers (FIRAuth.h contains only typedefs + forward declarations).
+  # Patch RNFBMessaging+AppDelegate.m to call FIRAuth via runtime lookup + objc_msgSend, so it compiles.
+  rnfb_messaging_app_delegate = File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'messaging', 'ios', 'RNFBMessaging', 'RNFBMessaging+AppDelegate.m')
+  if File.exist?(rnfb_messaging_app_delegate)
+    begin
+      content = File.read(rnfb_messaging_app_delegate)
+      original = content.dup
+
+      # Ensure objc_msgSend header is imported
+      unless content.include?('#import <objc/message.h>')
+        content.gsub!(
+          /#import <GoogleUtilities\/GULAppDelegateSwizzler\.h>\n/,
+          "#import <GoogleUtilities/GULAppDelegateSwizzler.h>\n#import <objc/message.h>\n"
+        )
+      end
+
+      # Replace direct FIRAuth calls with runtime-safe calls
+      if content.include?('[[FIRAuth authWithApp:app] canHandleNotification:userInfo]') && !content.include?('NSClassFromString(@"FIRAuth")')
+        content.gsub!(
+          /for \(id appId in \[FIRApp allApps\]\) \{\n\s*FIRApp \*app = \[\[FIRApp allApps\] objectForKey:appId\];\n\s*if \(\[\[FIRAuth authWithApp:app\] canHandleNotification:userInfo\]\) \{\n\s*DLog\(@\"didReceiveRemoteNotification Firebase Auth handled the notification with instance: %@\",\n\s*app\.name\);\n\s*completionHandler\(UIBackgroundFetchResultNoData\);\n\s*return;\n\s*\}\n\s*\}/m,
+          <<~'REPLACEMENT'.strip
+          // FirebaseAuth 12+ no longer exposes an Objective-C interface for FIRAuth in headers
+          // (FIRAuth.h only contains typedefs + forward declarations). Avoid compile-time
+          // dependency on FIRAuth by using runtime lookup + objc_msgSend.
+          Class FIRAuthClass = NSClassFromString(@"FIRAuth");
+          SEL authWithAppSel = NSSelectorFromString(@"authWithApp:");
+          SEL canHandleSel = NSSelectorFromString(@"canHandleNotification:");
+
+          if (FIRAuthClass && [FIRAuthClass respondsToSelector:authWithAppSel]) {
+            for (id appId in [FIRApp allApps]) {
+              FIRApp *app = [[FIRApp allApps] objectForKey:appId];
+              id auth = ((id (*)(id, SEL, id))objc_msgSend)(FIRAuthClass, authWithAppSel, app);
+              if (auth && [auth respondsToSelector:canHandleSel]) {
+                BOOL handled = ((BOOL (*)(id, SEL, id))objc_msgSend)(auth, canHandleSel, userInfo);
+                if (handled) {
+                  DLog(@"didReceiveRemoteNotification Firebase Auth handled the notification with instance: %@",
+                       app.name);
+                  completionHandler(UIBackgroundFetchResultNoData);
+                  return;
+                }
+              }
+            }
+          }
+          REPLACEMENT
+        )
+      end
+
+      if content != original
+        File.write(rnfb_messaging_app_delegate, content)
+        puts "Fixed RNFBMessaging+AppDelegate.m FIRAuth usage for FirebaseAuth 12.x".green
+      end
+    rescue => e
+      puts "Warning: Could not patch RNFBMessaging+AppDelegate.m for FIRAuth: #{e.message}".yellow
+    end
+  end
+
+  # Fix: RNFBAuth references FIRAuthErrorCode* constants, but in FirebaseAuth 12.x these live in the
+  # Swift compatibility header/module (`FirebaseAuth.Swift`). Import it so the constants are defined.
+  rnfb_auth_module_h = File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'auth', 'ios', 'RNFBAuth', 'RNFBAuthModule.h')
+  if File.exist?(rnfb_auth_module_h)
+    begin
+      content = File.read(rnfb_auth_module_h)
+      original = content.dup
+
+      unless content.include?('@import FirebaseAuth.Swift;')
+        content.gsub!(
+          /#import <Firebase\/Firebase\.h>\n/,
+          "#import <Firebase/Firebase.h>\n#if __has_feature(modules)\n@import FirebaseAuth.Swift;\n#endif\n"
+        )
+      end
+
+      if content != original
+        File.write(rnfb_auth_module_h, content)
+        puts "Fixed RNFBAuthModule.h to import FirebaseAuth.Swift for FIRAuthErrorCode constants".green
+      end
+    rescue => e
+      puts "Warning: Could not patch RNFBAuthModule.h: #{e.message}".yellow
+    end
+  end
+
+  # Fix: RNFBMessaging should NOT include Firebase umbrella headers (Firebase/Firebase.h or "Firebase.h"),
+  # because those can pull in Swift compatibility headers that break device builds.
+  # Import only what messaging needs.
+  firebase_messaging_import = <<~'IMPORT'.strip
+  #include <FirebaseCore/FirebaseCore.h>
+  #include <FirebaseMessaging/FirebaseMessaging.h>
+  IMPORT
+
+  rnfb_messaging_files = [
+    File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'messaging', 'ios', 'RNFBMessaging', 'RNFBMessaging+AppDelegate.m'),
+    File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'messaging', 'ios', 'RNFBMessaging', 'RNFBMessagingModule.m'),
+    File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'messaging', 'ios', 'RNFBMessaging', 'RNFBMessagingSerializer.h'),
+    File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'messaging', 'ios', 'RNFBMessaging', 'RNFBMessaging+NSNotificationCenter.m'),
+    File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'messaging', 'ios', 'RNFBMessaging', 'RNFBMessaging+FIRMessagingDelegate.h'),
+  ]
+
+  rnfb_messaging_files.each do |path|
+    next unless File.exist?(path)
+    begin
+      content = File.read(path)
+      original = content.dup
+
+      # Patch any existing fallback block or direct includes to use FirebaseCore+FirebaseMessaging only.
+      if content.include?('#if __has_include(<Firebase/Firebase.h>)')
+        content.sub!(
+          /#if __has_include\(<Firebase\/Firebase\.h>\)[\s\S]*?#endif\s*/m,
+          firebase_messaging_import + "\n",
+        )
+      end
+
+      # Replace any remaining direct includes
+      content.gsub!(/^\s*#import <Firebase\/Firebase\.h>\s*$/m, firebase_messaging_import)
+      content.gsub!(/^\s*#import "Firebase\.h"\s*$/m, firebase_messaging_import)
+
+      # Some parsers/tools treat `#import` as an unknown preprocessor directive.
+      # Prefer `#include` for maximum compatibility.
+      content.gsub!(/^\s*#import <FirebaseCore\/FirebaseCore\.h>\s*$/m, '#include <FirebaseCore/FirebaseCore.h>')
+      content.gsub!(/^\s*#import <FirebaseMessaging\/FirebaseMessaging\.h>\s*$/m, '#include <FirebaseMessaging/FirebaseMessaging.h>')
+      content.gsub!(/^\s*#import <Foundation\/Foundation\.h>\s*$/m, '#include <Foundation/Foundation.h>')
+      content.gsub!(/^\s*#import <React\/RCTBridgeModule\.h>\s*$/m, '#include <React/RCTBridgeModule.h>')
+
+      if content != original
+        File.write(path, content)
+        puts "Patched RNFBMessaging to avoid Firebase.h umbrella imports: #{File.basename(path)}".green
+      end
+    rescue => e
+      puts "Warning: Could not patch RNFBMessaging Firebase import in #{File.basename(path)}: #{e.message}".yellow
+    end
+  end
+
+  # Fix: RNFBFunctions should not include Firebase umbrella headers (Firebase/Firebase.h),
+  # because our setup intentionally avoids relying on that umbrella and it may pull in
+  # Swift compatibility headers in some environments.
+  rnfb_functions_module = File.join(__dir__, '..', 'node_modules', '@react-native-firebase', 'functions', 'ios', 'RNFBFunctions', 'RNFBFunctionsModule.m')
+  if File.exist?(rnfb_functions_module)
+    begin
+      content = File.read(rnfb_functions_module)
+      original = content.dup
+      replacement = "#import <FirebaseCore/FirebaseCore.h>\n#if __has_feature(modules)\n@import FirebaseFunctions;\n#else\n#import <FirebaseFunctions/FirebaseFunctions.h>\n#endif"
+      content.gsub!(/^\s*#import <Firebase\/Firebase\.h>\s*$/m, replacement)
+      content.gsub!(/^\s*#import "Firebase\.h"\s*$/m, replacement)
+      if content != original
+        File.write(rnfb_functions_module, content)
+        puts "Patched RNFBFunctionsModule.m to import FirebaseFunctions directly (no Firebase.h umbrella)".green
+      end
+    rescue => e
+      puts "Warning: Could not patch RNFBFunctionsModule.m: #{e.message}".yellow
+    end
+  end
+
+  # Fix: Firebase.h tries to import Swift headers which may not exist during build
+  # Make all Swift header imports optional to avoid build errors
+  firebase_h = File.join(installer.sandbox.root, 'Headers/Private/Firebase/Firebase.h')
+  if File.exist?(firebase_h)
+    begin
+      # Make file writable
+      File.chmod(0644, firebase_h) if File.writable?(firebase_h) == false
+      content = File.read(firebase_h)
+      original = content.dup
+      
+      # Fix FirebaseAuth-Swift.h: Clean up and fix structure
+      content.gsub!(
+        /#if __has_include\(<FirebaseAuth\/FirebaseAuth-Swift\.h>\)\s*\n\s*#import <FirebaseAuth\/FirebaseAuth-Swift\.h>\s*\n#endif\s*\n#endif/,
+        "#if __has_include(<FirebaseAuth/FirebaseAuth-Swift.h>)\n        #import <FirebaseAuth/FirebaseAuth-Swift.h>\n      #endif"
+      )
+      # Remove any duplicate checks
+      content.gsub!(
+        /#if __has_include\(<FirebaseAuth\/FirebaseAuth-Swift\.h>\)\s*\n\s*#if __has_include\(<FirebaseAuth\/FirebaseAuth-Swift\.h>\)/,
+        "#if __has_include(<FirebaseAuth/FirebaseAuth-Swift.h>)"
+      )
+      
+      # Fix FirebaseFunctions-Swift.h: Clean up and fix structure with correct indentation
+      # Remove any extra #endif that might be there
+      content.gsub!(
+        /#if __has_include\("FirebaseFunctions-umbrella\.h"\)\s*\n\s*#if __has_include\(<FirebaseFunctions\/FirebaseFunctions-Swift\.h>\)\s*\n\s*#import <FirebaseFunctions\/FirebaseFunctions-Swift\.h>\s*\n\s*#endif\s*\n\s*#endif\s*\n\s*#endif/,
+        "#if __has_include(\"FirebaseFunctions-umbrella.h\")\n    #if __has_include(<FirebaseFunctions/FirebaseFunctions-Swift.h>)\n      #import <FirebaseFunctions/FirebaseFunctions-Swift.h>\n    #endif\n  #endif"
+      )
+      
+      # Fix FirebaseStorage-Swift.h: Clean up duplicates and fix structure
+      content.gsub!(
+        /#if __has_include\("FirebaseStorage-umbrella\.h"\)\s*\n\s*#if __has_include\(<FirebaseStorage\/FirebaseStorage-Swift\.h>\)\s*\n\s*#import <FirebaseStorage\/FirebaseStorage-Swift\.h>\s*\n#endif\s*\n\s*#endif/,
+        "#if __has_include(\"FirebaseStorage-umbrella.h\")\n    #if __has_include(<FirebaseStorage/FirebaseStorage-Swift.h>)\n      #import <FirebaseStorage/FirebaseStorage-Swift.h>\n    #endif\n  #endif"
+      )
+      # Remove any duplicate checks
+      content.gsub!(
+        /#if __has_include\(<FirebaseStorage\/FirebaseStorage-Swift\.h>\)\s*\n\s*#if __has_include\(<FirebaseStorage\/FirebaseStorage-Swift\.h>\)/,
+        "#if __has_include(<FirebaseStorage/FirebaseStorage-Swift.h>)"
+      )
+      content.gsub!(
+        /#endif\s*\n#endif\s*\n#endif\s*\n\s*#endif/,
+        "#endif\n    #endif"
+      )
+      
+      if content != original
+        File.write(firebase_h, content)
+        puts "Fixed Firebase.h to make all Swift header imports optional".green
+      end
+    rescue => e
+      puts "Warning: Could not patch Firebase.h: #{e.message}".yellow
+    end
+  end
+end

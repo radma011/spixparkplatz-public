@@ -1,0 +1,266 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function: Check if user is the owner
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function: Check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admin == true;
+    }
+
+    function isFirstOfferUpdate() {
+      // Allow the first offer to be attached by the offering user.
+      // Only allowed when no offer exists yet and the request is not fulfilled.
+      return isAuthenticated()
+        && resource.data.isFulfilled == false
+        && !('offeredSpotId' in resource.data) // no offer yet
+        && request.resource.data.offeredBy == request.auth.uid
+        && request.resource.data.offeredSpotId is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'offeredSpotId',
+          'offeredBy',
+          'offeredAt'
+        ]);
+    }
+
+    function requesterIdForRequest(requestId) {
+      return get(/databases/$(database)/documents/parking_requests/$(requestId)).data.requestedBy;
+    }
+
+    function isCancelOfferUpdate() {
+      // Allow the offering user to cancel their offer (remove offered* fields and reset state).
+      // This allows resetting isFulfilled, isArchived, and removing fulfilled/archived fields
+      // so the request becomes "open" again after an offer is cancelled.
+      // Note: This should work even if the request was previously fulfilled, to allow
+      // the offerer to cancel and make the request open again.
+      return isAuthenticated()
+        && ('offeredBy' in resource.data)
+        && resource.data.offeredBy == request.auth.uid
+        && !('offeredBy' in request.resource.data)
+        && !('offeredSpotId' in request.resource.data)
+        && request.resource.data.isFulfilled == false
+        && request.resource.data.isArchived == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'offeredSpotId',
+          'offeredBy',
+          'offeredAt',
+          'isFulfilled',
+          'isArchived',
+          'fulfilledAt',
+          'fulfilledSpotIds',
+          'fulfilledByUserIds',
+          'fulfilledOfferIds',
+          'archivedBy',
+          'archivedAt'
+        ]);
+    }
+
+    function isArchiveUpdate() {
+      // Allow involved users to archive an already fulfilled request.
+      return isAuthenticated()
+        && resource.data.isFulfilled == true
+        && (resource.data.requestedBy == request.auth.uid
+          || resource.data.offeredBy == request.auth.uid
+          || (resource.data.fulfilledByUserIds is list && resource.data.fulfilledByUserIds.hasAny([request.auth.uid])))
+        && request.resource.data.isArchived == true
+        && request.resource.data.archivedBy == request.auth.uid
+        && request.resource.data.archivedAt is timestamp
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isArchived',
+          'archivedBy',
+          'archivedAt'
+        ]);
+    }
+    
+    // Users Collection
+    match /users/{userId} {
+      // Users can read their own data
+      allow read: if isOwner(userId);
+      
+      // Users can create their own user document
+      allow create: if isOwner(userId) && 
+                       request.resource.data.keys().hasAll(['username', 'email', 'phone', 'parkingSpots', 'createdAt']);
+      
+      // Users can update their own data.
+      // Email changes are allowed only if they match the authenticated token email
+      // (so the user must have completed Auth email update first).
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid'])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email'])
+          || request.resource.data.email == request.auth.token.email
+        );
+      
+      // Users cannot delete their own account (should be done via Auth)
+      allow delete: if false;
+
+      // Per-device FCM tokens for this user
+      match /fcm_tokens/{tokenId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Public user profile (for display name + contact phone)
+    match /users_public/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false;
+    }
+    
+    // Parking Requests Collection
+    match /parking_requests/{requestId} {
+      // Anyone authenticated can read requests
+      allow read: if isAuthenticated();
+      
+      // Anyone authenticated can create a request
+      allow create: if isAuthenticated() && 
+                       request.resource.data.requestedBy == request.auth.uid &&
+                       request.resource.data.keys().hasAll(['requestedBy', 'from', 'until', 'isFulfilled', 'participantIds']);
+      
+      // Updates:
+      // - first offer can be attached by any authenticated offering user (constrained)
+      // - offerer can cancel their offer (constrained)
+      // Fulfillment is determined server-side when accepted offers fully cover the window.
+      allow update: if isFirstOfferUpdate() || isCancelOfferUpdate() || isArchiveUpdate();
+      
+      // Only the requester can delete their own request
+      // Only allow deleting (withdrawing) a request while it's not fulfilled
+      allow delete: if isAuthenticated()
+        && resource.data.requestedBy == request.auth.uid
+        && resource.data.isFulfilled == false;
+    }
+
+    // Comments timeline (chat) for a request
+    match /parking_requests/{requestId}/comments/{commentId} {
+      // Chat is visible to any authenticated user (same as requests list).
+      // Participants are still tracked on the request document by Cloud Functions.
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
+      allow update: if isAuthenticated()
+        && resource.data.authorId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.editedAt is timestamp;
+      allow delete: if false;
+    }
+
+    // Offers subcollection for partial/full offers
+    match /parking_requests/{requestId}/offers/{offerId} {
+      allow read: if isAuthenticated();
+
+      // Offerer creates their offer document
+      allow create: if isAuthenticated()
+        && request.resource.data.offererId == request.auth.uid
+        && request.resource.data.spotId is string
+        && request.resource.data.from is timestamp
+        && request.resource.data.until is timestamp;
+
+      // Offer updates:
+      // - offerer can withdraw their own offer (only status/updatedAt)
+      // - requester can accept an offer (only status/updatedAt)
+      allow update: if isAuthenticated()
+        && (
+          (
+            resource.data.offererId == request.auth.uid
+            && request.resource.data.status == 'withdrawn'
+          )
+          ||
+          (
+            requesterIdForRequest(requestId) == request.auth.uid
+            && resource.data.status == 'active'
+            && request.resource.data.status == 'accepted'
+          )
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'updatedAt',
+          'withdrawnBy',
+          'withdrawnReason'
+        ]);
+
+      allow delete: if false;
+    }
+    
+    // Parking Spots Collection (read-only for all authenticated users)
+    match /parking_spots/{spotId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only admins should write (configure separately if needed)
+    }
+    
+    // Facilities Collection (for facility code validation)
+    match /facilities/{facilityCode} {
+      // Anyone authenticated can read facilities (needed for registration validation)
+      allow read: if isAuthenticated();
+      
+      // Allow creating a new facility if it doesn't exist yet (for registration)
+      // This allows new users to create their own facility during registration
+      allow create: if isAuthenticated() 
+        && !exists(/databases/$(database)/documents/facilities/$(facilityCode))
+        && request.resource.data.keys().hasAll(['name', 'active'])
+        && request.resource.data.active == true
+        && request.resource.data.name is string;
+      
+      // Only admins can update/delete facilities
+      allow update, delete: if isAdmin();
+    }
+
+    // Parking Availabilities Collection (Frei-Angebote)
+    match /parking_availabilities/{availabilityId} {
+      // Anyone authenticated can read availabilities (for matching)
+      allow read: if isAuthenticated();
+      
+      // Users can create their own availability
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['userId', 'facilityCode', 'spotId', 'from', 'until', 'isActive', 'createdBy'])
+        && request.resource.data.facilityCode is string
+        && request.resource.data.spotId is string
+        && request.resource.data.from is timestamp
+        && request.resource.data.until is timestamp
+        && request.resource.data.isActive == true
+        && request.resource.data.createdBy == request.auth.uid
+        && (!('isMatched' in request.resource.data) || request.resource.data.isMatched == false);
+      
+      // Users can update their own availability
+      allow update: if isAuthenticated()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'from',
+          'until',
+          'spotId',
+          'recurrence',
+          'isActive',
+          'isMatched',
+          'matchedRequestId',
+          'username',
+          'phone',
+          'updatedAt'
+        ]);
+      
+      // Users can delete their own availability
+      allow delete: if isAuthenticated()
+        && resource.data.userId == request.auth.uid;
+    }
+  }
+}
+
