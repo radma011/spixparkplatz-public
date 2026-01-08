@@ -194,6 +194,47 @@ class ParkingAvailabilityService {
       },
     };
   }
+
+  /**
+   * Watch all active availabilities in a facility (filtered by facilityCode and isActive client-side)
+   * Note: This queries all availabilities and filters client-side to avoid composite index requirements
+   * This is not ideal for performance but works without requiring a composite index
+   */
+  watchFacilityAvailabilities(facilityCode: string) {
+    const normalizedCode = facilityCode.trim().toUpperCase();
+    // Query all availabilities (no filter to avoid index requirement) and filter client-side
+    // This avoids the need for a composite index on (facilityCode, isActive)
+    // In production, consider creating a composite index for better performance
+    const q = query(this.availabilitiesCollection);
+    return {
+      onSnapshot: (
+        onNext: (snapshot: FirebaseFirestoreTypes.QuerySnapshot) => void,
+        onError?: (error: Error) => void,
+      ) => {
+        return q.onSnapshot(
+          (snapshot) => {
+            // Filter client-side
+            const filtered = snapshot.docs.filter((doc) => {
+              const data = doc.data();
+              return (
+                data.facilityCode === normalizedCode &&
+                (data.isActive === true || data.isActive === undefined)
+              );
+            });
+            // Create a filtered snapshot-like object
+            onNext({
+              docs: filtered,
+              empty: filtered.length === 0,
+              size: filtered.length,
+              metadata: snapshot.metadata,
+              query: snapshot.query,
+            } as any);
+          },
+          onError,
+        );
+      },
+    };
+  }
 }
 
 export default new ParkingAvailabilityService();

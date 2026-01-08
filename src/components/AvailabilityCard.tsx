@@ -1,10 +1,11 @@
-import React from 'react';
-import {View, Text, StyleSheet, TouchableOpacity, useColorScheme} from 'react-native';
+import React, {useState} from 'react';
+import {View, Text, StyleSheet, TouchableOpacity, useColorScheme, Modal, ScrollView, Platform} from 'react-native';
 import {ParkingAvailability, isAvailabilityActive, isRecurring} from '../models/ParkingAvailability';
 import {formatDateRange, getTodayTomorrowBadge} from '../utils/dateUtils';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {normalizePhone, tryOpenUrl} from '../utils/contactLinks';
 import {getColors} from '../theme/colors';
+import {calculateNextOccurrences, formatOccurrence} from '../utils/recurrenceUtils';
 
 interface Props {
   availability: ParkingAvailability;
@@ -32,6 +33,7 @@ const AvailabilityCard: React.FC<Props> = ({
   const isActive = isAvailabilityActive(availability);
   const isRecurringAvailability = isRecurring(availability);
   const dayBadge = getTodayTomorrowBadge(availability.from);
+  const [showDebugModal, setShowDebugModal] = useState(false);
 
   const recurrenceLabel = () => {
     if (!availability.recurrence) return null;
@@ -53,18 +55,39 @@ const AvailabilityCard: React.FC<Props> = ({
     }
   };
 
+  const handleLongPress = () => {
+    if (isRecurringAvailability && availability.recurrence) {
+      setShowDebugModal(true);
+    }
+  };
+
+  const nextOccurrences = isRecurringAvailability && availability.recurrence
+    ? calculateNextOccurrences(
+        availability.from,
+        availability.from,
+        availability.until,
+        availability.recurrence,
+        10,
+      )
+    : [];
+
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          shadowColor: colors.shadow,
-        },
-        !isActive && styles.cardInactive,
-        highlight && {borderWidth: 2, borderColor: colors.brand},
-      ]}>
+    <>
+      <TouchableOpacity
+        activeOpacity={1}
+        onLongPress={handleLongPress}
+        delayLongPress={500}>
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              shadowColor: colors.shadow,
+            },
+            !isActive && styles.cardInactive,
+            highlight && {borderWidth: 2, borderColor: colors.brand},
+          ]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -190,6 +213,45 @@ const AvailabilityCard: React.FC<Props> = ({
         </View>
       )}
     </View>
+      </TouchableOpacity>
+
+      {/* Debug Modal für wiederkehrende Verfügbarkeiten */}
+      {isRecurringAvailability && (
+        <Modal
+          visible={showDebugModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowDebugModal(false)}>
+          <View style={styles.debugModalOverlay}>
+            <View style={[styles.debugModalContent, {backgroundColor: colors.surface}]}>
+              <View style={[styles.debugModalHeader, {borderBottomColor: colors.border}]}>
+                <Text style={[styles.debugModalTitle, {color: colors.text}]}>
+                  Nächste 10 Termine (Debug)
+                </Text>
+                <TouchableOpacity onPress={() => setShowDebugModal(false)}>
+                  <Text style={[styles.debugModalClose, {color: colors.subtext}]}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.debugModalBody}>
+                {nextOccurrences.length > 0 ? (
+                  nextOccurrences.map((occurrence, index) => (
+                    <View key={index} style={[styles.debugOccurrenceItem, {borderBottomColor: colors.border}]}>
+                      <Text style={[styles.debugOccurrenceText, {color: colors.text}]}>
+                        {formatOccurrence(occurrence, availability.until)}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={[styles.debugNoOccurrences, {color: colors.subtext}]}>
+                    Keine zukünftigen Termine gefunden
+                  </Text>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </>
   );
 };
 
@@ -334,6 +396,56 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  debugModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  debugModalContent: {
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  debugModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+  },
+  debugModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  debugModalClose: {
+    fontSize: 24,
+    fontWeight: '300',
+  },
+  debugModalBody: {
+    padding: 20,
+    maxHeight: 400,
+  },
+  debugOccurrenceItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  debugOccurrenceText: {
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  debugNoOccurrences: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 });
 

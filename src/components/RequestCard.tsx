@@ -322,8 +322,9 @@ const RequestCard: React.FC<Props> = ({
 
       {/* Info-Zeile mit Parkplatz: nur anzeigen, wenn Angebot noch aktiv ist (nicht storniert) */}
       {(() => {
-        // Bei nicht-erfüllten Requests: nur anzeigen, wenn hasOffer true ist (offeredSpotId vorhanden)
+        // Bei nicht-erfüllten Requests
         if (!isFulfilled) {
+          // Wenn es ein Angebot gibt, zeige Zeit + Parkplatz
           if (hasOffer && request.offeredSpotId) {
             return (
               <View style={styles.timeRow}>
@@ -336,7 +337,12 @@ const RequestCard: React.FC<Props> = ({
               </View>
             );
           }
-          return null;
+          // Bei offenen Anfragen (kein Angebot) zeige nur die Zeit
+          return (
+            <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
+              {formatDateRange(displayFrom, displayUntil)}
+            </Text>
+          );
         }
         
         // Bei erfüllten Requests: nur anzeigen, wenn es noch angenommene Angebote gibt (nicht zurückgezogene)

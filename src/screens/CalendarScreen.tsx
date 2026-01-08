@@ -3,10 +3,13 @@ import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme} fr
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import FirestoreService from '../services/FirestoreService';
+import ParkingAvailabilityService from '../services/ParkingAvailabilityService';
 import {ParkingRequest} from '../models/ParkingRequest';
+import {ParkingAvailability, isRecurring} from '../models/ParkingAvailability';
 import {formatDateLabel, formatTime} from '../utils/dateUtils';
 import {getColors} from '../theme/colors';
 import WatermarkBackground from '../components/WatermarkBackground';
+import {calculateNextOccurrences} from '../utils/recurrenceUtils';
 
 interface Props {
   onBack: () => void;
@@ -91,6 +94,9 @@ function timeRangeForDay(from: Date, until: Date, day: Date) {
 }
 
 function entryLabel(e: CalendarEntry) {
+  if (e.kind === 'availability') {
+    return 'Verfügbar';
+  }
   if (e.kind === 'offer') {
     return 'Angebot';
   }
@@ -113,16 +119,17 @@ function formatEntryLine(e: CalendarEntry, day: Date) {
   return parts.join(' · ');
 }
 
-type EntryKind = 'request' | 'offer';
+type EntryKind = 'request' | 'offer' | 'availability';
 type CalendarEntry = {
   id: string;
   kind: EntryKind;
-  marker: 'open' | 'hasOffer' | 'offer' | 'request';
+  marker: 'open' | 'hasOffer' | 'offer' | 'request' | 'availability';
   from: Date;
   until: Date;
   offeredSpotId?: string;
   otherUsername?: string;
   isFulfilled: boolean;
+  isRecurring?: boolean; // For availability entries
 };
 
 const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, onOpenRequest}) => {
@@ -139,8 +146,16 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   const [myRequests, setMyRequests] = useState<ParkingRequest[]>([]);
   const [myOffers, setMyOffers] = useState<ParkingRequest[]>([]);
   const [openRequests, setOpenRequests] = useState<ParkingRequest[]>([]);
+  const [availabilities, setAvailabilities] = useState<ParkingAvailability[]>([]);
   const [publicUsers, setPublicUsers] = useState<Record<string, {username?: string; phone?: string}>>({});
   const publicUserUnsubsRef = useRef<Record<string, () => void>>({});
+  
+  // Filter states for legend
+  const [showOpen, setShowOpen] = useState(true);
+  const [showHasOffer, setShowHasOffer] = useState(true);
+  const [showOffer, setShowOffer] = useState(true);
+  const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'mine' | 'none'>('all');
+  const [showRequest, setShowRequest] = useState(true);
 
   // Subscribe: my requests + my offers
   useEffect(() => {
@@ -181,6 +196,25 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       try { unsub(); } catch {}
     };
   }, [currentUserId, facilityCode]);
+
+  // Subscribe: availabilities (all active availabilities in the facility)
+  useEffect(() => {
+    // Watch all availabilities in the facility
+    const unsub = ParkingAvailabilityService.watchFacilityAvailabilities(facilityCode).onSnapshot(
+      (snapshot: any) => {
+        const allAvailabilities = snapshot.docs.map((doc: any) =>
+          ParkingAvailabilityService.availabilityFromDocSnap(doc),
+        );
+        setAvailabilities(allAvailabilities);
+      },
+      (error: any) => {
+        console.error('Error watching availabilities:', error);
+      },
+    );
+    return () => {
+      try { unsub(); } catch {}
+    };
+  }, [facilityCode]);
 
   // Keep a live cache of usernames for involved users (so we can show the other person's name in calendar)
   useEffect(() => {
@@ -234,6 +268,13 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     const out: CalendarEntry[] = [];
     const seen = new Set<string>(); // use id only; for calendar we don't want duplicates
 
+    // Calculate date range for current view (month or week)
+    const viewStart = mode === 'month' ? startOfMonth(cursor) : weekStart;
+    const viewEnd = mode === 'month' 
+      ? new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59)
+      : addDays(weekStart, 6);
+
+    // Add requests (filtered by showOpen, showHasOffer, showOffer, showRequest)
     myRequests.forEach((r) => {
       if (seen.has(r.id)) return;
       seen.add(r.id);
@@ -244,6 +285,13 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
           : !r.offeredSpotId
             ? 'offer' // Eigene offene Anfragen in lila (wie "Meine" in der Legende)
             : 'hasOffer'; // Anfragen mit Angebot auch grün
+      
+      // Apply filters
+      if (marker === 'open' && !showOpen) return;
+      if (marker === 'hasOffer' && !showHasOffer) return;
+      if (marker === 'offer' && !showOffer) return;
+      if (marker === 'request' && !showRequest) return;
+      
       out.push({
         id: r.id,
         kind: 'request',
@@ -260,6 +308,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     myOffers.forEach((r) => {
       if (seen.has(r.id)) return;
       seen.add(r.id);
+      if (!showOffer) return; // Filter offers
       const otherUid = r.requestedBy;
       out.push({
         id: r.id,
@@ -277,6 +326,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     openRequests.forEach((r) => {
       if (seen.has(r.id)) return;
       seen.add(r.id);
+      if (!showOpen) return; // Filter open requests
       out.push({
         id: r.id,
         kind: 'request',
@@ -289,8 +339,63 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       });
     });
 
+    // Add availabilities (filtered by availabilityFilter)
+    if (availabilityFilter !== 'none') {
+      availabilities.forEach((av) => {
+        if (!av.isActive) return;
+        
+        // Filter by availabilityFilter
+        if (availabilityFilter === 'mine' && av.userId !== currentUserId) return;
+
+        if (isRecurring(av) && av.recurrence) {
+          // For recurring availabilities, calculate occurrences within the view range
+          const occurrences = calculateNextOccurrences(
+            av.from,
+            av.from,
+            av.until,
+            av.recurrence,
+            100, // Get enough occurrences to cover the view
+          ).filter((occ) => {
+            // Filter to only include occurrences within the view range
+            return occ >= viewStart && occ <= viewEnd;
+          });
+
+          // Create an entry for each occurrence
+          occurrences.forEach((occurrence, index) => {
+            const occurrenceEnd = new Date(occurrence);
+            occurrenceEnd.setHours(av.until.getHours(), av.until.getMinutes(), 0, 0);
+            
+            out.push({
+              id: `${av.id}-${index}-${occurrence.getTime()}`,
+              kind: 'availability',
+              marker: 'availability',
+              from: occurrence,
+              until: occurrenceEnd,
+              offeredSpotId: av.spotId,
+              otherUsername: av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username),
+              isFulfilled: false,
+              isRecurring: true,
+            });
+          });
+        } else {
+          // One-time availability
+          out.push({
+            id: av.id,
+            kind: 'availability',
+            marker: 'availability',
+            from: av.from,
+            until: av.until,
+            offeredSpotId: av.spotId,
+            otherUsername: av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username),
+            isFulfilled: false,
+            isRecurring: false,
+          });
+        }
+      });
+    }
+
     return out;
-  }, [myRequests, myOffers, openRequests, publicUsers]);
+  }, [myRequests, myOffers, openRequests, availabilities, publicUsers, currentUserId, cursor, mode, weekStart, showOpen, showHasOffer, showOffer, availabilityFilter, showRequest]);
 
   // Keep cursor aligned with selection (helps week mode always show selected day)
   useEffect(() => {
@@ -318,16 +423,17 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   const monthDayStats = useMemo(() => {
     const first = startOfMonth(cursor);
     const total = daysInMonth(cursor);
-    const map: Record<string, {open: number; hasOffer: number; offer: number; other: number}> = {};
+    const map: Record<string, {open: number; hasOffer: number; offer: number; other: number; availability: number}> = {};
     for (let d = 1; d <= total; d++) {
       const day = new Date(first.getFullYear(), first.getMonth(), d);
       const k = dayKey(day);
-      map[k] = {open: 0, hasOffer: 0, offer: 0, other: 0};
+      map[k] = {open: 0, hasOffer: 0, offer: 0, other: 0, availability: 0};
       entries.forEach((e) => {
         if (overlapsDay(e.from, e.until, day)) {
           if (e.marker === 'open') map[k].open += 1;
           else if (e.marker === 'hasOffer') map[k].hasOffer += 1;
           else if (e.marker === 'offer') map[k].offer += 1;
+          else if (e.marker === 'availability') map[k].availability += 1;
           else map[k].other += 1;
         }
       });
@@ -372,6 +478,12 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   }, [entries, selectedDate]);
 
   const eventStyleFor = (e: CalendarEntry) => {
+    if (e.marker === 'availability') {
+      return [
+        styles.eventAvailability,
+        colors.isDark && {backgroundColor: '#065F46', borderColor: '#10B981'},
+      ];
+    }
     if (e.marker === 'offer') {
       return [
         styles.eventOffer,
@@ -387,7 +499,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   };
 
   const eventTextStyleFor = (e: CalendarEntry) => {
-    if (e.marker === 'open' || e.marker === 'hasOffer') return styles.eventTextWhite;
+    if (e.marker === 'open' || e.marker === 'hasOffer' || e.marker === 'availability') return styles.eventTextWhite;
     return [styles.eventText, {color: colors.text}];
   };
 
@@ -505,10 +617,11 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
                     {c.day}
                   </Text>
                   <View style={styles.dotsRow}>
-                    {stats.open > 0 ? <View style={[styles.dot, styles.dotOpen]} /> : null}
-                    {stats.hasOffer > 0 ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
-                    {stats.offer > 0 ? <View style={[styles.dot, styles.dotOffer]} /> : null}
-                    {stats.other > 0 ? <View style={[styles.dot, styles.dotRequest]} /> : null}
+                    {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
+                    {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
+                    {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
+                    {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
+                    {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
                   </View>
                 </TouchableOpacity>
               );
@@ -578,23 +691,66 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
         </ScrollView>
       )}
 
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.dot, styles.dotOpen]} />
-          <Text style={[styles.legendText, {color: colors.text}]}>Offen</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.dot, styles.dotHasOffer]} />
-          <Text style={[styles.legendText, {color: colors.text}]}>Erfüllt</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.dot, styles.dotRequest]} />
-          <Text style={[styles.legendText, {color: colors.text}]}>Sonstige</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.dot, styles.dotOffer]} />
-          <Text style={[styles.legendText, {color: colors.text}]}>Meine</Text>
-        </View>
+      <View style={[styles.legend, {paddingBottom: insets.bottom + 12}]}>
+        <TouchableOpacity
+          style={styles.legendItem}
+          onPress={() => setShowOpen(!showOpen)}
+          activeOpacity={0.7}>
+          <View style={[styles.dot, styles.dotOpen, !showOpen && styles.dotDisabled]} />
+          <Text style={[styles.legendText, {color: colors.text}, !showOpen && styles.legendTextDisabled]}>
+            Offen
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.legendItem}
+          onPress={() => setShowHasOffer(!showHasOffer)}
+          activeOpacity={0.7}>
+          <View style={[styles.dot, styles.dotHasOffer, !showHasOffer && styles.dotDisabled]} />
+          <Text style={[styles.legendText, {color: colors.text}, !showHasOffer && styles.legendTextDisabled]}>
+            Erfüllt
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.legendItem}
+          onPress={() => {
+            // Cycle through: all -> mine -> none -> all
+            if (availabilityFilter === 'all') setAvailabilityFilter('mine');
+            else if (availabilityFilter === 'mine') setAvailabilityFilter('none');
+            else setAvailabilityFilter('all');
+          }}
+          activeOpacity={0.7}>
+          <View style={[styles.dot, styles.dotAvailability, availabilityFilter === 'none' && styles.dotDisabled]} />
+          <Text
+            style={[
+              styles.legendText,
+              {color: colors.text},
+              availabilityFilter === 'none' && styles.legendTextDisabled,
+            ]}>
+            {availabilityFilter === 'all' ? 'Alle Verfügbar' : availabilityFilter === 'mine' ? 'Meine Verfügbar' : 'Verfügbar'}
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.legendItem}
+          onPress={() => setShowOffer(!showOffer)}
+          activeOpacity={0.7}>
+          <View style={[styles.dot, styles.dotOffer, !showOffer && styles.dotDisabled]} />
+          <Text style={[styles.legendText, {color: colors.text}, !showOffer && styles.legendTextDisabled]}>
+            Meine
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.legendItem}
+          onPress={() => setShowRequest(!showRequest)}
+          activeOpacity={0.7}>
+          <View style={[styles.dot, styles.dotRequest, !showRequest && styles.dotDisabled]} />
+          <Text style={[styles.legendText, {color: colors.text}, !showRequest && styles.legendTextDisabled]}>
+            Sonstige
+          </Text>
+        </TouchableOpacity>
       </View>
       </View>
     </WatermarkBackground>
@@ -702,6 +858,7 @@ const styles = StyleSheet.create({
   dot: {width: 7, height: 7, borderRadius: 999},
   dotOpen: {backgroundColor: '#FF9800'},
   dotHasOffer: {backgroundColor: '#4CAF50'},
+  dotAvailability: {backgroundColor: '#10B981'},
   dotRequest: {backgroundColor: '#2563EB'},
   dotOffer: {backgroundColor: '#9333EA'},
 
@@ -736,21 +893,26 @@ const styles = StyleSheet.create({
   eventOpen: {backgroundColor: '#FF9800', borderColor: '#FF9800', borderWidth: 1},
   // Requests that already have an offer should be clearly distinguishable.
   eventHasOffer: {backgroundColor: '#4CAF50', borderColor: '#4CAF50', borderWidth: 1},
+  // Availabilities (Frei-Angebote) in green/teal
+  eventAvailability: {backgroundColor: '#10B981', borderColor: '#10B981', borderWidth: 1},
   eventText: {fontWeight: '800', color: '#111827', fontSize: 12},
   eventTextWhite: {fontWeight: '800', color: '#fff', fontSize: 12},
 
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 16,
+    flexWrap: 'wrap',
+    gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     marginTop: 6,
   },
-  legendItem: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  legendItem: {flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4},
   legendText: {fontSize: 12, fontWeight: '800', color: '#111827'},
+  legendTextDisabled: {textDecorationLine: 'line-through', opacity: 0.5},
+  dotDisabled: {opacity: 0.3},
 
   hint: {display: 'none'},
 });
