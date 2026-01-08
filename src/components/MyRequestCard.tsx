@@ -5,18 +5,82 @@ import {formatDateRange, getTodayTomorrowBadge} from '../utils/dateUtils';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {normalizePhone, tryOpenUrl} from '../utils/contactLinks';
 import {getColors} from '../theme/colors';
+import {RequestOffer} from '../models/RequestOffer';
 
 interface Props {
   request: ParkingRequest & {section?: string};
   onDelete?: (requestId: string) => void;
+  offers?: RequestOffer[];
+  publicUsers?: Record<string, {username?: string; phone?: string}>;
+  currentUserId?: string;
 }
 
-const MyRequestCard: React.FC<Props> = ({request, onDelete}) => {
+const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicUsers, currentUserId}) => {
   const colors = getColors(useColorScheme());
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const canDelete = !request.isFulfilled;
   const dayBadge = getTodayTomorrowBadge(request.from);
   const canContactOnFulfilled = request.isFulfilled && !!request.offeredByPhone;
+  
+  // Finde das aktive Angebot für diesen Request
+  const activeOfferForDisplay = React.useMemo(() => {
+    if (!hasOffer || !request.offeredSpotId || !request.offeredBy) return null;
+    return offers.find(
+      (o) =>
+        o.status === 'active' &&
+        o.offererId === request.offeredBy &&
+        o.spotId === request.offeredSpotId
+    ) || null;
+  }, [hasOffer, request.offeredSpotId, request.offeredBy, offers]);
+  
+  // Abdeckung berechnen
+  const shouldShowCoverage = React.useMemo(() => {
+    if (request.isFulfilled) return false;
+    return offers.length > 0;
+  }, [request.isFulfilled, offers.length]);
+  
+  const coverage = React.useMemo(() => {
+    if (!shouldShowCoverage) return null;
+    const accepted = offers.filter((o) => o.status === 'accepted');
+    const offersToUse = accepted.length > 0 ? accepted : offers.filter((o) => o.status === 'active');
+    const minT = request.from.getTime();
+    const maxT = request.until.getTime();
+    const total = Math.max(0, maxT - minT);
+    if (!total) return {percent: 0, gaps: [{start: minT, end: maxT}]};
+
+    const intervals = offersToUse
+      .map((o) => ({
+        start: Math.max(o.from.getTime(), minT),
+        end: Math.min(o.until.getTime(), maxT),
+      }))
+      .filter((i) => i.end > i.start)
+      .sort((a, b) => a.start - b.start);
+
+    const merged: Array<{start: number; end: number}> = [];
+    for (const it of intervals) {
+      const last = merged[merged.length - 1];
+      if (!last || it.start > last.end) {
+        merged.push({start: it.start, end: it.end});
+      } else {
+        last.end = Math.max(last.end, it.end);
+      }
+    }
+
+    let covered = 0;
+    merged.forEach((m) => (covered += m.end - m.start));
+    const percent = Math.min(100, Math.max(0, Math.round((covered / total) * 100)));
+
+    const gaps: Array<{start: number; end: number}> = [];
+    let cursor = minT;
+    for (const m of merged) {
+      if (m.start > cursor) gaps.push({start: cursor, end: m.start});
+      cursor = Math.max(cursor, m.end);
+      if (cursor >= maxT) break;
+    }
+    if (cursor < maxT) gaps.push({start: cursor, end: maxT});
+
+    return {percent, gaps};
+  }, [offers, request.from, request.until, shouldShowCoverage]);
 
   const commentPreview = React.useMemo(() => {
     const t = String(request.initialCommentText ?? request.lastCommentText ?? '').trim();
@@ -124,20 +188,94 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete}) => {
         </View>
       </View>
 
-      {(hasOffer || request.isFulfilled) && request.offeredSpotId ? (
-        <View style={styles.timeRow}>
-          <Text style={[styles.dateText, {color: colors.text}]} numberOfLines={1}>
+      {(() => {
+        // Bei nicht-erfüllten Requests mit Angebot
+        if (!request.isFulfilled && hasOffer && request.offeredSpotId) {
+          if (activeOfferForDisplay) {
+            const isFullOffer = activeOfferForDisplay.from.getTime() <= request.from.getTime() && 
+                               activeOfferForDisplay.until.getTime() >= request.until.getTime();
+            const offererName = request.offeredByUsername || 
+                               publicUsers?.[request.offeredBy || '']?.username || 
+                               (activeOfferForDisplay as any).offererUsername || 
+                               'Unbekannt';
+            return (
+              <View>
+                <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
+                  {formatDateRange(request.from, request.until)}
+                </Text>
+                {shouldShowCoverage && coverage && (
+                  <Text style={[styles.coverageText, {color: colors.subtext}]}>
+                    Abdeckung: {coverage.percent}%{' '}
+                    {coverage.gaps.length === 0
+                      ? '(vollständig)'
+                      : `· Rest: ${coverage.gaps
+                          .slice(0, 2)
+                          .map((g) => formatDateRange(new Date(g.start), new Date(g.end)))
+                          .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
+                  </Text>
+                )}
+                <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                  <Text style={[styles.offerLabel, {color: colors.subtext}]}>
+                    {isFullOffer ? 'Vollständig' : 'Teilweise'}
+                  </Text>
+                  <Text style={[styles.offerDetails, {color: colors.text}]}>
+                    P {activeOfferForDisplay.spotId} ({offererName}) · {formatDateRange(activeOfferForDisplay.from, activeOfferForDisplay.until)}
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+          
+          // Fallback: Wenn kein aktives Angebot gefunden wurde
+          const offererName = request.offeredByUsername || 
+                             publicUsers?.[request.offeredBy || '']?.username || 
+                             'Unbekannt';
+          return (
+            <View>
+              <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
+                {formatDateRange(request.from, request.until)}
+              </Text>
+              {shouldShowCoverage && coverage && (
+                <Text style={[styles.coverageText, {color: colors.subtext}]}>
+                  Abdeckung: {coverage.percent}%{' '}
+                  {coverage.gaps.length === 0
+                    ? '(vollständig)'
+                    : `· Rest: ${coverage.gaps
+                        .slice(0, 2)
+                        .map((g) => formatDateRange(new Date(g.start), new Date(g.end)))
+                        .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
+                </Text>
+              )}
+              <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angebot</Text>
+                <Text style={[styles.offerDetails, {color: colors.text}]}>
+                  P {request.offeredSpotId} ({offererName}) · {formatDateRange(request.from, request.until)}
+                </Text>
+              </View>
+            </View>
+          );
+        }
+        
+        // Bei erfüllten Requests oder ohne Angebot
+        if (request.isFulfilled && request.offeredSpotId) {
+          return (
+            <View style={styles.timeRow}>
+              <Text style={[styles.dateText, {color: colors.text}]} numberOfLines={1}>
+                {formatDateRange(request.from, request.until)}
+              </Text>
+              <Text style={styles.spotText} numberOfLines={1}>
+                P {request.offeredSpotId}
+              </Text>
+            </View>
+          );
+        }
+        
+        return (
+          <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
             {formatDateRange(request.from, request.until)}
           </Text>
-          <Text style={styles.spotText} numberOfLines={1}>
-            P {request.offeredSpotId}
-          </Text>
-        </View>
-      ) : (
-        <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
-          {formatDateRange(request.from, request.until)}
-        </Text>
-      )}
+        );
+      })()}
 
       {!!commentPreview && (
         <Text style={[styles.commentPreview, {color: colors.subtext}]} numberOfLines={2}>
@@ -261,6 +399,29 @@ const styles = StyleSheet.create({
   },
   actionRed: {
     backgroundColor: '#DC2626',
+  },
+  offerBox: {
+    marginTop: 8,
+    marginBottom: 0,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  offerLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  offerDetails: {
+    fontSize: 12,
+    fontWeight: '700',
+    flexWrap: 'wrap',
+  },
+  coverageText: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 0,
   },
 });
 

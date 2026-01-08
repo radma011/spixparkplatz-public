@@ -41,10 +41,12 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
   const [showUntilDatePicker, setShowUntilDatePicker] = useState(false);
   const [showUntilTimePicker, setShowUntilTimePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSpotPicker, setShowSpotPicker] = useState(false);
 
   // Reset when opening a different request
   React.useEffect(() => {
     if (!request) return;
+    console.log('[OfferModal] Resetting for request:', request.id);
     setSpotIdx(0);
     setIsFull(true);
     setFromDateTime(new Date(request.from));
@@ -54,7 +56,13 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
     setShowUntilDatePicker(false);
     setShowUntilTimePicker(false);
     setIsSubmitting(false);
+    setShowSpotPicker(false);
   }, [request?.id, visible]);
+
+  React.useEffect(() => {
+    console.log('[OfferModal] spotIdx changed to:', spotIdx);
+    console.log('[OfferModal] selectedSpot:', selectedSpot);
+  }, [spotIdx, selectedSpot]);
 
   const selectedSpot = mySpots[spotIdx] ?? mySpots[0];
 
@@ -208,6 +216,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
   }
 
   return (
+    <>
     <Modal 
       visible={visible} 
       animationType="slide" 
@@ -230,7 +239,14 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.body}>
+          <ScrollView 
+            style={styles.body}
+            onScrollBeginDrag={() => {
+              if (showSpotPicker) {
+                console.log('[OfferModal] Scroll started, closing picker');
+                setShowSpotPicker(false);
+              }
+            }}>
             <View style={[styles.requestRangeBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
               <Text style={[styles.requestRangeLabel, {color: colors.subtext}]}>Anfrage-Zeitraum</Text>
               <Text style={[styles.requestRangeText, {color: colors.text}]}>
@@ -240,29 +256,57 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
 
             <View style={styles.rowBetween}>
               <Text style={[styles.label, {color: colors.text}]}>Parkplatz</Text>
-              <View style={styles.row}>
-                <TouchableOpacity
-                  disabled={mySpots.length <= 1}
-                  onPress={() => setSpotIdx((p) => (p - 1 + mySpots.length) % mySpots.length)}
-                  style={[
-                    styles.iconBtn,
-                    {backgroundColor: colors.surface2, borderColor: colors.border},
-                    mySpots.length <= 1 && {opacity: 0.5},
-                  ]}>
-                  <MaterialCommunityIcons name="chevron-left" size={22} color={colors.text} />
-                </TouchableOpacity>
+              {mySpots.length > 1 ? (
+                <View style={styles.spotPickerContainer}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      console.log('[OfferModal] Opening spot picker, mySpots:', mySpots);
+                      setShowSpotPicker(true);
+                    }}
+                    style={[styles.spotPickerButton, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                    <Text style={[styles.spot, {color: colors.text}]}>P {selectedSpot}</Text>
+                    <MaterialCommunityIcons name="chevron-down" size={20} color={colors.text} />
+                  </TouchableOpacity>
+                  {showSpotPicker && (
+                    <View 
+                      style={[styles.pickerCard, {backgroundColor: colors.surface, borderColor: colors.border}]}
+                      pointerEvents="box-none">
+                      <View pointerEvents="auto">
+                        <ScrollView style={styles.pickerBody}>
+                          {mySpots.map((spot, index) => (
+                            <TouchableOpacity
+                              key={spot}
+                              onPress={() => {
+                                console.log('[OfferModal] Spot pressed:', spot, 'index:', index);
+                                console.log('[OfferModal] Current spotIdx before:', spotIdx);
+                                setSpotIdx(index);
+                                console.log('[OfferModal] Setting spotIdx to:', index);
+                                setShowSpotPicker(false);
+                                console.log('[OfferModal] Closing picker');
+                              }}
+                              onPressIn={() => {
+                                console.log('[OfferModal] onPressIn triggered for spot:', spot, 'index:', index);
+                              }}
+                              activeOpacity={0.7}
+                              style={[
+                                styles.pickerItem,
+                                {borderBottomColor: colors.border},
+                                index === spotIdx && {backgroundColor: colors.surface2},
+                              ]}>
+                              <Text style={[styles.pickerItemText, {color: colors.text}]}>P {spot}</Text>
+                              {index === spotIdx && (
+                                <MaterialCommunityIcons name="check" size={20} color={colors.brand} />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              ) : (
                 <Text style={[styles.spot, {color: colors.text}]}>P {selectedSpot}</Text>
-                <TouchableOpacity
-                  disabled={mySpots.length <= 1}
-                  onPress={() => setSpotIdx((p) => (p + 1) % mySpots.length)}
-                  style={[
-                    styles.iconBtn,
-                    {backgroundColor: colors.surface2, borderColor: colors.border},
-                    mySpots.length <= 1 && {opacity: 0.5},
-                  ]}>
-                  <MaterialCommunityIcons name="chevron-right" size={22} color={colors.text} />
-                </TouchableOpacity>
-              </View>
+              )}
             </View>
 
             <View style={styles.switchRow}>
@@ -487,8 +531,10 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
             </TouchableOpacity>
           </View>
         </View>
+
       </View>
     </Modal>
+    </>
   );
 }
 
@@ -498,9 +544,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)', 
     justifyContent: 'center', 
     alignItems: 'center',
-    padding: 16,
+    padding: 20,
   },
-  card: {borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, elevation: 10},
+  card: {
+    width: '95%',
+    maxWidth: 600,
+    borderRadius: 16, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.25, 
+    shadowRadius: 10, 
+    elevation: 10
+  },
   header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1},
   title: {fontSize: 18, fontWeight: '900'},
   close: {fontSize: 22, fontWeight: '300'},
@@ -532,6 +586,53 @@ const styles = StyleSheet.create({
   summary: {marginTop: 14, borderRadius: 12, borderWidth: 1, padding: 12},
   summaryLabel: {fontWeight: '800', fontSize: 12},
   summaryText: {fontWeight: '800', marginTop: 4},
+
+  spotPickerContainer: {
+    position: 'relative',
+    zIndex: 10,
+    alignItems: 'flex-end',
+  },
+  spotPickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  pickerCard: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: 4,
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1002,
+    maxHeight: 300,
+    overflow: 'hidden',
+    pointerEvents: 'box-none',
+  },
+  pickerBody: {
+    maxHeight: 300,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  pickerItemText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
 
 

@@ -19,6 +19,7 @@ import MyRequestCard from '../components/MyRequestCard';
 import ParkingRequestService from '../services/ParkingRequestService';
 import {getColors} from '../theme/colors';
 import WatermarkBackground from '../components/WatermarkBackground';
+import {RequestOffer} from '../models/RequestOffer';
 
 interface Props {
   currentUserId: string;
@@ -35,6 +36,8 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
     {},
   );
   const publicUserUnsubsRef = useRef<Record<string, () => void>>({});
+  const [offersByRequestId, setOffersByRequestId] = useState<Record<string, RequestOffer[]>>({});
+  const offerUnsubsRef = useRef<Record<string, () => void>>({});
 
   const handleDeleteRequest = (requestId: string) => {
     Alert.alert(
@@ -110,6 +113,56 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
     });
   }, [requests]);
 
+  // Watch offers for requests with offers or open requests (to show coverage)
+  useEffect(() => {
+    const requestIds = new Set<string>();
+    requests.forEach((r) => {
+      // Load offers for all requests (to calculate coverage)
+      // This includes requests with offers, fulfilled requests, and open requests
+      if (hasOffer(r) || r.isFulfilled || isOpen(r)) {
+        requestIds.add(r.id);
+      }
+    });
+
+    // Subscribe to new requests
+    requestIds.forEach((requestId) => {
+      if (offerUnsubsRef.current[requestId]) return;
+      offerUnsubsRef.current[requestId] = ParkingRequestService.watchOffersForRequest(requestId).onSnapshot(
+        (snap: any) => {
+          const offers: RequestOffer[] = (snap?.docs ?? []).map((d: any) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              requestId,
+              offererId: data.offererId,
+              spotId: data.spotId,
+              from: data.from ? (data.from as any).toDate() : new Date(),
+              until: data.until ? (data.until as any).toDate() : new Date(),
+              status: (data.status as 'active' | 'accepted' | 'withdrawn') || 'active',
+              offererUsername: data.offererUsername,
+            } as RequestOffer;
+          });
+          setOffersByRequestId((prev) => ({...prev, [requestId]: offers}));
+        },
+      );
+    });
+
+    // Unsubscribe from removed requests
+    Object.keys(offerUnsubsRef.current).forEach((requestId) => {
+      if (requestIds.has(requestId)) return;
+      try {
+        offerUnsubsRef.current[requestId]?.();
+      } finally {
+        delete offerUnsubsRef.current[requestId];
+        setOffersByRequestId((prev) => {
+          const next = {...prev};
+          delete next[requestId];
+          return next;
+        });
+      }
+    });
+  }, [requests]);
+
   useEffect(() => {
     return () => {
       Object.values(publicUserUnsubsRef.current).forEach((fn) => {
@@ -118,6 +171,13 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
         } catch {}
       });
       publicUserUnsubsRef.current = {};
+      
+      Object.values(offerUnsubsRef.current).forEach((fn) => {
+        try {
+          fn();
+        } catch {}
+      });
+      offerUnsubsRef.current = {};
     };
   }, []);
 
@@ -164,7 +224,13 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
         ]}
         keyExtractor={(item) => item.id}
         renderItem={({item}) => (
-          <MyRequestCard request={item} onDelete={handleDeleteRequest} />
+          <MyRequestCard 
+            request={item} 
+            onDelete={handleDeleteRequest}
+            offers={offersByRequestId[item.id] ?? []}
+            publicUsers={publicUsers}
+            currentUserId={currentUserId}
+          />
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={

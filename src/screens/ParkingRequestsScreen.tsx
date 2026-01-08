@@ -505,7 +505,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         r.isFulfilled && Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId);
       const iAmLegacyOfferer = r.offeredBy === currentUserId;
       const isOpenToCover = !r.isFulfilled && !r.offeredSpotId; // include open requests so everyone can see coverage
-      if (iAmRequester || iAmFulfilledOfferer || iAmLegacyOfferer || isOpenToCover) ids.add(r.id);
+      const hasOfferAndIAmRequester = !r.isFulfilled && r.offeredSpotId && iAmRequester; // Load offers for requester even if request has an offer
+      if (iAmRequester || iAmFulfilledOfferer || iAmLegacyOfferer || isOpenToCover || hasOfferAndIAmRequester) ids.add(r.id);
     });
 
     ids.forEach((requestId) => {
