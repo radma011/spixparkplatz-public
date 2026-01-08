@@ -1,4 +1,31 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# SpixParkplatz
+
+This is a [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+
+## ⚠️ License & Usage Rights
+
+**IMPORTANT: VIEW-ONLY LICENSE — ALL RIGHTS RESERVED**
+
+This repository is made publicly available for **viewing purposes only**. 
+
+### What is allowed:
+- ✅ Viewing the source code on GitHub
+- ✅ Forking the repository on GitHub (as permitted by GitHub's Terms of Service)
+
+### What is NOT allowed:
+- ❌ Using this code in your own projects
+- ❌ Modifying or adapting this code
+- ❌ Distributing or sharing this code
+- ❌ Creating derivative works based on this code
+- ❌ Any commercial or non-commercial use of this code
+
+**Copyright Notice:** All rights reserved. This code is proprietary and protected by copyright law. No license is granted for use, modification, or distribution.
+
+If you are interested in using this code, please contact the repository owner to discuss licensing options.
+
+---
+
+## Getting Started
 
 # Getting Started
 

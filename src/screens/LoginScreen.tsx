@@ -9,6 +9,9 @@ import {
   Image,
   View,
   useColorScheme,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AuthService from '../services/AuthService';
@@ -26,6 +29,8 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -104,41 +109,90 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
       <TouchableOpacity
         style={styles.linkButton}
         onPress={() => {
-          Alert.prompt(
-            'Passwort zurücksetzen',
-            'Gib deine E-Mail-Adresse ein:',
-            [
-              {text: 'Abbrechen', style: 'cancel'},
-              {
-                text: 'Senden',
-                onPress: async (email?: string) => {
-                  if (email && email.includes('@')) {
-                    try {
-                      await AuthService.resetPassword(email);
-                      Alert.alert(
-                        'E-Mail gesendet',
-                        'Eine E-Mail zum Zurücksetzen des Passworts wurde gesendet.',
-                      );
-                    } catch (error: any) {
-                      let errorMessage = 'Passwort konnte nicht zurückgesetzt werden';
-                      if (error.code === 'auth/user-not-found') {
-                        errorMessage = 'Kein Konto mit dieser E-Mail gefunden';
-                      } else if (error.code === 'auth/invalid-email') {
-                        errorMessage = 'Ungültige E-Mail-Adresse';
-                      }
-                      Alert.alert('Fehler', errorMessage);
-                    }
-                  }
-                },
-              },
-            ],
-            'plain-text',
-            email,
-          );
+          setResetEmail(email);
+          setShowResetPasswordModal(true);
         }}
         disabled={loading}>
         <Text style={[styles.linkText, {color: colors.brand}]}>Passwort vergessen?</Text>
       </TouchableOpacity>
+
+      <Modal
+        visible={showResetPasswordModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowResetPasswordModal(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, {backgroundColor: colors.surface}]}>
+              <Text style={[styles.modalTitle, {color: colors.text}]}>Passwort zurücksetzen</Text>
+              <Text style={[styles.modalSubtitle, {color: colors.subtext}]}>
+                Gib deine E-Mail-Adresse ein:
+              </Text>
+              <TextInput
+                style={[styles.modalInput, {backgroundColor: colors.surface2, borderColor: colors.border, color: colors.text}]}
+                placeholder="deine@email.de"
+                placeholderTextColor={colors.subtext}
+                value={resetEmail}
+                onChangeText={setResetEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoFocus
+                editable={!loading}
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalCancelButton, {backgroundColor: colors.surface2, borderColor: colors.border}]}
+                  onPress={() => {
+                    setShowResetPasswordModal(false);
+                    setResetEmail('');
+                  }}
+                  disabled={loading}>
+                  <Text style={[styles.modalButtonText, {color: colors.subtext}]}>Abbrechen</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalSendButton, {backgroundColor: colors.brand}, loading && styles.modalButtonDisabled]}
+                  onPress={async () => {
+                    if (resetEmail && resetEmail.includes('@')) {
+                      setLoading(true);
+                      try {
+                        await AuthService.resetPassword(resetEmail);
+                        Alert.alert(
+                          'E-Mail gesendet',
+                          'Eine E-Mail zum Zurücksetzen des Passworts wurde gesendet.',
+                          [{text: 'OK', onPress: () => {
+                            setShowResetPasswordModal(false);
+                            setResetEmail('');
+                          }}],
+                        );
+                      } catch (error: any) {
+                        let errorMessage = 'Passwort konnte nicht zurückgesetzt werden';
+                        if (error.code === 'auth/user-not-found') {
+                          errorMessage = 'Kein Konto mit dieser E-Mail gefunden';
+                        } else if (error.code === 'auth/invalid-email') {
+                          errorMessage = 'Ungültige E-Mail-Adresse';
+                        }
+                        Alert.alert('Fehler', errorMessage);
+                      } finally {
+                        setLoading(false);
+                      }
+                    } else {
+                      Alert.alert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
+                    }
+                  }}
+                  disabled={loading}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.modalSendButtonText}>Senden</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAwareScreen>
   );
 };
@@ -205,6 +259,70 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  modalInput: {
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  modalSendButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalSendButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
 
