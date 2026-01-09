@@ -10,6 +10,7 @@ import {
   useColorScheme,
   Platform,
   TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -230,21 +231,26 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
       presentationStyle="overFullScreen"
     >
       <View style={styles.overlay}>
-        <View
-          style={[
-            styles.card,
-            {backgroundColor: colors.surface},
-            colors.isDark && {borderColor: colors.border, borderWidth: 1, shadowOpacity: 0, elevation: 0},
-          ]}>
-          <View style={[styles.header, {borderBottomColor: colors.border}]}>
-            <Text style={[styles.title, {color: colors.text}]}>Parkplatz anbieten</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={[styles.close, {color: colors.subtext}]}>✕</Text>
-            </TouchableOpacity>
-          </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{width: '100%'}}>
+          <View
+            style={[
+              styles.card,
+              {backgroundColor: colors.surface},
+              colors.isDark && {borderColor: colors.border, borderWidth: 1, shadowOpacity: 0, elevation: 0},
+            ]}>
+            <View style={[styles.header, {borderBottomColor: colors.border}]}>
+              <Text style={[styles.title, {color: colors.text}]}>Parkplatz anbieten</Text>
+              <TouchableOpacity onPress={onClose}>
+                <Text style={[styles.close, {color: colors.subtext}]}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-          <ScrollView 
+            <ScrollView 
             style={styles.body}
+            contentContainerStyle={styles.bodyContent}
+            keyboardShouldPersistTaps="handled"
             onScrollBeginDrag={() => {
               if (showSpotPicker) {
                 console.log('[OfferModal] Scroll started, closing picker');
@@ -555,8 +561,8 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
               <Text style={[styles.btnText, {color: '#fff'}]}>{isSubmitting ? 'Sende…' : 'Anbieten'}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
     </>
@@ -583,7 +589,8 @@ const styles = StyleSheet.create({
   header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1},
   title: {fontSize: 18, fontWeight: '900'},
   close: {fontSize: 22, fontWeight: '300'},
-  body: {padding: 16, maxHeight: 520},
+  body: {maxHeight: 600},
+  bodyContent: {padding: 16, paddingBottom: 20},
   requestRangeBox: {borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12},
   requestRangeLabel: {fontWeight: '900', fontSize: 12},
   requestRangeText: {fontWeight: '900', marginTop: 4},

@@ -347,7 +347,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         spotId,
         from,
         until,
-        recurrence,
+        recurrence || undefined,
         currentUserData.username,
         currentUserData.phone,
         autoOffer,
@@ -913,7 +913,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               refreshing={loading}
               onRefresh={async () => {
                 setLoading(true);
-                const newRequests = await FirestoreService.getRelevantRequests(currentUserId);
+                const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
                 setRequests(newRequests);
                 setLoading(false);
               }}

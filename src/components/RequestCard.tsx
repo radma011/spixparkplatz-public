@@ -840,7 +840,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
-    marginBottom: 0,
+    marginBottom: 8,
     gap: 6,
   },
   commentChip: {
