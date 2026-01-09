@@ -49,7 +49,7 @@ export const modalStyles = StyleSheet.create({
     fontWeight: '300',
   },
   modalBody: {
-    maxHeight: 500,
+    // maxHeight is set dynamically via props
   },
   modalBodyContent: {
     paddingHorizontal: 20,

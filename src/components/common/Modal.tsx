@@ -50,7 +50,10 @@ const BaseModal: React.FC<BaseModalProps> = ({
           <View
             style={[
               modalStyles.modalContent,
-              {backgroundColor: colors.surface},
+              {
+                backgroundColor: colors.surface,
+                maxHeight: typeof maxHeight === 'number' ? maxHeight + 120 : (maxHeight || '95%'),
+              },
               colors.isDark && {
                 borderWidth: 1,
                 borderColor: colors.border,
@@ -68,7 +71,10 @@ const BaseModal: React.FC<BaseModalProps> = ({
             </View>
 
             <ScrollView
-              style={[modalStyles.modalBody, {maxHeight}]}
+              style={[
+                modalStyles.modalBody,
+                typeof maxHeight === 'number' ? {maxHeight} : {},
+              ]}
               contentContainerStyle={modalStyles.modalBodyContent}
               keyboardShouldPersistTaps="handled">
               {children}

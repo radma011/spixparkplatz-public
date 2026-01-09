@@ -133,9 +133,11 @@ const NewAvailabilityModal: React.FC<Props> = ({
       until = new Date(startDate);
       until.setHours(endTime.getHours(), endTime.getMinutes(), 0, 0);
 
+      // If end time is before or equal to start time, assume end time is on the next day
       if (until <= from) {
-        Alert.alert('Fehler', 'End-Zeit muss nach Start-Zeit liegen');
-        return;
+        until = new Date(startDate);
+        until.setDate(until.getDate() + 1);
+        until.setHours(endTime.getHours(), endTime.getMinutes(), 0, 0);
       }
 
       recurrence = {
@@ -158,9 +160,11 @@ const NewAvailabilityModal: React.FC<Props> = ({
       from = fromDateTime;
       until = untilDateTime;
 
+      // If end time is before or equal to start time, assume end time is on the next day
       if (until <= from) {
-        Alert.alert('Fehler', 'Bis muss nach Von liegen');
-        return;
+        until = new Date(fromDateTime);
+        until.setDate(until.getDate() + 1);
+        until.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
       }
     }
 
@@ -193,6 +197,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
       visible={visible}
       onClose={handleClose}
       title={editingAvailability ? 'Verfügbarkeit bearbeiten' : 'Neue Verfügbarkeit'}
+      maxHeight="95%"
       footer={
         <>
           <Button
@@ -866,11 +871,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             if (date) {
                               const next = new Date(date);
                               next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
-                              if (next > fromDateTime) {
-                                setUntilDateTime(next);
-                              } else {
-                                Alert.alert('Fehler', 'Bis muss nach Von liegen');
-                              }
+                              setUntilDateTime(next);
                             }
                           }}
                         />
@@ -889,11 +890,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
                               if (date) {
                                 const next = new Date(date);
                                 next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
-                                if (next > fromDateTime) {
-                                  setUntilDateTime(next);
-                                } else {
-                                  Alert.alert('Fehler', 'Bis muss nach Von liegen');
-                                }
+                                setUntilDateTime(next);
                               }
                             }}
                             style={inputStyles.picker}
@@ -914,11 +911,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             if (time) {
                               const next = new Date(untilDateTime);
                               next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                              if (next > fromDateTime) {
-                                setUntilDateTime(next);
-                              } else {
-                                Alert.alert('Fehler', 'Bis muss nach Von liegen');
-                              }
+                              setUntilDateTime(next);
                             }
                           }}
                         />
@@ -937,11 +930,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
                               if (time) {
                                 const next = new Date(untilDateTime);
                                 next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                                if (next > fromDateTime) {
-                                  setUntilDateTime(next);
-                                } else {
-                                  Alert.alert('Fehler', 'Bis muss nach Von liegen');
-                                }
+                                setUntilDateTime(next);
                               }
                             }}
                             style={inputStyles.picker}
@@ -1013,25 +1002,22 @@ const styles = StyleSheet.create({
   },
   daysRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    flexWrap: 'nowrap',
+    gap: 6,
+    justifyContent: 'space-between',
   },
   dayButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    flex: 1,
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   dayButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-  },
-  clearButton: {
-    position: 'absolute',
-    right: 8,
-    top: 32,
   },
   // Button styles moved to src/styles/buttons.ts
 });
