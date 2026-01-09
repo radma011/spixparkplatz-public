@@ -78,6 +78,21 @@ class FirestoreService {
     });
   }
 
+  async getPublicUser(uid: string): Promise<{username?: string; phone?: string} | null> {
+    try {
+      const snap = await getDoc(doc(this.usersPublicCollection, uid));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      return {
+        username: data?.username,
+        phone: data?.phone,
+      };
+    } catch (e) {
+      console.error('Failed to get public user:', uid, e);
+      return null;
+    }
+  }
+
   // Stream aller offenen Anfragen
   watchOpenRequests(facilityCode: string) {
     // IMPORTANT: Keep query index-free by filtering only by isFulfilled + until, then filter facilityCode client-side
@@ -321,10 +336,10 @@ class FirestoreService {
   async withdrawMyOffersForRequest(requestId: string, offeringUserId: string): Promise<void> {
     const q = query(this.offersCollection(requestId), where('offererId', '==', offeringUserId));
     const snap = await getDocs(q);
-    // Setze sowohl 'active' als auch 'accepted' Angebote auf 'withdrawn'
+    // Setze sowohl 'active', 'accepted' als auch 'standby' Angebote auf 'withdrawn'
     const toWithdraw = snap.docs.filter((d) => {
       const status = d.data()?.status ?? 'active';
-      return status === 'active' || status === 'accepted';
+      return status === 'active' || status === 'accepted' || status === 'standby';
     });
     await Promise.all(
       toWithdraw.map((d) =>
@@ -483,7 +498,7 @@ class FirestoreService {
     const snap = await getDocs(q);
     const hasActiveOffer = snap.docs.some((d) => {
       const status = d.data()?.status ?? 'active';
-      return status === 'active' || status === 'accepted';
+      return status === 'active' || status === 'accepted' || status === 'standby';
     });
     
     // Prüfe auch, ob offeredBy auf dem Request gesetzt ist (für vollständige Angebote)
@@ -504,6 +519,7 @@ class FirestoreService {
       offeredSpotId: FieldValue.delete(),
       offeredBy: FieldValue.delete(),
       offeredAt: FieldValue.delete(),
+      fullOfferId: FieldValue.delete(),
       // Wenn das Angebot storniert wird, muss der Request wieder "offen" werden
       // damit andere wieder anbieten können
       isFulfilled: false,

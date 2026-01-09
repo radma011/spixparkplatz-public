@@ -1,4 +1,4 @@
-export type OfferStatus = 'active' | 'withdrawn' | 'accepted';
+export type OfferStatus = 'active' | 'withdrawn' | 'accepted' | 'standby';
 
 export interface RequestOffer {
   id: string;

@@ -1,7 +1,7 @@
 import FirestoreService from './FirestoreService';
 import PushNotificationService from './PushNotificationService';
 import {ParkingRequest} from '../models/ParkingRequest';
-import {formatDateTime} from '../utils/dateUtils';
+import {formatDateTime, formatDateRange} from '../utils/dateUtils';
 import {RequestOffer} from '../models/RequestOffer';
 
 class ParkingRequestService {
@@ -140,12 +140,29 @@ class ParkingRequestService {
   async acceptOffer(requestId: string, offer: RequestOffer): Promise<void> {
     await FirestoreService.acceptOffer(requestId, offer);
 
+    // Load request to get requester name
+    let requesterName = 'einem Nutzer';
+    try {
+      const request = await FirestoreService.getParkingRequestById(requestId);
+      if (request?.requestedByUsername) {
+        requesterName = request.requestedByUsername;
+      } else if (request?.requestedBy) {
+        // Try to load username from users_public if not in request document
+        const publicUser = await FirestoreService.getPublicUser(request.requestedBy);
+        if (publicUser?.username) {
+          requesterName = publicUser.username;
+        }
+      }
+    } catch (e) {
+      console.log('Failed to load requester name:', e);
+    }
+
     // Notify offerer
     try {
       await PushNotificationService.sendPushToUser(
         offer.offererId,
         'Anfrage angenommen',
-        `Dein Angebot für Parkplatz ${offer.spotId} wurde angenommen`,
+        `Dein Angebot für Parkplatz ${offer.spotId} wurde von ${requesterName} angenommen`,
         {
           type: 'offer_accepted',
           requestId,
@@ -180,15 +197,20 @@ class ParkingRequestService {
     recipients.delete(currentUserId);
 
     const requesterDidArchive = currentUserId === request.requestedBy;
+    const timeRange = formatDateRange(request.from, request.until);
+    const requesterName = request.requestedByUsername || 'einem Nutzer';
+    
     const title = requesterDidArchive
       ? 'Parkplatzangebot nicht mehr benötigt'
       : '⚠️ Angebot zurückgezogen';
-    const body = requesterDidArchive
-      ? 'Dein Parkplatzangebot wird nicht länger benötigt. Danke!'
-      : 'Das Angebot für den Parkplatz wurde zurückgezogen!';
-
+    
     await Promise.all(
       Array.from(recipients).map(async (uid) => {
+        const isRequester = uid === request.requestedBy;
+        const body = requesterDidArchive
+          ? `Dein Parkplatzangebot für ${timeRange} von ${requesterName} wird nicht länger benötigt. Danke!`
+          : 'Das Angebot für den Parkplatz wurde zurückgezogen!';
+        
         try {
           await PushNotificationService.sendPushToUser(uid, title, body, {
             type: 'request_archived',

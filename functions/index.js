@@ -131,7 +131,7 @@ exports.onOfferCreated = r1.firestore
       {merge: true},
     );
 
-    // Withdraw other active offers
+    // Set other active offers to standby (they will be withdrawn if this full offer is accepted)
     const offersCol = reqRef.collection('offers');
     const offersSnap = await offersCol.get();
     const batch = admin.firestore().batch();
@@ -139,7 +139,10 @@ exports.onOfferCreated = r1.firestore
       if (d.id === offerId) return;
       const st = d.get('status') || 'active';
       if (st !== 'active') return;
-      batch.update(d.ref, {status: 'withdrawn', updatedAt: admin.firestore.FieldValue.serverTimestamp()});
+      batch.update(d.ref, {
+        status: 'standby',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     });
     await batch.commit();
   });
@@ -230,6 +233,86 @@ exports.onCommentCreated = r1.firestore
     );
   });
 
+/**
+ * When a request is updated, check if a full offer was cancelled.
+ * If offeredSpotId/offeredBy are removed, reactivate standby offers.
+ * Also handle notifications when fulfilled requests are cancelled.
+ */
+exports.onRequestUpdated = r1.firestore
+  .document('parking_requests/{requestId}')
+  .onUpdate(async (change, context) => {
+    const requestId = context.params.requestId;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    
+    // Check if fulfilled request was cancelled (isFulfilled changed from true to false)
+    const wasFulfilled = before.isFulfilled === true;
+    const isFulfilled = after.isFulfilled === true;
+    
+    if (wasFulfilled && !isFulfilled && !after.isArchived) {
+      // Fulfilled request was cancelled - notify requester
+      const requesterUid = after.requestedBy;
+      if (typeof requesterUid === 'string' && requesterUid) {
+        const title = '⚠️ Angebot zurückgezogen';
+        const body = 'Das Angebot für deine Parkplatzanfrage wurde zurückgezogen.';
+        try {
+          await sendPushToUserByUid(admin, requesterUid, title, body, {
+            type: 'offer_cancelled',
+            requestId: String(requestId),
+          });
+        } catch (e) {
+          console.log('Push send (offer_cancelled) failed:', e?.message ?? e);
+        }
+      }
+      
+      // Notify offerers whose offers were accepted (now withdrawn)
+      const fulfilledByUserIds = Array.isArray(before.fulfilledByUserIds) ? before.fulfilledByUserIds : [];
+      if (before.offeredBy && typeof before.offeredBy === 'string') {
+        fulfilledByUserIds.push(before.offeredBy);
+      }
+      
+      const uniqueOffererIds = Array.from(new Set(fulfilledByUserIds));
+      for (const offererId of uniqueOffererIds) {
+        if (typeof offererId === 'string' && offererId && offererId !== requesterUid) {
+          const title = '⚠️ Angebot zurückgezogen';
+          const body = 'Die Parkplatzanfrage wurde zurückgezogen.';
+          try {
+            await sendPushToUserByUid(admin, offererId, title, body, {
+              type: 'request_cancelled',
+              requestId: String(requestId),
+            });
+          } catch (e) {
+            console.log('Push send (request_cancelled) failed:', e?.message ?? e);
+          }
+        }
+      }
+    }
+    
+    // Check if full offer was cancelled (offeredSpotId or offeredBy removed)
+    const hadFullOffer = typeof before.offeredSpotId === 'string' && before.offeredSpotId.length > 0;
+    const hasFullOffer = typeof after.offeredSpotId === 'string' && after.offeredSpotId.length > 0;
+    
+    if (hadFullOffer && !hasFullOffer && !after.isFulfilled && !after.isArchived) {
+      // Full offer was cancelled, reactivate standby offers
+      const reqRef = admin.firestore().collection('parking_requests').doc(requestId);
+      const offersCol = reqRef.collection('offers');
+      const offersSnap = await offersCol.get();
+      const batch = admin.firestore().batch();
+      
+      offersSnap.docs.forEach((d) => {
+        const st = d.get('status') || 'active';
+        if (st === 'standby') {
+          batch.update(d.ref, {
+            status: 'active',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      });
+      
+      await batch.commit();
+    }
+  });
+
 exports.onRequestCreated = functions.firestore
 exports.onRequestCreated = r1.firestore
   .document('parking_requests/{requestId}')
@@ -311,6 +394,35 @@ exports.onOfferUpdated = r1.firestore
           console.log('Push send (offer_withdrawn) failed:', e?.message ?? e);
         }
       }
+      
+      // If this was a full offer that was withdrawn, reactivate standby offers
+      const wasFullOffer = reqData.fullOfferId === offerId;
+      if (wasFullOffer && typeof reqData.offeredSpotId === 'string' && reqData.offeredSpotId.length > 0) {
+        // Clear the full offer fields on the request
+        await reqRef.set(
+          {
+            offeredSpotId: admin.firestore.FieldValue.delete(),
+            offeredBy: admin.firestore.FieldValue.delete(),
+            offeredAt: admin.firestore.FieldValue.delete(),
+            fullOfferId: admin.firestore.FieldValue.delete(),
+          },
+          {merge: true},
+        );
+        
+        // Reactivate standby offers
+        const offersSnap = await reqRef.collection('offers').get();
+        const batch = admin.firestore().batch();
+        offersSnap.docs.forEach((d) => {
+          const st = d.get('status') || 'active';
+          if (st === 'standby') {
+            batch.update(d.ref, {
+              status: 'active',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        });
+        await batch.commit();
+      }
     }
 
     const offersSnap = await reqRef.collection('offers').get();
@@ -375,19 +487,49 @@ exports.onOfferUpdated = r1.firestore
       {merge: true},
     );
 
-    // Withdraw remaining active offers
+    // Withdraw remaining active and standby offers, and notify standby offerers
     const batch = admin.firestore().batch();
+    const standbyOffers = [];
     offersSnap.docs.forEach((d) => {
       const st = d.get('status') || 'active';
-      if (st !== 'active') return;
-      batch.update(d.ref, {
-        status: 'withdrawn',
-        withdrawnReason: 'auto',
-        withdrawnBy: 'system',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      if (st === 'active' || st === 'standby') {
+        const isStandby = st === 'standby';
+        batch.update(d.ref, {
+          status: 'withdrawn',
+          withdrawnReason: 'auto',
+          withdrawnBy: 'system',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        if (isStandby) {
+          standbyOffers.push({
+            offererId: d.get('offererId'),
+            spotId: d.get('spotId'),
+            offerId: d.id,
+          });
+        }
+      }
     });
     await batch.commit();
+
+    // Notify standby offerers that their offer was cancelled
+    for (const standbyOffer of standbyOffers) {
+      if (standbyOffer.offererId) {
+        const spotId = standbyOffer.spotId ? String(standbyOffer.spotId) : '';
+        const title = '⚠️ Teilangebot storniert';
+        const body = spotId
+          ? `Dein Teilangebot für Parkplatz ${spotId} wurde storniert, da ein vollständiges Angebot angenommen wurde.`
+          : 'Dein Teilangebot wurde storniert, da ein vollständiges Angebot angenommen wurde.';
+        try {
+          await sendPushToUserByUid(String(standbyOffer.offererId), title, body, {
+            type: 'offer_cancelled',
+            requestId: String(requestId),
+            offerId: String(standbyOffer.offerId),
+          });
+        } catch (e) {
+          console.log('Push send (offer_cancelled) failed:', e?.message ?? e);
+        }
+      }
+    }
   });
 
 /**

@@ -120,8 +120,11 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               return isInvolved;
             }
             // Zeige Anfragen mit Angebot, wenn der User beteiligt ist
-            if (r.offeredSpotId) {
-              return r.requestedBy === currentUserId || r.offeredBy === currentUserId;
+            // (Requester, Anbieter des vollständigen Angebots, oder User mit Standby-Angebot)
+            // Load all non-fulfilled requests with offers - we'll check for standby offers in the frontend
+            if (r.offeredSpotId && !r.isFulfilled) {
+              // Always load requests with offers (not fulfilled) so we can check for standby offers
+              return true;
             }
             return false;
           });
@@ -509,7 +512,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       const iAmLegacyOfferer = r.offeredBy === currentUserId;
       const isOpenToCover = !r.isFulfilled && !r.offeredSpotId; // include open requests so everyone can see coverage
       const hasOfferAndIAmRequester = !r.isFulfilled && r.offeredSpotId && iAmRequester; // Load offers for requester even if request has an offer
-      if (iAmRequester || iAmFulfilledOfferer || iAmLegacyOfferer || isOpenToCover || hasOfferAndIAmRequester) ids.add(r.id);
+      const hasOfferAndNotFulfilled = !r.isFulfilled && r.offeredSpotId; // Load offers for all requests with offers (to check for standby)
+      if (iAmRequester || iAmFulfilledOfferer || iAmLegacyOfferer || isOpenToCover || hasOfferAndIAmRequester || hasOfferAndNotFulfilled) ids.add(r.id);
     });
 
     ids.forEach((requestId) => {
@@ -519,6 +523,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           const offers: RequestOffer[] = (snap?.docs ?? [])
             .map((d: any) => {
               const data = d.data();
+              const status = data.status ?? 'active';
               return {
                 id: d.id,
                 requestId,
@@ -526,7 +531,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                 spotId: data.spotId,
                 from: (data.from as any).toDate(),
                 until: (data.until as any).toDate(),
-                status: data.status ?? 'active',
+                status: status as 'active' | 'withdrawn' | 'accepted' | 'standby',
                 createdAt: data.createdAt ? (data.createdAt as any).toDate() : undefined,
               } as RequestOffer;
             });
@@ -567,16 +572,34 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     // IMPORTANT: use displayRequests here too, otherwise usernames/phones may briefly show as UID.
     const myOffers = displayRequests
       .filter(
-        (r) =>
-          !r.isFulfilled &&
-          !r.isArchived &&
-          r.offeredBy === currentUserId &&
-          r.requestedBy !== currentUserId,
+        (r) => {
+          if (r.isFulfilled || r.isArchived || r.requestedBy === currentUserId) return false;
+          
+          // Include if I have a full offer (offeredBy matches)
+          if (r.offeredBy === currentUserId) return true;
+          
+          // Include if I have an active or standby offer in the subcollection
+          const myOffersForRequest = offersByRequestId[r.id] || [];
+          const hasMyOffer = myOffersForRequest.some(
+            (o) => o.offererId === currentUserId && (o.status === 'active' || o.status === 'standby')
+          );
+          return hasMyOffer;
+        }
       )
       .sort(sortByStartAsc);
 
+    // Exclude requests where I already have an offer (to avoid duplicates with "Meine Angebote")
+    const requestIdsWithMyOffers = new Set(
+      myOffers.map(r => r.id)
+    );
+    
     const openRequests = displayRequests
-      .filter((r) => isOpen(r) && r.requestedBy !== currentUserId && !r.isArchived)
+      .filter((r) => {
+        if (!isOpen(r) || r.requestedBy === currentUserId || r.isArchived) return false;
+        // Exclude if I already have an offer for this request
+        if (requestIdsWithMyOffers.has(r.id)) return false;
+        return true;
+      })
       .sort(sortByStartAsc);
 
     const sections: RequestSection[] = [];
@@ -586,7 +609,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     sections.unshift({title: 'Meine Anfragen', data: myRequests});
     sections.push({title: 'Offene Anfragen', data: openRequests});
     return sections;
-  }, [displayRequests, currentUserId]);
+  }, [displayRequests, currentUserId, offersByRequestId]);
 
   const fulfilledSections = useMemo(() => {
     const sortByUntilDesc = (a: ParkingRequest, b: ParkingRequest) =>

@@ -43,14 +43,21 @@ const RequestCard: React.FC<Props> = ({
   const colors = getColors(useColorScheme());
   const isMyRequest = request.requestedBy === currentUserId;
   
-  // Finde mein aktives Angebot (auch bei Teilangeboten)
+  // Finde mein aktives oder standby Angebot (auch bei Teilangeboten)
   const myActiveOffer = React.useMemo(() => {
     return offers.find(
-      (o) => o.status === 'active' && o.offererId === currentUserId
+      (o) => (o.status === 'active' || o.status === 'standby') && o.offererId === currentUserId
     );
   }, [offers, currentUserId]);
   
-  const isMyOffer = !!myActiveOffer || request.offeredBy === currentUserId;
+  // Finde mein akzeptiertes Angebot (bei erfüllten Anfragen)
+  const myAcceptedOffer = React.useMemo(() => {
+    return offers.find(
+      (o) => o.status === 'accepted' && o.offererId === currentUserId
+    );
+  }, [offers, currentUserId]);
+  
+  const isMyOffer = !!myActiveOffer || !!myAcceptedOffer || request.offeredBy === currentUserId;
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const isFulfilled = request.isFulfilled;
   const isArchived = !!request.isArchived;
@@ -207,14 +214,18 @@ const RequestCard: React.FC<Props> = ({
 
   const canContactOfferer = isMyRequest && hasOffer && !isFulfilled;
   const canContactOnFulfilled = isFulfilled && (isMyRequest || isMyOffer);
-  const isInvolvedInFulfilled =
+  // Für Requester: Zeige "Aufheben"-Button bei erfüllten Anfragen
+  const canRequesterUnfulfill = 
     isFulfilled &&
-    !isArchived && // Nicht anzeigen, wenn bereits archiviert
-    !hasOffer && // Nicht anzeigen, wenn noch ein Angebot vorhanden ist (dann sollte cancelOffer verwendet werden)
-    !request.offeredSpotId && // Nicht anzeigen, wenn noch offeredSpotId vorhanden ist (dann sollte cancelOffer verwendet werden)
-    // Nur für Requester anzeigen, nicht für Anbieter (Anbieter sollte cancelOffer verwenden)
-    (isMyRequest ||
-      (Array.isArray(request.fulfilledByUserIds) && request.fulfilledByUserIds.includes(currentUserId) && !isMyOffer));
+    !isArchived &&
+    isMyRequest;
+  
+  // Für Anbieter: Zeige "Storno"-Button bei erfüllten Anfragen (wenn ich ein akzeptiertes Angebot habe)
+  const canOffererCancelFulfilled = 
+    isFulfilled &&
+    !isArchived &&
+    !isMyRequest &&
+    (!!myAcceptedOffer || request.offeredBy === currentUserId);
   const canContactRequesterOnOpen = !isMyRequest && !hasOfferOrFulfilled;
 
   const contactPhone = hasOfferOrFulfilled
@@ -286,6 +297,8 @@ const RequestCard: React.FC<Props> = ({
     );
   };
 
+  const isStandby = myActiveOffer?.status === 'standby' && hasOffer;
+  
   return (
     <View
       style={[
@@ -293,6 +306,7 @@ const RequestCard: React.FC<Props> = ({
         {backgroundColor: colors.surface},
         colors.isDark && {shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: colors.border},
         isArchived && {opacity: 0.55},
+        isStandby && {opacity: 0.6},
         highlight && styles.cardHighlight,
       ]}>
       <View style={styles.cardHeader}>
@@ -396,12 +410,24 @@ const RequestCard: React.FC<Props> = ({
                 <View style={styles.offersBox}>
                   <Text style={[styles.offersTitle, {color: colors.subtext}]}>Mein Angebot</Text>
                   <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                    <Text style={[styles.offerLabel, {color: colors.subtext}]}>
-                      {isFullOffer ? 'Vollständig' : 'Teilweise'}
-                    </Text>
+                    <View style={styles.offerLabelRow}>
+                      <Text style={[styles.offerLabel, {color: colors.subtext}]}>
+                        {isFullOffer ? 'Vollständig' : 'Teilweise'}
+                      </Text>
+                      {myActiveOffer.status === 'standby' && (
+                        <View style={[styles.standbyBadge, {backgroundColor: '#FF9500', borderColor: '#FF9500'}]}>
+                          <Text style={styles.standbyBadgeText}>Standby</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={[styles.offerDetails, {color: colors.text}]}>
                       P {myActiveOffer.spotId} · {formatDateRange(myActiveOffer.from, myActiveOffer.until)}
                     </Text>
+                    {myActiveOffer.status === 'standby' && (
+                      <Text style={[styles.standbyText, {color: colors.subtext}]}>
+                        Ein vollständiges Angebot eines anderen Users liegt vor.{'\n'}Warten auf Entscheidung
+                      </Text>
+                    )}
                   </View>
                 </View>
               </View>
@@ -627,7 +653,7 @@ const RequestCard: React.FC<Props> = ({
           <Text style={[styles.offersTitle, {color: colors.subtext}]}>Angebote</Text>
           {(() => {
             // Filtere zurückgezogene Angebote heraus - nur aktive und angenommene anzeigen
-            const activeOffers = offers.filter((o) => o.status !== 'withdrawn');
+            const activeOffers = offers.filter((o) => o.status !== 'withdrawn' && o.status !== 'standby');
             if (activeOffers.length === 0) {
               return <Text style={[styles.offerEmpty, {color: colors.subtext}]}>Noch keine Angebote</Text>;
             }
@@ -736,7 +762,15 @@ const RequestCard: React.FC<Props> = ({
         {/* Contact button moved to header (icon-only) */}
 
         {/* Storno-Button für Anbieter: anzeigen, wenn ich ein aktives Angebot habe (auch bei Teilangeboten) */}
-        {isMyOffer && myActiveOffer && !isArchived && (
+        {isMyOffer && myActiveOffer && !isArchived && !isFulfilled && (
+          <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onCancelOffer(request)}>
+            <MaterialCommunityIcons name="close-circle-outline" size={16} color="#fff" />
+            <Text style={styles.actionTextWhite}>Storno</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Storno-Button für Anbieter bei erfüllten Anfragen */}
+        {canOffererCancelFulfilled && onCancelOffer && (
           <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onCancelOffer(request)}>
             <MaterialCommunityIcons name="close-circle-outline" size={16} color="#fff" />
             <Text style={styles.actionTextWhite}>Storno</Text>
@@ -750,7 +784,8 @@ const RequestCard: React.FC<Props> = ({
           </TouchableOpacity>
         )}
 
-        {isInvolvedInFulfilled && onArchiveFulfilled && (
+        {/* Aufheben-Button für Requester bei erfüllten Anfragen */}
+        {canRequesterUnfulfill && onArchiveFulfilled && (
           <TouchableOpacity
             style={[styles.actionBtn, styles.actionRed]}
             onPress={() => onArchiveFulfilled(request)}>
@@ -943,10 +978,32 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
+  offerLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   offerLabel: {
     fontSize: 11,
     fontWeight: '800',
-    marginBottom: 4,
+  },
+  standbyBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  standbyBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  standbyText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   offerDetails: {
     fontSize: 12,

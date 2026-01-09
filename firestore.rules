@@ -63,6 +63,7 @@ service cloud.firestore {
           'offeredSpotId',
           'offeredBy',
           'offeredAt',
+          'fullOfferId',
           'isFulfilled',
           'isArchived',
           'fulfilledAt',
