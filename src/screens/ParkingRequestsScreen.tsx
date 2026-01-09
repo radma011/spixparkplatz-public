@@ -338,6 +338,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     from: Date,
     until: Date,
     recurrence?: RecurrenceRule | null,
+    autoOffer?: boolean,
   ) => {
     try {
       await ParkingAvailabilityService.createAvailability(
@@ -349,6 +350,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         recurrence,
         currentUserData.username,
         currentUserData.phone,
+        autoOffer,
       );
       Alert.alert('Erfolg', 'Verfügbarkeit erstellt!');
     } catch (error: any) {
@@ -365,6 +367,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       spotId?: string;
       recurrence?: RecurrenceRule | null;
       isActive?: boolean;
+      autoOffer?: boolean;
     },
   ) => {
     try {
@@ -779,7 +782,6 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
       {activeTab === 'available' ? (
         <ScrollView
-          style={styles.list}
           contentContainerStyle={[
             styles.list,
             availabilities.length === 0 && styles.listEmpty,
@@ -807,25 +809,28 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               </Text>
             </View>
           ) : (
-            availabilities.map((availability) => (
-              <AvailabilityCard
-                key={availability.id}
-                availability={availability}
-                currentUserId={currentUserId}
-                onEdit={(av) => {
-                  setEditingAvailability(av);
-                  setShowAvailabilityModal(true);
-                }}
-                onDelete={handleDeleteAvailability}
-                onDeactivate={async (av) => {
-                  await handleUpdateAvailability(av.id, {isActive: false});
-                }}
-                onActivate={async (av) => {
-                  await handleUpdateAvailability(av.id, {isActive: true});
-                }}
-                publicUsers={publicUsers}
-              />
-            ))
+            <>
+              <Text style={[styles.sectionHeader, {color: colors.subtext}]}>MEINE VERFÜGBARKEITEN</Text>
+              {availabilities.map((availability) => (
+                <AvailabilityCard
+                  key={availability.id}
+                  availability={availability}
+                  currentUserId={currentUserId}
+                  onEdit={(av) => {
+                    setEditingAvailability(av);
+                    setShowAvailabilityModal(true);
+                  }}
+                  onDelete={handleDeleteAvailability}
+                  onDeactivate={async (av) => {
+                    await handleUpdateAvailability(av.id, {isActive: false});
+                  }}
+                  onActivate={async (av) => {
+                    await handleUpdateAvailability(av.id, {isActive: true});
+                  }}
+                  publicUsers={publicUsers}
+                />
+              ))}
+            </>
           )}
         </ScrollView>
       ) : (
@@ -943,12 +948,13 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           setEditingAvailability(null);
         }}
         onSubmit={editingAvailability
-          ? async (spotId, from, until, recurrence) => {
+          ? async (spotId, from, until, recurrence, autoOffer) => {
               await handleUpdateAvailability(editingAvailability.id, {
                 spotId,
                 from,
                 until,
                 recurrence,
+                autoOffer,
               });
               setShowAvailabilityModal(false);
               setEditingAvailability(null);
@@ -973,11 +979,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         visible={showOfferModal}
         request={offerModalRequest}
         mySpots={mySpots}
+        currentUserId={currentUserId}
         onClose={() => {
           setShowOfferModal(false);
           setOfferModalRequest(null);
         }}
-        onSubmit={async (spotId, from, until) => {
+        onSubmit={async (spotId, from, until, comment) => {
           if (!offerModalRequest) return;
           const ok = await ParkingRequestService.offerParkingSpot(
             offerModalRequest.id,
@@ -991,6 +998,16 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           );
           if (!ok) {
             Alert.alert('Fehler', 'Angebot konnte nicht erstellt werden');
+            return;
+          }
+          // Add comment to chat if provided
+          if (comment && comment.trim()) {
+            try {
+              await ParkingRequestService.addComment(offerModalRequest.id, currentUserId, comment.trim());
+            } catch (error) {
+              console.error('Error adding comment:', error);
+              // Don't show error to user, offer was created successfully
+            }
           }
         }}
       />

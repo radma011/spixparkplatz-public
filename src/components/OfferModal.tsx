@@ -9,6 +9,7 @@ import {
   Alert,
   useColorScheme,
   Platform,
+  TextInput,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -21,10 +22,11 @@ interface Props {
   request: ParkingRequest | null;
   mySpots: string[];
   onClose: () => void;
-  onSubmit: (spotId: string, from: Date, until: Date) => Promise<void>;
+  onSubmit: (spotId: string, from: Date, until: Date, comment?: string) => Promise<void>;
+  currentUserId?: string;
 }
 
-export default function OfferModal({visible, request, mySpots, onClose, onSubmit}: Props) {
+export default function OfferModal({visible, request, mySpots, onClose, onSubmit, currentUserId}: Props) {
   const colors = getColors(useColorScheme());
 
   const initial = useMemo(() => {
@@ -42,6 +44,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
   const [showUntilTimePicker, setShowUntilTimePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSpotPicker, setShowSpotPicker] = useState(false);
+  const [comment, setComment] = useState('');
 
   // Reset when opening a different request
   React.useEffect(() => {
@@ -57,6 +60,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
     setShowUntilTimePicker(false);
     setIsSubmitting(false);
     setShowSpotPicker(false);
+    setComment('');
   }, [request?.id, visible]);
 
   React.useEffect(() => {
@@ -176,7 +180,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
               onPress: async () => {
                 setIsSubmitting(true);
                 try {
-                  await onSubmit(selectedSpot, offerFrom, offerUntil);
+                  await onSubmit(selectedSpot, offerFrom, offerUntil, comment.trim() || undefined);
                   onClose();
                 } finally {
                   setIsSubmitting(false);
@@ -199,7 +203,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
 
     // If no conflict, proceed with submission
     try {
-      await onSubmit(selectedSpot, offerFrom, offerUntil);
+      await onSubmit(selectedSpot, offerFrom, offerUntil, comment.trim() || undefined);
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -520,6 +524,27 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                 {formatDateRange(isFull ? request.from : fromDateTime, isFull ? request.until : untilDateTime)}
               </Text>
             </View>
+
+            <View style={styles.commentGroup}>
+              <Text style={[styles.label, {color: colors.text}]}>Kommentar (optional)</Text>
+              <TextInput
+                value={comment}
+                onChangeText={setComment}
+                placeholder="Nachricht an den Anfragenden..."
+                placeholderTextColor={colors.subtext}
+                multiline
+                numberOfLines={3}
+                style={[
+                  styles.commentInput,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.border,
+                    color: colors.text,
+                  },
+                ]}
+                textAlignVertical="top"
+              />
+            </View>
           </ScrollView>
 
           <View style={[styles.footer, {borderTopColor: colors.border}]}>
@@ -586,6 +611,17 @@ const styles = StyleSheet.create({
   summary: {marginTop: 14, borderRadius: 12, borderWidth: 1, padding: 12},
   summaryLabel: {fontWeight: '800', fontSize: 12},
   summaryText: {fontWeight: '800', marginTop: 4},
+  commentGroup: {marginTop: 14},
+  commentInput: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    minHeight: 80,
+    maxHeight: 120,
+    fontSize: 14,
+    fontWeight: '500',
+  },
 
   spotPickerContainer: {
     position: 'relative',

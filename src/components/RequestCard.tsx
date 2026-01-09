@@ -368,18 +368,19 @@ const RequestCard: React.FC<Props> = ({
                   {formatDateRange(request.from, request.until)}
                 </Text>
                 {onOpenComments && (
-                  <View style={styles.commentChipRow}>
+                  <TouchableOpacity
+                    onPress={() => onOpenComments(request.id)}
+                    style={styles.commentChipRow}
+                    activeOpacity={0.7}>
                     <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                       <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => onOpenComments(request.id)}
-                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+                    </View>
+                  </TouchableOpacity>
                 )}
                   {shouldShowCoverage && coverage && !isArchived && (
                   <Text style={[styles.coverageText, {color: colors.subtext}]}>
@@ -429,18 +430,19 @@ const RequestCard: React.FC<Props> = ({
                     {formatDateRange(request.from, request.until)}
                   </Text>
                 {onOpenComments && (
-                  <View style={styles.commentChipRow}>
+                  <TouchableOpacity
+                    onPress={() => onOpenComments(request.id)}
+                    style={styles.commentChipRow}
+                    activeOpacity={0.7}>
                     <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                       <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => onOpenComments(request.id)}
-                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+                    </View>
+                  </TouchableOpacity>
                 )}
                   {shouldShowCoverage && coverage && !isArchived && (
                     <Text style={[styles.coverageText, {color: colors.subtext}]}>
@@ -475,18 +477,19 @@ const RequestCard: React.FC<Props> = ({
                   {formatDateRange(request.from, request.until)}
                 </Text>
                 {onOpenComments && (
-                  <View style={styles.commentChipRow}>
+                  <TouchableOpacity
+                    onPress={() => onOpenComments(request.id)}
+                    style={styles.commentChipRow}
+                    activeOpacity={0.7}>
                     <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                       <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => onOpenComments(request.id)}
-                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+                    </View>
+                  </TouchableOpacity>
                 )}
                   {shouldShowCoverage && coverage && !isArchived && (
                   <Text style={[styles.coverageText, {color: colors.subtext}]}>
@@ -515,18 +518,19 @@ const RequestCard: React.FC<Props> = ({
                 {formatDateRange(displayFrom, displayUntil)}
               </Text>
                 {onOpenComments && (
-                  <View style={styles.commentChipRow}>
+                  <TouchableOpacity
+                    onPress={() => onOpenComments(request.id)}
+                    style={styles.commentChipRow}
+                    activeOpacity={0.7}>
                     <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                       <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => onOpenComments(request.id)}
-                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+                    </View>
+                  </TouchableOpacity>
                 )}
                   {shouldShowCoverage && coverage && !isArchived && (
                 <Text style={[styles.coverageText, {color: colors.subtext}]}>

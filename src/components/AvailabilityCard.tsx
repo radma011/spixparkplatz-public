@@ -257,14 +257,13 @@ const AvailabilityCard: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 8,
     borderWidth: 1,
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
   cardInactive: {
@@ -353,29 +352,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginTop: 12,
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
     gap: 6,
   },
   actionPrimary: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#16A34A',
   },
   actionDark: {
-    backgroundColor: '#666',
+    backgroundColor: '#111827',
   },
   actionDanger: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#DC2626',
   },
   actionTextWhite: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
   },
   contactRow: {
     marginTop: 12,

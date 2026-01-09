@@ -11,6 +11,7 @@ import {
   useColorScheme,
   Platform,
   Switch,
+  KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -21,7 +22,7 @@ import {ParkingAvailability, RecurrenceRule} from '../models/ParkingAvailability
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (spotId: string, from: Date, until: Date, recurrence?: RecurrenceRule | null) => Promise<void>;
+  onSubmit: (spotId: string, from: Date, until: Date, recurrence?: RecurrenceRule | null, autoOffer?: boolean) => Promise<void>;
   availableSpots: string[];
   editingAvailability?: ParkingAvailability | null;
 }
@@ -36,6 +37,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
   const colors = getColors(useColorScheme());
   const [selectedSpot, setSelectedSpot] = useState<string>('');
   const [isRecurring, setIsRecurring] = useState(false);
+  const [autoOffer, setAutoOffer] = useState(true);
 
   // One-time availability
   const [fromDateTime, setFromDateTime] = useState(new Date());
@@ -69,6 +71,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
     if (editingAvailability) {
       setSelectedSpot(editingAvailability.spotId);
       setIsRecurring(!!editingAvailability.recurrence);
+      setAutoOffer(editingAvailability.autoOffer ?? true);
       if (editingAvailability.recurrence) {
         setStartDate(editingAvailability.from);
         setEndDate(editingAvailability.recurrence.endDate || null);
@@ -97,6 +100,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
       setRecurrencePattern('daily');
       setRecurrenceInterval(1);
       setSelectedDays([]);
+      setAutoOffer(true);
     }
   }, [editingAvailability, visible]);
 
@@ -158,7 +162,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
 
     setIsSubmitting(true);
     try {
-      await onSubmit(selectedSpot, from, until, recurrence);
+      await onSubmit(selectedSpot, from, until, recurrence, autoOffer);
       onClose();
     } catch (error: any) {
       Alert.alert('Fehler', error?.message || 'Verfügbarkeit konnte nicht erstellt werden');
@@ -187,22 +191,28 @@ const NewAvailabilityModal: React.FC<Props> = ({
         transparent={true}
         onRequestClose={handleClose}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              {backgroundColor: colors.surface},
-              colors.isDark && {borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0},
-            ]}>
-            <View style={[styles.modalHeader, {borderBottomColor: colors.border}]}>
-              <Text style={[styles.modalTitle, {color: colors.text}]}>
-                {editingAvailability ? 'Verfügbarkeit bearbeiten' : 'Neue Verfügbarkeit'}
-              </Text>
-              <TouchableOpacity onPress={handleClose}>
-                <Text style={[styles.modalCloseButton, {color: colors.subtext}]}>✕</Text>
-              </TouchableOpacity>
-            </View>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{width: '100%', maxWidth: 500}}>
+            <View
+              style={[
+                styles.modalContent,
+                {backgroundColor: colors.surface},
+                colors.isDark && {borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0},
+              ]}>
+              <View style={[styles.modalHeader, {borderBottomColor: colors.border}]}>
+                <Text style={[styles.modalTitle, {color: colors.text}]}>
+                  {editingAvailability ? 'Verfügbarkeit bearbeiten' : 'Neue Verfügbarkeit'}
+                </Text>
+                <TouchableOpacity onPress={handleClose}>
+                  <Text style={[styles.modalCloseButton, {color: colors.subtext}]}>✕</Text>
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView style={styles.modalBody}>
+              <ScrollView 
+                style={styles.modalBody}
+                contentContainerStyle={styles.modalBodyContent}
+                keyboardShouldPersistTaps="handled">
               {/* Parkplatz-Auswahl */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, {color: colors.text}]}>Parkplatz *</Text>
@@ -239,6 +249,19 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     onValueChange={setIsRecurring}
                     trackColor={{false: colors.border, true: colors.brand + '80'}}
                     thumbColor={isRecurring ? colors.brand : '#f4f3f4'}
+                  />
+                </View>
+              </View>
+
+              {/* Automatisch anbieten Toggle */}
+              <View style={styles.inputGroup}>
+                <View style={styles.switchRow}>
+                  <Text style={[styles.inputLabel, {color: colors.text}]}>Automatisch anbieten</Text>
+                  <Switch
+                    value={autoOffer}
+                    onValueChange={setAutoOffer}
+                    trackColor={{false: colors.border, true: colors.brand + '80'}}
+                    thumbColor={autoOffer ? colors.brand : '#f4f3f4'}
                   />
                 </View>
               </View>
@@ -674,25 +697,26 @@ const NewAvailabilityModal: React.FC<Props> = ({
                   </View>
                 </>
               )}
-            </ScrollView>
+              </ScrollView>
 
-            <View style={[styles.modalFooter, {borderTopColor: colors.border}]}>
-              <TouchableOpacity
-                style={[styles.cancelButton, {backgroundColor: colors.surface2}]}
-                onPress={handleClose}
-                disabled={isSubmitting}>
-                <Text style={[styles.cancelButtonText, {color: colors.text}]}>Abbrechen</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.submitButton, {backgroundColor: colors.brand}]}
-                onPress={handleSubmit}
-                disabled={isSubmitting}>
-                <Text style={styles.submitButtonText}>
-                  {isSubmitting ? 'Wird gespeichert...' : editingAvailability ? 'Speichern' : 'Erstellen'}
-                </Text>
-              </TouchableOpacity>
+              <View style={[styles.modalFooter, {borderTopColor: colors.border}]}>
+                <TouchableOpacity
+                  style={[styles.cancelButton, {backgroundColor: colors.surface2}]}
+                  onPress={handleClose}
+                  disabled={isSubmitting}>
+                  <Text style={[styles.cancelButtonText, {color: colors.text}]}>Abbrechen</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitButton, {backgroundColor: colors.brand}]}
+                  onPress={handleSubmit}
+                  disabled={isSubmitting}>
+                  <Text style={styles.submitButtonText}>
+                    {isSubmitting ? 'Wird gespeichert...' : editingAvailability ? 'Speichern' : 'Erstellen'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>
@@ -703,51 +727,64 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '95%',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: -2},
+    shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 10,
+    elevation: 10,
+    flexDirection: 'column',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
     borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#000',
   },
   modalCloseButton: {
     fontSize: 24,
     fontWeight: '300',
   },
   modalBody: {
-    padding: 20,
-    maxHeight: '70%',
+    maxHeight: 500,
+  },
+  modalBodyContent: {
+    padding: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   modalFooter: {
     flexDirection: 'row',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     gap: 12,
     borderTopWidth: 1,
   },
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   inputLabelRow: {
     flexDirection: 'row',

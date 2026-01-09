@@ -104,22 +104,24 @@ export default function CommentsModal({visible, requestId, currentUserId, public
         style={{flex: 1}}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-        <View style={styles.overlay}>
+        <View style={[styles.overlay, {paddingTop: Math.max(insets.top + 20, 40)}]}>
           <View
             style={[
               styles.card,
-              {backgroundColor: colors.surface, maxHeight: '90%'},
+              {backgroundColor: colors.surface, maxHeight: '95%'},
               colors.isDark && {borderColor: colors.border, borderWidth: 1, shadowOpacity: 0, elevation: 0},
             ]}>
-            <View style={[styles.header, {borderBottomColor: colors.border, paddingTop: insets.top}]}>
-              <Text style={[styles.title, {color: colors.text}]}>{title}</Text>
-              <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
-                <MaterialCommunityIcons name="close" size={22} color={colors.subtext} />
-              </TouchableOpacity>
+            <View style={[styles.header, {borderBottomColor: colors.border}]}>
+              <View style={styles.headerContent}>
+                <Text style={[styles.title, {color: colors.text}]}>{title}</Text>
+                <TouchableOpacity onPress={onClose} style={styles.iconBtn}>
+                  <MaterialCommunityIcons name="close" size={22} color={colors.subtext} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView
-              ref={(r) => (scrollRef.current = r)}
+              ref={scrollRef}
               style={styles.body}
               contentContainerStyle={styles.bodyContent}
               keyboardShouldPersistTaps="handled"
@@ -213,22 +215,23 @@ export default function CommentsModal({visible, requestId, currentUserId, public
 }
 
 const styles = StyleSheet.create({
-  overlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'},
-  card: {borderRadius: 16, flex: 1, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, elevation: 10},
-  header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, borderBottomWidth: 1},
+  overlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20},
+  card: {borderRadius: 20, width: '100%', flex: 1, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, elevation: 10},
+  header: {paddingHorizontal: 20, paddingTop: 0, paddingBottom: 0, borderBottomWidth: 1},
+  headerContent: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 10},
   title: {fontSize: 16, fontWeight: '900'},
   iconBtn: {width: 36, height: 36, alignItems: 'center', justifyContent: 'center'},
   body: {flex: 1},
-  bodyContent: {padding: 14, paddingBottom: 10},
+  bodyContent: {padding: 20, paddingBottom: 10},
   empty: {fontWeight: '700'},
   row: {marginBottom: 10, width: '100%', flexDirection: 'row'},
   rowMine: {},
   rowOther: {},
-  bubble: {maxWidth: '88%', borderRadius: 12, padding: 10, borderWidth: 1},
+  bubble: {width: '88%', borderRadius: 12, padding: 10, borderWidth: 1},
   meta: {fontSize: 11, fontWeight: '900', marginBottom: 4},
   msg: {fontSize: 14, fontWeight: '600'},
   edited: {marginTop: 4, fontSize: 10, fontWeight: '800', opacity: 0.85},
-  footer: {flexDirection: 'row', gap: 10, padding: 12, borderTopWidth: 1, alignItems: 'flex-end'},
+  footer: {flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 20, borderTopWidth: 1, alignItems: 'flex-end'},
   input: {flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, minHeight: 44, maxHeight: 110},
   sendBtn: {width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center'},
 

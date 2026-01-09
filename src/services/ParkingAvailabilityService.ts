@@ -54,6 +54,7 @@ class ParkingAvailabilityService {
       isActive: (data.isActive as boolean) ?? true,
       isMatched: (data.isMatched as boolean) ?? false,
       matchedRequestId: data.matchedRequestId as string | undefined,
+      autoOffer: (data.autoOffer as boolean) ?? true,
       createdAt,
       updatedAt,
       createdBy: data.createdBy as string,
@@ -74,6 +75,7 @@ class ParkingAvailabilityService {
     recurrence?: RecurrenceRule,
     username?: string,
     phone?: string,
+    autoOffer?: boolean,
   ): Promise<string> {
     const availabilityRef = doc(this.availabilitiesCollection);
     
@@ -92,6 +94,7 @@ class ParkingAvailabilityService {
 
     if (username) availabilityData.username = username;
     if (phone) availabilityData.phone = phone;
+    if (autoOffer !== undefined) availabilityData.autoOffer = autoOffer;
 
     if (recurrence) {
       const recurrenceData: any = {
@@ -119,6 +122,7 @@ class ParkingAvailabilityService {
       spotId?: string;
       recurrence?: RecurrenceRule | null;
       isActive?: boolean;
+      autoOffer?: boolean;
     },
   ): Promise<void> {
     const availabilityRef = doc(this.availabilitiesCollection, availabilityId);
@@ -130,6 +134,7 @@ class ParkingAvailabilityService {
     if (updates.until !== undefined) updateData.until = Timestamp.fromDate(updates.until);
     if (updates.spotId !== undefined) updateData.spotId = updates.spotId;
     if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
+    if (updates.autoOffer !== undefined) updateData.autoOffer = updates.autoOffer;
 
     if (updates.recurrence !== undefined) {
       if (updates.recurrence === null) {

@@ -22,6 +22,7 @@ export interface ParkingAvailability {
   createdBy: string;
   username?: string;
   phone?: string;
+  autoOffer?: boolean;
 }
 
 export const isAvailabilityActive = (availability: ParkingAvailability): boolean => {

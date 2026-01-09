@@ -208,7 +208,7 @@ const NewRequestModal: React.FC<Props> = ({
                       }
                     }}>
                     <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} />
+                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={styles.inputButtonIcon} />
                       <Text style={[styles.inputButtonText, {color: colors.brand}]}>
                         {formatDateLabel(fromDateTime)}
                       </Text>
@@ -231,7 +231,7 @@ const NewRequestModal: React.FC<Props> = ({
                       }
                     }}>
                     <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} />
+                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={styles.inputButtonIcon} />
                       <Text style={[styles.inputButtonText, {color: colors.brand}]}>
                         {formatTime(fromDateTime)}
                       </Text>
@@ -326,7 +326,7 @@ const NewRequestModal: React.FC<Props> = ({
                       }
                     }}>
                     <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} />
+                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={styles.inputButtonIcon} />
                       <Text style={[styles.inputButtonText, {color: colors.brand}]}>
                         {formatDateLabel(untilDateTime)}
                       </Text>
@@ -349,7 +349,7 @@ const NewRequestModal: React.FC<Props> = ({
                       }
                     }}>
                     <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} />
+                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={styles.inputButtonIcon} />
                       <Text style={[styles.inputButtonText, {color: colors.brand}]}>
                         {formatTime(untilDateTime)}
                       </Text>
@@ -497,7 +497,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
@@ -515,17 +517,18 @@ const styles = StyleSheet.create({
     maxHeight: 500,
   },
   modalBodyContent: {
-    padding: 20,
-    paddingBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   inputLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   inputLabel: {
     fontSize: 16,
@@ -574,25 +577,33 @@ const styles = StyleSheet.create({
   inputButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    position: 'relative',
+    width: '100%',
+  },
+  inputButtonIcon: {
+    position: 'absolute',
+    left: 0,
   },
   inputButtonText: {
     fontSize: 18,
     color: '#007AFF',
     fontWeight: '500',
+    textAlign: 'center',
+    flex: 1,
   },
   summaryContainer: {
     backgroundColor: '#E3F2FD',
     borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 4,
+    padding: 12,
+    marginTop: 6,
+    marginBottom: 16,
   },
   summaryLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#1976D2',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   summaryText: {
     fontSize: 16,
@@ -601,7 +612,8 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     flexDirection: 'row',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     gap: 12,
@@ -637,7 +649,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
-    marginTop: 8,
+    marginTop: 6,
   },
   commentInput: {
     minHeight: 72,
