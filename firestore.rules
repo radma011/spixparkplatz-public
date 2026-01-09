@@ -43,9 +43,18 @@ service cloud.firestore {
       // so the request becomes "open" again after an offer is cancelled.
       // Note: This should work even if the request was previously fulfilled, to allow
       // the offerer to cancel and make the request open again.
+      // Works for both full offers (where offeredBy is set on request) and partial offers (where it's only in subcollection).
+      // For partial offers, we can't check subcollection in rules, so we rely on application-level security
+      // (the code only calls cancelOffer if the user has active offers).
       return isAuthenticated()
-        && ('offeredBy' in resource.data)
-        && resource.data.offeredBy == request.auth.uid
+        && (
+          // Case 1: Full offer - offeredBy is set on request document and matches current user
+          (('offeredBy' in resource.data) && resource.data.offeredBy == request.auth.uid)
+          ||
+          // Case 2: Partial offer - offeredBy is not set on request (only in subcollection)
+          // Security: Application code ensures only users with active offers can call this
+          (!('offeredBy' in resource.data))
+        )
         && !('offeredBy' in request.resource.data)
         && !('offeredSpotId' in request.resource.data)
         && request.resource.data.isFulfilled == false

@@ -230,6 +230,16 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
             offers={offersByRequestId[item.id] ?? []}
             publicUsers={publicUsers}
             currentUserId={currentUserId}
+            onAcceptOffer={async (offer) => {
+              try {
+                await ParkingRequestService.acceptOffer(item.id, offer);
+                Alert.alert('Erfolg', 'Angebot angenommen');
+              } catch (error: any) {
+                console.error('Fehler beim Annehmen des Angebots:', error);
+                const errorMessage = error?.message || 'Unbekannter Fehler';
+                Alert.alert('Fehler', errorMessage);
+              }
+            }}
           />
         )}
         contentContainerStyle={styles.list}

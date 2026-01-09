@@ -13,9 +13,10 @@ interface Props {
   offers?: RequestOffer[];
   publicUsers?: Record<string, {username?: string; phone?: string}>;
   currentUserId?: string;
+  onAcceptOffer?: (offer: RequestOffer) => void;
 }
 
-const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicUsers, currentUserId}) => {
+const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicUsers, currentUserId, onAcceptOffer}) => {
   const colors = getColors(useColorScheme());
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const canDelete = !request.isFulfilled;
@@ -32,6 +33,19 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
         o.spotId === request.offeredSpotId
     ) || null;
   }, [hasOffer, request.offeredSpotId, request.offeredBy, offers]);
+  
+  // Finde das vollständige Angebot für den Annehmen-Button
+  const fullOffer = React.useMemo(() => {
+    if (!hasOffer || !request.offeredSpotId || !request.offeredBy) return null;
+    return offers.find(
+      (o) =>
+        o.status === 'active' &&
+        o.offererId === request.offeredBy &&
+        o.spotId === request.offeredSpotId &&
+        o.from.getTime() <= request.from.getTime() &&
+        o.until.getTime() >= request.until.getTime()
+    ) || null;
+  }, [hasOffer, request.offeredSpotId, request.offeredBy, offers, request.from, request.until]);
   
   // Abdeckung berechnen
   const shouldShowCoverage = React.useMemo(() => {
@@ -283,14 +297,27 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
         </Text>
       )}
 
-      {canDelete && onDelete && (
+      {(canDelete && onDelete) || (hasOffer && !request.isFulfilled && fullOffer && onAcceptOffer) ? (
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onDelete(request.id)}>
-            <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Löschen</Text>
-          </TouchableOpacity>
+          {hasOffer && !request.isFulfilled && fullOffer && onAcceptOffer && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionBlue, styles.actionBtnCompact]}
+              onPress={() => {
+                if (!fullOffer) return;
+                onAcceptOffer(fullOffer);
+              }}>
+              <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
+              <Text style={styles.actionTextWhite}>Annehmen</Text>
+            </TouchableOpacity>
+          )}
+          {canDelete && onDelete && (
+            <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onDelete(request.id)}>
+              <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
+              <Text style={styles.actionTextWhite}>Anfrage zurückziehen</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      )}
+      ) : null}
     </View>
   );
 };
@@ -392,10 +419,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 999,
   },
+  actionBtnCompact: {
+    alignSelf: 'flex-start',
+  },
   actionTextWhite: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  actionBlue: {
+    backgroundColor: '#2563EB',
   },
   actionRed: {
     backgroundColor: '#DC2626',

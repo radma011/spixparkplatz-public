@@ -433,7 +433,7 @@ class FirestoreService {
   }
 
   async acceptOffer(requestId: string, offer: RequestOffer): Promise<void> {
-    // Prüfe, ob das Angebot noch existiert und ob der Request noch ein Angebot hat
+    // Prüfe, ob das Angebot noch existiert und ob der Request noch existiert
     const requestRef = doc(this.requestsCollection, requestId);
     const requestSnap = await getDoc(requestRef);
     
@@ -442,11 +442,6 @@ class FirestoreService {
     }
     
     const requestData = requestSnap.data();
-    
-    // Prüfe, ob der Request noch ein Angebot hat (offeredSpotId muss gesetzt sein)
-    if (!requestData?.offeredSpotId) {
-      throw new Error('Das Angebot wurde bereits storniert');
-    }
     
     // Prüfe, ob der Request bereits erfüllt oder archiviert ist
     if (requestData.isFulfilled === true) {
@@ -458,6 +453,7 @@ class FirestoreService {
     }
     
     // Prüfe, ob das spezifische Angebot noch aktiv ist
+    // Diese Prüfung funktioniert sowohl für vollständige als auch für Teilangebote
     const offerRef = doc(this.offersCollection(requestId), offer.id);
     const offerSnap = await getDoc(offerRef);
     
@@ -482,6 +478,24 @@ class FirestoreService {
   // Angebot stornieren (offered* Felder entfernen und Request wieder auf "offen" setzen)
   // WICHTIG: Diese Funktion wird vom Anbieter aufgerufen, der sein Angebot storniert
   async cancelOffer(requestId: string, offeringUserId: string): Promise<void> {
+    // Sicherheitsprüfung: Stelle sicher, dass der Benutzer tatsächlich ein aktives Angebot hat
+    const q = query(this.offersCollection(requestId), where('offererId', '==', offeringUserId));
+    const snap = await getDocs(q);
+    const hasActiveOffer = snap.docs.some((d) => {
+      const status = d.data()?.status ?? 'active';
+      return status === 'active' || status === 'accepted';
+    });
+    
+    // Prüfe auch, ob offeredBy auf dem Request gesetzt ist (für vollständige Angebote)
+    const requestRef = doc(this.requestsCollection, requestId);
+    const requestSnap = await getDoc(requestRef);
+    const requestData = requestSnap.data();
+    const hasFullOffer = requestData?.offeredBy === offeringUserId;
+    
+    if (!hasActiveOffer && !hasFullOffer) {
+      throw new Error('Kein aktives Angebot zum Stornieren gefunden');
+    }
+    
     // Zuerst: Alle aktiven Angebote des Anbieters in der Subcollection auf 'withdrawn' setzen
     await this.withdrawMyOffersForRequest(requestId, offeringUserId);
     

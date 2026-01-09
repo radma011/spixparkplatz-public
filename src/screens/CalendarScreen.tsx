@@ -599,29 +599,46 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
               const isSelected = k === selectedKey;
               const isToday = k === todayKey;
 
+              const hasDots = (stats.open > 0 && showOpen) || 
+                             (stats.hasOffer > 0 && showHasOffer) || 
+                             (stats.offer > 0 && showOffer) || 
+                             (stats.availability > 0 && availabilityFilter !== 'none') || 
+                             (stats.other > 0 && showRequest);
+              
               return (
                 <TouchableOpacity
                   key={c.key}
                   onPress={() => setSelectedDate(day)}
                   style={[
                     styles.cell,
-                    isSelected && styles.cellSelected,
+                    isSelected && [
+                      styles.cellSelected,
+                      colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
+                    ],
                     isToday && styles.cellTodayOutline,
                   ]}>
-                  <Text
-                    style={[
-                      styles.dayText,
-                      {color: colors.text},
-                      isSelected && styles.dayTextSelected,
-                    ]}>
-                    {c.day}
-                  </Text>
-                  <View style={styles.dotsRow}>
-                    {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
-                    {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
-                    {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
-                    {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
-                    {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
+                  <View style={styles.dayContent}>
+                    <View style={styles.dayTextContainer}>
+                      <Text
+                        style={[
+                          styles.dayText,
+                          {color: colors.text},
+                          isSelected && styles.dayTextSelected,
+                        ]}>
+                        {c.day}
+                      </Text>
+                      <View style={styles.dotsRow}>
+                        {hasDots ? (
+                          <>
+                            {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
+                            {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
+                            {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
+                            {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
+                            {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
+                          </>
+                        ) : null}
+                      </View>
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
@@ -837,15 +854,42 @@ const styles = StyleSheet.create({
   },
   cell: {
     width: `${100 / 7}%`,
-    aspectRatio: 1,
-    padding: 6,
+    aspectRatio: 1.2,
+    padding: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayText: {fontSize: 14, fontWeight: '700', color: '#111827'},
+  dayContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  dayTextContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 24, // Fixed height to keep numbers aligned
+  },
+  dayText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    lineHeight: 16,
+    height: 16, // Fixed height for the number
+  },
   cellSelected: {
-    backgroundColor: '#111827',
     borderRadius: 12,
+  },
+  cellSelectedLight: {
+    backgroundColor: '#3B82F6',
+    borderWidth: 2,
+    borderColor: '#60A5FA',
+  },
+  cellSelectedDark: {
+    backgroundColor: '#3B82F6',
+    borderWidth: 2,
+    borderColor: '#60A5FA',
   },
   cellTodayOutline: {
     borderWidth: 2,
@@ -854,7 +898,14 @@ const styles = StyleSheet.create({
   },
   dayTextSelected: {color: '#fff'},
 
-  dotsRow: {flexDirection: 'row', gap: 6, marginTop: 4},
+  dotsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+    height: 7, // Fixed height to reserve space for dots
+  },
   dot: {width: 7, height: 7, borderRadius: 999},
   dotOpen: {backgroundColor: '#FF9800'},
   dotHasOffer: {backgroundColor: '#4CAF50'},

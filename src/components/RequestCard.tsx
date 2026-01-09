@@ -367,7 +367,21 @@ const RequestCard: React.FC<Props> = ({
                 <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
                   {formatDateRange(request.from, request.until)}
                 </Text>
-                {shouldShowCoverage && coverage && !isArchived && (
+                {onOpenComments && (
+                  <View style={styles.commentChipRow}>
+                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                        {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => onOpenComments(request.id)}
+                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                      <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                  {shouldShowCoverage && coverage && !isArchived && (
                   <Text style={[styles.coverageText, {color: colors.subtext}]}>
                     Abdeckung: {coverage.percent}%{' '}
                     {coverage.gaps.length === 0
@@ -378,13 +392,16 @@ const RequestCard: React.FC<Props> = ({
                           .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
                   </Text>
                 )}
-                <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                  <Text style={[styles.offerLabel, {color: colors.subtext}]}>
-                    {isFullOffer ? 'Vollständig' : 'Teilweise'}
-                  </Text>
-                  <Text style={[styles.offerDetails, {color: colors.text}]}>
-                    P {myActiveOffer.spotId} · {formatDateRange(myActiveOffer.from, myActiveOffer.until)}
-                  </Text>
+                <View style={styles.offersBox}>
+                  <Text style={[styles.offersTitle, {color: colors.subtext}]}>Mein Angebot</Text>
+                  <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                    <Text style={[styles.offerLabel, {color: colors.subtext}]}>
+                      {isFullOffer ? 'Vollständig' : 'Teilweise'}
+                    </Text>
+                    <Text style={[styles.offerDetails, {color: colors.text}]}>
+                      P {myActiveOffer.spotId} · {formatDateRange(myActiveOffer.from, myActiveOffer.until)}
+                    </Text>
+                  </View>
                 </View>
               </View>
             );
@@ -411,6 +428,20 @@ const RequestCard: React.FC<Props> = ({
                   <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
                     {formatDateRange(request.from, request.until)}
                   </Text>
+                {onOpenComments && (
+                  <View style={styles.commentChipRow}>
+                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                        {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => onOpenComments(request.id)}
+                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                      <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
                   {shouldShowCoverage && coverage && !isArchived && (
                     <Text style={[styles.coverageText, {color: colors.subtext}]}>
                       Abdeckung: {coverage.percent}%{' '}
@@ -422,7 +453,7 @@ const RequestCard: React.FC<Props> = ({
                             .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
                     </Text>
                   )}
-                  <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                  <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border, marginTop: 8, marginBottom: 8}]}>
                     <Text style={[styles.offerLabel, {color: colors.subtext}]}>
                       {isFullOffer ? 'Vollständig' : 'Teilweise'}
                     </Text>
@@ -443,7 +474,21 @@ const RequestCard: React.FC<Props> = ({
                 <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
                   {formatDateRange(request.from, request.until)}
                 </Text>
-                {shouldShowCoverage && coverage && !isArchived && (
+                {onOpenComments && (
+                  <View style={styles.commentChipRow}>
+                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                        {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => onOpenComments(request.id)}
+                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                      <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                  {shouldShowCoverage && coverage && !isArchived && (
                   <Text style={[styles.coverageText, {color: colors.subtext}]}>
                     Abdeckung: {coverage.percent}%{' '}
                     {coverage.gaps.length === 0
@@ -454,7 +499,7 @@ const RequestCard: React.FC<Props> = ({
                           .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
                   </Text>
                 )}
-                <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border, marginTop: 8, marginBottom: 8}]}>
                   <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angebot</Text>
                   <Text style={[styles.offerDetails, {color: colors.text}]}>
                     P {request.offeredSpotId} ({offererName}) · {formatDateRange(displayFrom, displayUntil)}
@@ -469,7 +514,21 @@ const RequestCard: React.FC<Props> = ({
               <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
                 {formatDateRange(displayFrom, displayUntil)}
               </Text>
-              {shouldShowCoverage && coverage && !isArchived && (
+                {onOpenComments && (
+                  <View style={styles.commentChipRow}>
+                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                        {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => onOpenComments(request.id)}
+                      style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                      <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                  {shouldShowCoverage && coverage && !isArchived && (
                 <Text style={[styles.coverageText, {color: colors.subtext}]}>
                   Abdeckung: {coverage.percent}%{' '}
                   {coverage.gaps.length === 0
@@ -519,11 +578,6 @@ const RequestCard: React.FC<Props> = ({
         );
       })()}
 
-      {!!commentPreview && (
-        <Text style={[styles.commentPreview, {color: colors.subtext}]} numberOfLines={2}>
-          {commentPreview}
-        </Text>
-      )}
 
       {isFulfilled && (
         <View style={styles.fulfilledBox}>
@@ -602,11 +656,13 @@ const RequestCard: React.FC<Props> = ({
                       disabled={!onAcceptOffer}
                       onPress={() => onAcceptOffer?.(o)}
                       style={[
-                        styles.offerAcceptBtn,
-                        {backgroundColor: colors.brand},
+                        styles.actionBtn,
+                        styles.actionBlue,
+                        styles.actionBtnCompact,
                         !onAcceptOffer && {opacity: 0.5},
                       ]}>
-                      <Text style={styles.offerAcceptText}>Annehmen</Text>
+                      <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
+                      <Text style={styles.actionTextWhite}>Annehmen</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -622,14 +678,6 @@ const RequestCard: React.FC<Props> = ({
         {/* No actions on archived cards */}
         {isArchived ? null : (
           <>
-        {onOpenComments && (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionDark]}
-            onPress={() => onOpenComments(request.id)}>
-            <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Kommentare</Text>
-          </TouchableOpacity>
-        )}
         {!isMyRequest && !hasOffer && !isFulfilled && mySpots.length > 0 && (
           <TouchableOpacity 
             style={[styles.actionBtn, styles.actionPrimary]} 
@@ -651,24 +699,34 @@ const RequestCard: React.FC<Props> = ({
          fullOffer && 
          fullOffer.status === 'active' && 
          fullOffer.offererId === request.offeredBy && (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionBlue]}
-            onPress={() => {
-              if (!onAcceptOffer) return;
-              if (!fullOffer) {
-                Alert.alert('Bitte warten', 'Angebotsdetails werden noch geladen.');
-                return;
-              }
-              // Zusätzliche Prüfung vor dem Aufruf
-              if (!request.offeredSpotId || !request.offeredBy) {
-                Alert.alert('Fehler', 'Das Angebot wurde bereits storniert');
-                return;
-              }
-              onAcceptOffer(fullOffer);
-            }}>
-            <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Annehmen</Text>
-          </TouchableOpacity>
+          <View style={styles.actionBtnRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionBlue, styles.actionBtnCompact]}
+              onPress={() => {
+                if (!onAcceptOffer) return;
+                if (!fullOffer) {
+                  Alert.alert('Bitte warten', 'Angebotsdetails werden noch geladen.');
+                  return;
+                }
+                // Zusätzliche Prüfung vor dem Aufruf
+                if (!request.offeredSpotId || !request.offeredBy) {
+                  Alert.alert('Fehler', 'Das Angebot wurde bereits storniert');
+                  return;
+                }
+                onAcceptOffer(fullOffer);
+              }}>
+              <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
+              <Text style={styles.actionTextWhite}>Annehmen</Text>
+            </TouchableOpacity>
+            {onWithdraw && (
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.actionRed, styles.actionBtnCompact]} 
+                onPress={() => onWithdraw(request)}>
+                <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
+                <Text style={styles.actionTextWhite}>Anfrage zurückziehen</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         {/* Contact button moved to header (icon-only) */}
@@ -681,10 +739,10 @@ const RequestCard: React.FC<Props> = ({
           </TouchableOpacity>
         )}
 
-        {isMyRequest && !isFulfilled && (
-          <TouchableOpacity style={[styles.actionBtn, styles.actionGray]} onPress={() => onWithdraw(request)}>
+        {isMyRequest && !isFulfilled && !hasOffer && (
+          <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onWithdraw(request)}>
             <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Zurück</Text>
+            <Text style={styles.actionTextWhite}>Anfrage zurückziehen</Text>
           </TouchableOpacity>
         )}
 
@@ -774,11 +832,35 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 1,
   },
-  commentPreview: {
+  commentChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 0,
+    gap: 6,
+  },
+  commentChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    maxWidth: '100%',
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  commentChipText: {
     fontSize: 12,
-    marginTop: 4,
-    marginBottom: 6,
     fontWeight: '600',
+    lineHeight: 16,
+  },
+  commentIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chip: {
     paddingHorizontal: 10,
@@ -852,7 +934,7 @@ const styles = StyleSheet.create({
   },
   offerBox: {
     marginTop: 8,
-    marginBottom: 0,
+    marginBottom: 8,
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
@@ -884,6 +966,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
+  },
+  offerAcceptBtnCompact: {
+    alignSelf: 'flex-start',
   },
   offerAcceptText: {
     color: '#fff',
@@ -941,6 +1026,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginTop: 2,
+    alignItems: 'flex-start',
+  },
+  actionBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    flexShrink: 0,
   },
   actionBtn: {
     flexDirection: 'row',
@@ -949,6 +1041,9 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: 999,
+  },
+  actionBtnCompact: {
+    alignSelf: 'flex-start',
   },
   actionTextWhite: {
     color: '#fff',

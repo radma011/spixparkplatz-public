@@ -10,6 +10,7 @@ import {
   TextInput,
   useColorScheme,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -154,12 +155,15 @@ const NewRequestModal: React.FC<Props> = ({
         transparent={true}
         onRequestClose={handleClose}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              {backgroundColor: colors.surface},
-              colors.isDark && {borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0},
-            ]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{width: '100%', maxWidth: 500}}>
+            <View
+              style={[
+                styles.modalContent,
+                {backgroundColor: colors.surface},
+                colors.isDark && {borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0},
+              ]}>
             <View style={[styles.modalHeader, {borderBottomColor: colors.border}]}>
               <Text style={[styles.modalTitle, {color: colors.text}]}>Neue Parkplatz-Anfrage</Text>
               <TouchableOpacity onPress={handleClose}>
@@ -167,7 +171,10 @@ const NewRequestModal: React.FC<Props> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView 
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalBodyContent}
+              keyboardShouldPersistTaps="handled">
               {/* Von (Datum + Zeit) */}
               <View style={styles.inputGroup}>
                 <View style={styles.inputLabelRow}>
@@ -457,7 +464,8 @@ const NewRequestModal: React.FC<Props> = ({
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>
@@ -477,12 +485,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: '100%',
     maxWidth: 500,
-    maxHeight: '90%',
+    maxHeight: '95%',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
+    flexDirection: 'column',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -503,11 +512,14 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   modalBody: {
+    maxHeight: 500,
+  },
+  modalBodyContent: {
     padding: 20,
-    maxHeight: 400,
+    paddingBottom: 24,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   inputLabelRow: {
     flexDirection: 'row',
@@ -574,6 +586,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginTop: 8,
+    marginBottom: 4,
   },
   summaryLabel: {
     fontSize: 14,
@@ -624,11 +637,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
+    marginTop: 8,
   },
   commentInput: {
     minHeight: 72,
     fontSize: 14,
     fontWeight: '500',
+    textAlignVertical: 'top',
   },
 });
 
