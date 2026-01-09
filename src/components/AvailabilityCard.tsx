@@ -1,11 +1,15 @@
 import React, {useState} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, useColorScheme, Modal, ScrollView, Platform} from 'react-native';
 import {ParkingAvailability, isAvailabilityActive, isRecurring} from '../models/ParkingAvailability';
-import {formatDateRange, getTodayTomorrowBadge} from '../utils/dateUtils';
+import {formatDateRange} from '../utils/dateUtils';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {normalizePhone, tryOpenUrl} from '../utils/contactLinks';
 import {getColors} from '../theme/colors';
 import {calculateNextOccurrences, formatOccurrence} from '../utils/recurrenceUtils';
+import ActionButton from './common/ActionButton';
+import DayBadge from './common/DayBadge';
+import {cardStyles} from '../styles/cards';
+import {chipStyles} from '../styles/chips';
+import {showContactOptions} from '../utils/contactUtils';
 
 interface Props {
   availability: ParkingAvailability;
@@ -32,7 +36,6 @@ const AvailabilityCard: React.FC<Props> = ({
   const isMyAvailability = availability.userId === currentUserId;
   const isActive = isAvailabilityActive(availability);
   const isRecurringAvailability = isRecurring(availability);
-  const dayBadge = getTodayTomorrowBadge(availability.from);
   const [showDebugModal, setShowDebugModal] = useState(false);
 
   const recurrenceLabel = () => {
@@ -79,13 +82,13 @@ const AvailabilityCard: React.FC<Props> = ({
         delayLongPress={500}>
         <View
           style={[
-            styles.card,
+            cardStyles.card,
             {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              shadowColor: colors.shadow,
+              shadowColor: '#000',
             },
-            !isActive && styles.cardInactive,
+            !isActive && cardStyles.cardInactive,
             highlight && {borderWidth: 2, borderColor: colors.brand},
           ]}>
       {/* Header */}
@@ -103,11 +106,7 @@ const AvailabilityCard: React.FC<Props> = ({
               <Text style={[styles.badgeText, {marginLeft: 4}]}>Pausiert</Text>
             </View>
           )}
-          {isActive && dayBadge && (
-            <View style={[styles.badge, {backgroundColor: colors.brand}]}>
-              <Text style={styles.badgeText}>{dayBadge}</Text>
-            </View>
-          )}
+          {isActive && <DayBadge date={availability.from} />}
         </View>
         {!isMyAvailability && (
           <View style={styles.headerRight}>
@@ -167,36 +166,36 @@ const AvailabilityCard: React.FC<Props> = ({
       {isMyAvailability && (
         <View style={styles.actionsRow}>
           {onEdit && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionPrimary]}
-              onPress={() => onEdit(availability)}>
-              <MaterialCommunityIcons name="pencil" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Bearbeiten</Text>
-            </TouchableOpacity>
+            <ActionButton
+              onPress={() => onEdit(availability)}
+              label="Bearbeiten"
+              icon="pencil"
+              variant="primary"
+            />
           )}
           {isActive && onDeactivate && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionDark]}
-              onPress={() => onDeactivate(availability)}>
-              <MaterialCommunityIcons name="pause" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Pausieren</Text>
-            </TouchableOpacity>
+            <ActionButton
+              onPress={() => onDeactivate(availability)}
+              label="Pausieren"
+              icon="pause"
+              variant="dark"
+            />
           )}
           {!isActive && onActivate && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionPrimary]}
-              onPress={() => onActivate(availability)}>
-              <MaterialCommunityIcons name="play" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Aktivieren</Text>
-            </TouchableOpacity>
+            <ActionButton
+              onPress={() => onActivate(availability)}
+              label="Aktivieren"
+              icon="play"
+              variant="primary"
+            />
           )}
           {onDelete && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionDanger]}
-              onPress={() => onDelete(availability)}>
-              <MaterialCommunityIcons name="delete-outline" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Löschen</Text>
-            </TouchableOpacity>
+            <ActionButton
+              onPress={() => onDelete(availability)}
+              label="Löschen"
+              icon="delete-outline"
+              variant="danger"
+            />
           )}
         </View>
       )}
@@ -206,7 +205,7 @@ const AvailabilityCard: React.FC<Props> = ({
         <View style={styles.contactRow}>
           <TouchableOpacity
             style={[styles.contactBtn, {backgroundColor: colors.brand}]}
-            onPress={() => tryOpenUrl(`tel:${normalizePhone(availability.phone!)}`)}>
+            onPress={() => showContactOptions(availability.phone)}>
             <MaterialCommunityIcons name="phone" size={16} color="#fff" />
             <Text style={styles.contactText}>Anrufen</Text>
           </TouchableOpacity>
@@ -256,19 +255,7 @@ const AvailabilityCard: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  card: {
-    marginBottom: 8,
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  cardInactive: {
-    opacity: 0.6,
-  },
+  // Card styles moved to src/styles/cards.ts
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -355,28 +342,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexShrink: 0,
   },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    gap: 6,
-  },
-  actionPrimary: {
-    backgroundColor: '#16A34A',
-  },
-  actionDark: {
-    backgroundColor: '#111827',
-  },
-  actionDanger: {
-    backgroundColor: '#DC2626',
-  },
-  actionTextWhite: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  // Action button styles moved to src/styles/buttons.ts
   contactRow: {
     marginTop: 12,
     paddingTop: 12,

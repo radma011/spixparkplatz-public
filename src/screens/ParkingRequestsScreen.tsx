@@ -69,6 +69,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const [showComments, setShowComments] = useState(false);
   const [commentsRequestId, setCommentsRequestId] = useState<string | null>(null);
   const [facilityName, setFacilityName] = useState<string | null>(null);
+  const [offeringRequestId, setOfferingRequestId] = useState<string | null>(null);
   const requestsUnsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -323,6 +324,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       Alert.alert('Fehler', 'Du hast keinen Parkplatz zugewiesen');
       return;
     }
+    setOfferingRequestId(request.id);
     setOfferModalRequest(request);
     setShowOfferModal(true);
   };
@@ -876,6 +878,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               offers={offersByRequestId[item.id] ?? []}
               publicUsers={publicUsers}
               focusOfferId={focusOfferId}
+              isOffering={offeringRequestId === item.id}
               onAcceptOffer={async (offer) => {
                 try {
                   await ParkingRequestService.acceptOffer(item.id, offer);
@@ -1006,6 +1009,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         onClose={() => {
           setShowOfferModal(false);
           setOfferModalRequest(null);
+          setOfferingRequestId(null);
         }}
         onSubmit={async (spotId, from, until, comment) => {
           if (!offerModalRequest) return;
@@ -1021,6 +1025,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           );
           if (!ok) {
             Alert.alert('Fehler', 'Angebot konnte nicht erstellt werden');
+            setOfferingRequestId(null);
             return;
           }
           // Add comment to chat if provided
@@ -1032,6 +1037,9 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               // Don't show error to user, offer was created successfully
             }
           }
+          setOfferingRequestId(null);
+          setShowOfferModal(false);
+          setOfferModalRequest(null);
         }}
       />
       </View>

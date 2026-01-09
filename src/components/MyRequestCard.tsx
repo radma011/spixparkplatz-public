@@ -1,11 +1,16 @@
 import React from 'react';
 import {Alert, View, Text, StyleSheet, TouchableOpacity, useColorScheme} from 'react-native';
 import {ParkingRequest} from '../models/ParkingRequest';
-import {formatDateRange, getTodayTomorrowBadge} from '../utils/dateUtils';
+import {formatDateRange} from '../utils/dateUtils';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {normalizePhone, tryOpenUrl} from '../utils/contactLinks';
 import {getColors} from '../theme/colors';
 import {RequestOffer} from '../models/RequestOffer';
+import ActionButton from './common/ActionButton';
+import StatusChip from './common/StatusChip';
+import DayBadge from './common/DayBadge';
+import {cardStyles} from '../styles/cards';
+import {chipStyles} from '../styles/chips';
+import {showContactOptions} from '../utils/contactUtils';
 
 interface Props {
   request: ParkingRequest & {section?: string};
@@ -20,7 +25,6 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
   const colors = getColors(useColorScheme());
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const canDelete = !request.isFulfilled;
-  const dayBadge = getTodayTomorrowBadge(request.from);
   const canContactOnFulfilled = request.isFulfilled && !!request.offeredByPhone;
   
   // Finde das aktive Angebot für diesen Request
@@ -109,95 +113,42 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
       ? 'hat dir einen Parkplatz angeboten'
       : 'sucht einen Parkplatz';
 
-  const handleContact = () => {
-    if (!request.offeredByPhone) {
-      Alert.alert('Kontakt', 'Keine Telefonnummer verfügbar.');
-      return;
-    }
-    const normalized = normalizePhone(request.offeredByPhone || '');
-    if (!normalized) {
-      Alert.alert('Fehler', 'Keine gültige Telefonnummer vorhanden');
-      return;
-    }
-    const {e164, digits} = normalized;
-    Alert.alert('Kontakt', 'Wie möchtest du die Person kontaktieren?', [
-      {
-        text: 'Anrufen',
-        onPress: async () => {
-          const ok = await tryOpenUrl(`tel:${e164}`);
-          if (!ok) Alert.alert('Fehler', 'Konnte Telefon-App nicht öffnen');
-        },
-      },
-      {
-        text: 'SMS/iMessage',
-        onPress: async () => {
-          const ok = await tryOpenUrl(`sms:${e164}`);
-          if (!ok) Alert.alert('Fehler', 'Konnte Nachrichten-App nicht öffnen');
-        },
-      },
-      {
-        text: 'WhatsApp',
-        onPress: async () => {
-          const ok = await tryOpenUrl(`https://wa.me/${digits}`);
-          if (!ok) Alert.alert('Fehler', 'Konnte WhatsApp nicht öffnen');
-        },
-      },
-      {
-        text: 'Signal',
-        onPress: async () => {
-          const ok = await tryOpenUrl(`sgnl://send?phone=${encodeURIComponent(e164)}`);
-          if (!ok) Alert.alert('Fehler', 'Konnte Signal nicht öffnen');
-        },
-      },
-      {text: 'Abbrechen', style: 'cancel'},
-    ]);
-  };
 
   return (
     <View
       style={[
-        styles.card,
+        cardStyles.card,
         {backgroundColor: colors.surface},
         colors.isDark && {shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: colors.border},
       ]}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleContainer}>
-          <View style={styles.titleRow}>
+      <View style={cardStyles.cardHeader}>
+        <View style={cardStyles.cardTitleContainer}>
+          <View style={cardStyles.titleRow}>
             {canContactOnFulfilled && (
               <TouchableOpacity
                 accessibilityLabel="Kontakt"
-                style={[styles.headerContactBtn, {backgroundColor: colors.surface2, borderColor: colors.border}]}
-                onPress={handleContact}>
+                style={[cardStyles.headerContactBtn, {backgroundColor: colors.surface2, borderColor: colors.border}]}
+                onPress={() => showContactOptions(request.offeredByPhone)}>
                 <MaterialCommunityIcons name="message-text-outline" size={18} color={colors.text} />
               </TouchableOpacity>
             )}
-            <Text style={[styles.cardTitle, {color: colors.text}]} numberOfLines={1}>
+            <Text style={[cardStyles.cardTitle, {color: colors.text}]} numberOfLines={1}>
               {title}
             </Text>
           </View>
-          <Text style={[styles.cardSubtitle, {color: colors.subtext}]} numberOfLines={1}>
+          <Text style={[cardStyles.cardSubtitle, {color: colors.subtext}]} numberOfLines={1}>
             {subtitle}
           </Text>
         </View>
 
-        <View style={styles.badgesRow}>
-          {dayBadge && (
-            <View style={styles.dayBadge}>
-              <Text style={styles.dayBadgeText}>{dayBadge}</Text>
-            </View>
-          )}
+        <View style={chipStyles.badgesRow}>
+          <DayBadge date={request.from} />
           {request.isFulfilled ? (
-            <View style={[styles.chip, styles.fulfilledChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>Erfüllt</Text>
-            </View>
+            <StatusChip type="fulfilled" label="Erfüllt" />
           ) : hasOffer ? (
-            <View style={[styles.chip, styles.offerChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>Angeboten</Text>
-            </View>
+            <StatusChip type="offer" label="Angeboten" />
           ) : (
-            <View style={[styles.chip, styles.openChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>Offen</Text>
-            </View>
+            <StatusChip type="open" label="Offen" />
           )}
         </View>
       </View>
@@ -300,21 +251,24 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
       {(canDelete && onDelete) || (hasOffer && !request.isFulfilled && fullOffer && onAcceptOffer) ? (
         <View style={styles.actionsRow}>
           {hasOffer && !request.isFulfilled && fullOffer && onAcceptOffer && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionBlue, styles.actionBtnCompact]}
+            <ActionButton
               onPress={() => {
                 if (!fullOffer) return;
                 onAcceptOffer(fullOffer);
-              }}>
-              <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Annehmen</Text>
-            </TouchableOpacity>
+              }}
+              label="Annehmen"
+              icon="check-circle-outline"
+              variant="blue"
+              compact={true}
+            />
           )}
           {canDelete && onDelete && (
-            <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onDelete(request.id)}>
-              <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Anfrage zurückziehen</Text>
-            </TouchableOpacity>
+            <ActionButton
+              onPress={() => onDelete(request.id)}
+              label="Anfrage zurückziehen"
+              icon="trash-can-outline"
+              variant="red"
+            />
           )}
         </View>
       ) : null}
@@ -323,73 +277,7 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
 };
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  cardTitleContainer: {flex: 1},
-  titleRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  headerContactBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  cardTitle: {fontSize: 15, fontWeight: 'bold'},
-  cardSubtitle: {fontSize: 12, marginTop: 1},
-  badgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dayBadge: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  dayBadgeText: {
-    color: '#991B1B',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  openChip: {
-    backgroundColor: '#FF9800',
-  },
-  offerChip: {
-    backgroundColor: '#4CAF50',
-  },
-  fulfilledChip: {
-    backgroundColor: '#2196F3',
-  },
-  chipText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  chipTextWhite: {
-    color: '#fff',
-  },
+  // Card, chip, and badge styles moved to src/styles/cards.ts and src/styles/chips.ts
   timeRangeText: {
     fontSize: 12,
     fontWeight: '600',

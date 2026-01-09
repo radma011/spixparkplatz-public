@@ -17,6 +17,10 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import {ParkingRequest} from '../models/ParkingRequest';
 import {formatDateLabel, formatDateRange, formatTime} from '../utils/dateUtils';
 import {getColors} from '../theme/colors';
+import Button from './common/Button';
+import {inputStyles} from '../styles/inputs';
+import {buttonStyles} from '../styles/buttons';
+import {modalStyles} from '../styles/modals';
 
 interface Props {
   visible: boolean;
@@ -241,7 +245,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
               colors.isDark && {borderColor: colors.border, borderWidth: 1, shadowOpacity: 0, elevation: 0},
             ]}>
             <View style={[styles.header, {borderBottomColor: colors.border}]}>
-              <Text style={[styles.title, {color: colors.text}]}>Parkplatz anbieten</Text>
+              <Text style={[modalStyles.modalTitle, {color: colors.text}]}>Parkplatz anbieten</Text>
               <TouchableOpacity onPress={onClose}>
                 <Text style={[styles.close, {color: colors.subtext}]}>✕</Text>
               </TouchableOpacity>
@@ -257,32 +261,32 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                 setShowSpotPicker(false);
               }
             }}>
-            <View style={[styles.requestRangeBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-              <Text style={[styles.requestRangeLabel, {color: colors.subtext}]}>Anfrage-Zeitraum</Text>
-              <Text style={[styles.requestRangeText, {color: colors.text}]}>
+            <View style={[inputStyles.requestRangeBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+              <Text style={[inputStyles.requestRangeLabel, {color: colors.subtext}]}>Anfrage-Zeitraum</Text>
+              <Text style={[inputStyles.requestRangeText, {color: colors.text}]}>
                 {formatDateRange(request.from, request.until)}
               </Text>
             </View>
 
-            <View style={styles.rowBetween}>
-              <Text style={[styles.label, {color: colors.text}]}>Parkplatz</Text>
+            <View style={inputStyles.inputLabelRow}>
+              <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Parkplatz</Text>
               {mySpots.length > 1 ? (
-                <View style={styles.spotPickerContainer}>
+                <View style={inputStyles.spotPickerContainer}>
                   <TouchableOpacity
                     onPress={() => {
                       console.log('[OfferModal] Opening spot picker, mySpots:', mySpots);
                       setShowSpotPicker(true);
                     }}
-                    style={[styles.spotPickerButton, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                    <Text style={[styles.spot, {color: colors.text}]}>P {selectedSpot}</Text>
+                    style={[inputStyles.spotPickerButton, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                    <Text style={[inputStyles.spotText, {color: colors.text}]}>P {selectedSpot}</Text>
                     <MaterialCommunityIcons name="chevron-down" size={20} color={colors.text} />
                   </TouchableOpacity>
                   {showSpotPicker && (
                     <View 
-                      style={[styles.pickerCard, {backgroundColor: colors.surface, borderColor: colors.border}]}
+                      style={[inputStyles.pickerCard, {backgroundColor: colors.surface, borderColor: colors.border}]}
                       pointerEvents="box-none">
                       <View pointerEvents="auto">
-                        <ScrollView style={styles.pickerBody}>
+                        <ScrollView style={inputStyles.pickerBody}>
                           {mySpots.map((spot, index) => (
                             <TouchableOpacity
                               key={spot}
@@ -299,11 +303,11 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                               }}
                               activeOpacity={0.7}
                               style={[
-                                styles.pickerItem,
+                                inputStyles.pickerItem,
                                 {borderBottomColor: colors.border},
                                 index === spotIdx && {backgroundColor: colors.surface2},
                               ]}>
-                              <Text style={[styles.pickerItemText, {color: colors.text}]}>P {spot}</Text>
+                              <Text style={[inputStyles.pickerItemText, {color: colors.text}]}>P {spot}</Text>
                               {index === spotIdx && (
                                 <MaterialCommunityIcons name="check" size={20} color={colors.brand} />
                               )}
@@ -315,7 +319,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                   )}
                 </View>
               ) : (
-                <Text style={[styles.spot, {color: colors.text}]}>P {selectedSpot}</Text>
+                <Text style={[inputStyles.spotText, {color: colors.text}]}>P {selectedSpot}</Text>
               )}
             </View>
 
@@ -331,7 +335,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                   {backgroundColor: colors.surface2, borderColor: colors.border},
                   isFull && {backgroundColor: colors.brand, borderColor: colors.brand},
                 ]}>
-                <Text style={[styles.pillText, {color: isFull ? '#fff' : colors.text}]}>
+                <Text style={[inputStyles.pillText, {color: isFull ? '#fff' : colors.text}]}>
                   Vollständig
                 </Text>
               </TouchableOpacity>
@@ -342,7 +346,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                   {backgroundColor: colors.surface2, borderColor: colors.border},
                   !isFull && {backgroundColor: colors.brand, borderColor: colors.brand},
                 ]}>
-                <Text style={[styles.pillText, {color: !isFull ? '#fff' : colors.text}]}>
+                <Text style={[inputStyles.pillText, {color: !isFull ? '#fff' : colors.text}]}>
                   Teilweise
                 </Text>
               </TouchableOpacity>
@@ -350,11 +354,27 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
 
             {!isFull && (
               <>
-                <View style={styles.group}>
-                  <Text style={[styles.label, {color: colors.text}]}>Von</Text>
-                  <View style={styles.row}>
+                <View style={inputStyles.inputGroup}>
+                  <View style={inputStyles.inputLabelRow}>
+                    <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Von</Text>
+                    {(showFromDatePicker || showFromTimePicker) && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowFromDatePicker(false);
+                          setShowFromTimePicker(false);
+                        }}
+                        style={buttonStyles.doneButton}>
+                        <Text style={buttonStyles.doneButtonText}>Fertig</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={inputStyles.dateTimeRow}>
                     <TouchableOpacity
-                      style={[styles.inputBtn, {backgroundColor: colors.surface2, borderColor: colors.border}]}
+                      style={[
+                        buttonStyles.inputButton,
+                        buttonStyles.inputButtonHalf,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}
                       onPress={() => {
                         const next = !showFromDatePicker;
                         setShowFromDatePicker(next);
@@ -364,13 +384,19 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           setShowUntilTimePicker(false);
                         }
                       }}>
-                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} />
-                      <Text style={[styles.inputText, {color: colors.brand}]}>
-                        {formatDateLabel(fromDateTime)}
-                      </Text>
+                      <View style={inputStyles.inputButtonInner}>
+                        <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                        <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                          {formatDateLabel(fromDateTime)}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.inputBtn, {backgroundColor: colors.surface2, borderColor: colors.border}]}
+                      style={[
+                        buttonStyles.inputButton,
+                        buttonStyles.inputButtonHalf,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}
                       onPress={() => {
                         const next = !showFromTimePicker;
                         setShowFromTimePicker(next);
@@ -380,10 +406,12 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           setShowUntilTimePicker(false);
                         }
                       }}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} />
-                      <Text style={[styles.inputText, {color: colors.brand}]}>
-                        {formatTime(fromDateTime)}
-                      </Text>
+                      <View style={inputStyles.inputButtonInner}>
+                        <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                        <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                          {formatTime(fromDateTime)}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   </View>
                   {showFromDatePicker && (
@@ -397,7 +425,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         onChange={handleFromDateChange}
                       />
                     ) : (
-                      <View style={[styles.pickerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
                           value={fromDateTime}
                           mode="date"
@@ -405,6 +433,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           minimumDate={requestMin}
                           maximumDate={requestMax}
                           onChange={(_, d) => d && setFromClamped(d)}
+                          style={inputStyles.picker}
                         />
                       </View>
                     )
@@ -421,7 +450,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         onChange={handleFromTimeChange}
                       />
                     ) : (
-                      <View style={[styles.pickerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
                           value={fromDateTime}
                           mode="time"
@@ -430,17 +459,34 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           minimumDate={requestMin}
                           maximumDate={requestMax}
                           onChange={(_, d) => d && setFromClamped(d)}
+                          style={inputStyles.picker}
                         />
                       </View>
                     )
                   )}
                 </View>
 
-                <View style={styles.group}>
-                  <Text style={[styles.label, {color: colors.text}]}>Bis</Text>
-                  <View style={styles.row}>
+                <View style={inputStyles.inputGroup}>
+                  <View style={inputStyles.inputLabelRow}>
+                    <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Bis</Text>
+                    {(showUntilDatePicker || showUntilTimePicker) && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowUntilDatePicker(false);
+                          setShowUntilTimePicker(false);
+                        }}
+                        style={buttonStyles.doneButton}>
+                        <Text style={buttonStyles.doneButtonText}>Fertig</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={inputStyles.dateTimeRow}>
                     <TouchableOpacity
-                      style={[styles.inputBtn, {backgroundColor: colors.surface2, borderColor: colors.border}]}
+                      style={[
+                        buttonStyles.inputButton,
+                        buttonStyles.inputButtonHalf,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}
                       onPress={() => {
                         const next = !showUntilDatePicker;
                         setShowUntilDatePicker(next);
@@ -450,13 +496,19 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           setShowUntilTimePicker(false);
                         }
                       }}>
-                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} />
-                      <Text style={[styles.inputText, {color: colors.brand}]}>
-                        {formatDateLabel(untilDateTime)}
-                      </Text>
+                      <View style={inputStyles.inputButtonInner}>
+                        <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                        <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                          {formatDateLabel(untilDateTime)}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.inputBtn, {backgroundColor: colors.surface2, borderColor: colors.border}]}
+                      style={[
+                        buttonStyles.inputButton,
+                        buttonStyles.inputButtonHalf,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}
                       onPress={() => {
                         const next = !showUntilTimePicker;
                         setShowUntilTimePicker(next);
@@ -466,10 +518,12 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           setShowUntilDatePicker(false);
                         }
                       }}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} />
-                      <Text style={[styles.inputText, {color: colors.brand}]}>
-                        {formatTime(untilDateTime)}
-                      </Text>
+                      <View style={inputStyles.inputButtonInner}>
+                        <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                        <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                          {formatTime(untilDateTime)}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   </View>
                   {showUntilDatePicker && (
@@ -483,7 +537,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         onChange={handleUntilDateChange}
                       />
                     ) : (
-                      <View style={[styles.pickerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
                           value={untilDateTime}
                           mode="date"
@@ -491,6 +545,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           minimumDate={requestMin}
                           maximumDate={requestMax}
                           onChange={(_, d) => d && setUntilClamped(d)}
+                          style={inputStyles.picker}
                         />
                       </View>
                     )
@@ -507,7 +562,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         onChange={handleUntilTimeChange}
                       />
                     ) : (
-                      <View style={[styles.pickerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
                           value={untilDateTime}
                           mode="time"
@@ -516,6 +571,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           minimumDate={requestMin}
                           maximumDate={requestMax}
                           onChange={(_, d) => d && setUntilClamped(d)}
+                          style={inputStyles.picker}
                         />
                       </View>
                     )
@@ -524,42 +580,50 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
               </>
             )}
 
-            <View style={[styles.summary, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-              <Text style={[styles.summaryLabel, {color: colors.subtext}]}>Dein Angebot</Text>
-              <Text style={[styles.summaryText, {color: colors.text}]}>
+            <View style={[inputStyles.summaryContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+              <Text style={[inputStyles.summaryLabel, {color: colors.subtext}]}>Dein Angebot</Text>
+              <Text style={[inputStyles.summaryText, {color: colors.text}]}>
                 {formatDateRange(isFull ? request.from : fromDateTime, isFull ? request.until : untilDateTime)}
               </Text>
             </View>
 
-            <View style={styles.commentGroup}>
-              <Text style={[styles.label, {color: colors.text}]}>Kommentar (optional)</Text>
-              <TextInput
-                value={comment}
-                onChangeText={setComment}
-                placeholder="Nachricht an den Anfragenden..."
-                placeholderTextColor={colors.subtext}
-                multiline
-                numberOfLines={3}
-                style={[
-                  styles.commentInput,
-                  {
-                    backgroundColor: colors.surface2,
-                    borderColor: colors.border,
-                    color: colors.text,
-                  },
-                ]}
-                textAlignVertical="top"
-              />
+            <View style={inputStyles.inputGroup}>
+              <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Kommentar (optional)</Text>
+              <View style={[inputStyles.commentBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                <TextInput
+                  value={comment}
+                  onChangeText={setComment}
+                  placeholder="Nachricht an den Anfragenden..."
+                  placeholderTextColor={colors.subtext}
+                  multiline
+                  numberOfLines={3}
+                  style={[
+                    inputStyles.commentInput,
+                    {color: colors.text},
+                  ]}
+                  textAlignVertical="top"
+                />
+              </View>
             </View>
           </ScrollView>
 
           <View style={[styles.footer, {borderTopColor: colors.border}]}>
-            <TouchableOpacity style={[styles.btn, {backgroundColor: colors.surface2}]} onPress={onClose} disabled={isSubmitting}>
-              <Text style={[styles.btnText, {color: colors.subtext}]}>Abbrechen</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, {backgroundColor: colors.brand}]} onPress={handleSubmit} disabled={isSubmitting}>
-              <Text style={[styles.btnText, {color: '#fff'}]}>{isSubmitting ? 'Sende…' : 'Anbieten'}</Text>
-            </TouchableOpacity>
+            <Button
+              variant="cancel"
+              label="Abbrechen"
+              onPress={onClose}
+              disabled={isSubmitting}
+              style={{backgroundColor: colors.surface2}}
+              textStyle={{color: colors.subtext}}
+            />
+            <Button
+              variant="primary"
+              label="Anbieten"
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+              loading={isSubmitting}
+              style={{backgroundColor: colors.brand}}
+            />
           </View>
           </View>
         </KeyboardAvoidingView>
@@ -587,13 +651,11 @@ const styles = StyleSheet.create({
     elevation: 10
   },
   header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1},
-  title: {fontSize: 18, fontWeight: '900'},
+  // Title style moved to src/styles/modals.ts (modalTitle)
   close: {fontSize: 22, fontWeight: '300'},
   body: {maxHeight: 600},
   bodyContent: {padding: 16, paddingBottom: 20},
-  requestRangeBox: {borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12},
-  requestRangeLabel: {fontWeight: '900', fontSize: 12},
-  requestRangeText: {fontWeight: '900', marginTop: 4},
+  // Request range and summary styles moved to src/styles/inputs.ts
 
   footer: {flexDirection: 'row', gap: 12, padding: 16, borderTopWidth: 1},
   btn: {flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center'},
@@ -601,81 +663,21 @@ const styles = StyleSheet.create({
 
   row: {flexDirection: 'row', alignItems: 'center', gap: 10},
   rowBetween: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  label: {fontWeight: '800', marginBottom: 8},
+  // Label, text, and summary styles moved to src/styles/inputs.ts
   group: {marginTop: 14},
 
   iconBtn: {width: 36, height: 36, borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 1},
-  spot: {fontSize: 16, fontWeight: '900'},
 
   switchRow: {flexDirection: 'row', gap: 10, marginTop: 14},
   pill: {flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center', borderWidth: 1},
-  pillText: {fontWeight: '900'},
+  // pillText moved to src/styles/inputs.ts
 
   inputBtn: {flex: 1, borderRadius: 12, padding: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8},
-  inputText: {fontWeight: '700'},
+  // inputText moved to src/styles/buttons.ts (inputButtonText)
   pickerBox: {marginTop: 8, borderRadius: 12, borderWidth: 1, overflow: 'hidden'},
+  // Comment styles moved to src/styles/inputs.ts
 
-  summary: {marginTop: 14, borderRadius: 12, borderWidth: 1, padding: 12},
-  summaryLabel: {fontWeight: '800', fontSize: 12},
-  summaryText: {fontWeight: '800', marginTop: 4},
-  commentGroup: {marginTop: 14},
-  commentInput: {
-    marginTop: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    minHeight: 80,
-    maxHeight: 120,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-
-  spotPickerContainer: {
-    position: 'relative',
-    zIndex: 10,
-    alignItems: 'flex-end',
-  },
-  spotPickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  pickerCard: {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
-    marginTop: 4,
-    width: '100%',
-    borderRadius: 12,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    zIndex: 1002,
-    maxHeight: 300,
-    overflow: 'hidden',
-    pointerEvents: 'box-none',
-  },
-  pickerBody: {
-    maxHeight: 300,
-  },
-  pickerItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-  },
-  pickerItemText: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  // Spot picker styles moved to src/styles/inputs.ts
 });
 
 

@@ -3,19 +3,22 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
-  TouchableOpacity,
   ScrollView,
   Alert,
   TextInput,
   useColorScheme,
   Platform,
-  KeyboardAvoidingView,
+  TouchableOpacity,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {formatDateLabel, formatDateRange, formatTime} from '../utils/dateUtils';
 import {getColors} from '../theme/colors';
+import BaseModal from './common/Modal';
+import Button from './common/Button';
+import {modalStyles} from '../styles/modals';
+import {inputStyles} from '../styles/inputs';
+import {buttonStyles} from '../styles/buttons';
 
 interface Props {
   visible: boolean;
@@ -148,54 +151,55 @@ const NewRequestModal: React.FC<Props> = ({
   };
 
   return (
-    <>
-      <Modal
-        visible={visible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={handleClose}>
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{width: '100%', maxWidth: 500}}>
-            <View
-              style={[
-                styles.modalContent,
-                {backgroundColor: colors.surface},
-                colors.isDark && {borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0},
-              ]}>
-            <View style={[styles.modalHeader, {borderBottomColor: colors.border}]}>
-              <Text style={[styles.modalTitle, {color: colors.text}]}>Neue Parkplatz-Anfrage</Text>
-              <TouchableOpacity onPress={handleClose}>
-                <Text style={[styles.modalCloseButton, {color: colors.subtext}]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView 
-              style={styles.modalBody}
-              contentContainerStyle={styles.modalBodyContent}
-              keyboardShouldPersistTaps="handled">
-              {/* Von (Datum + Zeit) */}
-              <View style={styles.inputGroup}>
-                <View style={styles.inputLabelRow}>
-                  <Text style={[styles.inputLabel, {color: colors.text}]}>Von</Text>
+    <BaseModal
+      visible={visible}
+      onClose={handleClose}
+      title="Neue Parkplatz-Anfrage"
+      footer={
+        <>
+          <Button
+            variant="cancel"
+            label="Abbrechen"
+            onPress={handleClose}
+            disabled={isSubmitting}
+            style={{backgroundColor: colors.surface2}}
+            textStyle={{color: colors.subtext}}
+          />
+          <Button
+            variant="primary"
+            label={isSubmitting ? 'Erstelle...' : 'Anfragen'}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+            loading={isSubmitting}
+            style={{backgroundColor: colors.brand}}
+          />
+        </>
+      }>
+      <ScrollView
+        style={modalStyles.modalBody}
+        contentContainerStyle={modalStyles.modalBodyContent}
+        keyboardShouldPersistTaps="handled">
+        {/* Von (Datum + Zeit) */}
+        <View style={inputStyles.inputGroup}>
+          <View style={inputStyles.inputLabelRow}>
+            <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Von</Text>
                   {(showFromDatePicker || showFromTimePicker) && (
                     <TouchableOpacity
                       onPress={() => {
                         setShowFromDatePicker(false);
                         setShowFromTimePicker(false);
                       }}
-                      style={styles.doneButton}>
-                      <Text style={styles.doneButtonText}>Fertig</Text>
+                      style={buttonStyles.doneButton}>
+                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <View style={styles.dateTimeRow}>
+          <View style={inputStyles.dateTimeRow}>
                   <TouchableOpacity
                     style={[
-                      styles.inputButton,
-                      styles.inputButtonHalf,
+                      buttonStyles.inputButton,
+                      buttonStyles.inputButtonHalf,
                       {backgroundColor: colors.surface2, borderColor: colors.border},
                     ]}
                     onPress={() => {
@@ -207,9 +211,9 @@ const NewRequestModal: React.FC<Props> = ({
                         setShowUntilTimePicker(false);
                       }
                     }}>
-                    <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={styles.inputButtonIcon} />
-                      <Text style={[styles.inputButtonText, {color: colors.brand}]}>
+                    <View style={inputStyles.inputButtonInner}>
+                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                      <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
                         {formatDateLabel(fromDateTime)}
                       </Text>
                     </View>
@@ -217,8 +221,8 @@ const NewRequestModal: React.FC<Props> = ({
 
                     <TouchableOpacity
                       style={[
-                        styles.inputButton,
-                        styles.inputButtonHalf,
+                        buttonStyles.inputButton,
+                        buttonStyles.inputButtonHalf,
                         {backgroundColor: colors.surface2, borderColor: colors.border},
                       ]}
                     onPress={() => {
@@ -230,9 +234,9 @@ const NewRequestModal: React.FC<Props> = ({
                         setShowUntilTimePicker(false);
                       }
                     }}>
-                    <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={styles.inputButtonIcon} />
-                      <Text style={[styles.inputButtonText, {color: colors.brand}]}>
+                    <View style={inputStyles.inputButtonInner}>
+                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                      <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
                         {formatTime(fromDateTime)}
                       </Text>
                     </View>
@@ -251,7 +255,7 @@ const NewRequestModal: React.FC<Props> = ({
                   ) : (
                     <View
                       style={[
-                        styles.pickerContainer,
+                        inputStyles.pickerContainer,
                         {backgroundColor: colors.surface2, borderColor: colors.border},
                       ]}>
                       <DateTimePicker
@@ -260,7 +264,7 @@ const NewRequestModal: React.FC<Props> = ({
                         display="spinner"
                         minimumDate={new Date()}
                         onChange={handleFromDateSelected}
-                        style={styles.picker}
+                        style={inputStyles.picker}
                       />
                     </View>
                   )
@@ -277,7 +281,7 @@ const NewRequestModal: React.FC<Props> = ({
                   ) : (
                     <View
                       style={[
-                        styles.pickerContainer,
+                        inputStyles.pickerContainer,
                         {backgroundColor: colors.surface2, borderColor: colors.border},
                       ]}>
                       <DateTimePicker
@@ -286,34 +290,34 @@ const NewRequestModal: React.FC<Props> = ({
                         display="spinner"
                         minuteInterval={15}
                         onChange={handleFromTimeSelected}
-                        style={styles.picker}
+                        style={inputStyles.picker}
                       />
                     </View>
                   )
                 )}
               </View>
 
-              {/* Bis (Datum + Zeit) */}
-              <View style={styles.inputGroup}>
-                <View style={styles.inputLabelRow}>
-                  <Text style={[styles.inputLabel, {color: colors.text}]}>Bis</Text>
+        {/* Bis (Datum + Zeit) */}
+        <View style={inputStyles.inputGroup}>
+          <View style={inputStyles.inputLabelRow}>
+            <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Bis</Text>
                   {(showUntilDatePicker || showUntilTimePicker) && (
                     <TouchableOpacity
                       onPress={() => {
                         setShowUntilDatePicker(false);
                         setShowUntilTimePicker(false);
                       }}
-                      style={styles.doneButton}>
-                      <Text style={styles.doneButtonText}>Fertig</Text>
+                      style={buttonStyles.doneButton}>
+                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <View style={styles.dateTimeRow}>
+          <View style={inputStyles.dateTimeRow}>
                   <TouchableOpacity
                     style={[
-                      styles.inputButton,
-                      styles.inputButtonHalf,
+                      buttonStyles.inputButton,
+                      buttonStyles.inputButtonHalf,
                       {backgroundColor: colors.surface2, borderColor: colors.border},
                     ]}
                     onPress={() => {
@@ -325,9 +329,9 @@ const NewRequestModal: React.FC<Props> = ({
                         setShowUntilTimePicker(false);
                       }
                     }}>
-                    <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={styles.inputButtonIcon} />
-                      <Text style={[styles.inputButtonText, {color: colors.brand}]}>
+                    <View style={inputStyles.inputButtonInner}>
+                      <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                      <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
                         {formatDateLabel(untilDateTime)}
                       </Text>
                     </View>
@@ -335,8 +339,8 @@ const NewRequestModal: React.FC<Props> = ({
 
                     <TouchableOpacity
                     style={[
-                      styles.inputButton,
-                      styles.inputButtonHalf,
+                      buttonStyles.inputButton,
+                      buttonStyles.inputButtonHalf,
                       {backgroundColor: colors.surface2, borderColor: colors.border},
                     ]}
                     onPress={() => {
@@ -348,9 +352,9 @@ const NewRequestModal: React.FC<Props> = ({
                         setShowUntilDatePicker(false);
                       }
                     }}>
-                    <View style={styles.inputButtonInner}>
-                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={styles.inputButtonIcon} />
-                      <Text style={[styles.inputButtonText, {color: colors.brand}]}>
+                    <View style={inputStyles.inputButtonInner}>
+                      <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                      <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
                         {formatTime(untilDateTime)}
                       </Text>
                     </View>
@@ -369,7 +373,7 @@ const NewRequestModal: React.FC<Props> = ({
                   ) : (
                     <View
                       style={[
-                        styles.pickerContainer,
+                        inputStyles.pickerContainer,
                         {backgroundColor: colors.surface2, borderColor: colors.border},
                       ]}>
                       <DateTimePicker
@@ -378,7 +382,7 @@ const NewRequestModal: React.FC<Props> = ({
                         display="spinner"
                         minimumDate={new Date()}
                         onChange={handleUntilDateSelected}
-                        style={styles.picker}
+                        style={inputStyles.picker}
                       />
                     </View>
                   )
@@ -395,7 +399,7 @@ const NewRequestModal: React.FC<Props> = ({
                   ) : (
                     <View
                       style={[
-                        styles.pickerContainer,
+                        inputStyles.pickerContainer,
                         {backgroundColor: colors.surface2, borderColor: colors.border},
                       ]}>
                       <DateTimePicker
@@ -404,194 +408,56 @@ const NewRequestModal: React.FC<Props> = ({
                         display="spinner"
                         minuteInterval={15}
                         onChange={handleUntilTimeSelected}
-                        style={styles.picker}
+                        style={inputStyles.picker}
                       />
                     </View>
                   )
                 )}
               </View>
 
-              {/* Zusammenfassung */}
-              {!showFromDatePicker &&
-                !showFromTimePicker &&
-                !showUntilDatePicker &&
-                !showUntilTimePicker && (
-                <View
-                  style={[
-                    styles.summaryContainer,
-                    colors.isDark && {backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border},
-                  ]}>
-                  <Text style={[styles.summaryLabel, {color: colors.brand}]}>Zusammenfassung:</Text>
-                  <Text style={[styles.summaryText, {color: colors.brand}]}>
-                    {formatDateRange(fromDateTime, untilDateTime)}
-                  </Text>
-                </View>
-              )}
+        {/* Zusammenfassung */}
+        {!showFromDatePicker &&
+          !showFromTimePicker &&
+          !showUntilDatePicker &&
+          !showUntilTimePicker && (
+          <View
+            style={[
+              styles.summaryContainer,
+              colors.isDark && {backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border},
+            ]}>
+            <Text style={[styles.summaryLabel, {color: colors.brand}]}>Zusammenfassung:</Text>
+            <Text style={[styles.summaryText, {color: colors.brand}]}>
+              {formatDateRange(fromDateTime, untilDateTime)}
+            </Text>
+          </View>
+        )}
 
-              {/* Kommentar */}
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, {color: colors.text}]}>Kommentar (optional)</Text>
-                <View
-                  style={[
-                    styles.commentBox,
-                    {backgroundColor: colors.surface2, borderColor: colors.border},
-                  ]}>
-                  <TextInput
-                    value={comment}
-                    onChangeText={setComment}
-                    placeholder="z.B. ‚Ich brauche den Parkplatz wegen…‘"
-                    placeholderTextColor={colors.subtext}
-                    multiline
-                    style={[styles.commentInput, {color: colors.text}]}
-                  />
-                </View>
-              </View>
-            </ScrollView>
-
-            <View style={[styles.modalFooter, {borderTopColor: colors.border}]}>
-              <TouchableOpacity
-                style={[styles.cancelButton, {backgroundColor: colors.surface2}]}
-                onPress={handleClose}
-                disabled={isSubmitting}>
-                <Text style={[styles.cancelButtonText, {color: colors.subtext}]}>Abbrechen</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={isSubmitting}>
-                <Text style={styles.submitButtonText}>
-                  {isSubmitting ? 'Erstelle...' : 'Anfragen'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            </View>
-          </KeyboardAvoidingView>
+        {/* Kommentar */}
+        <View style={inputStyles.inputGroup}>
+          <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Kommentar (optional)</Text>
+          <View
+            style={[
+              inputStyles.commentBox,
+              {backgroundColor: colors.surface2, borderColor: colors.border},
+            ]}>
+            <TextInput
+              value={comment}
+              onChangeText={setComment}
+              placeholder="z.B. ‚Ich brauche den Parkplatz wegen…‘"
+              placeholderTextColor={colors.subtext}
+              multiline
+              style={[inputStyles.commentInput, {color: colors.text}]}
+            />
+          </View>
         </View>
-      </Modal>
-    </>
+      </ScrollView>
+    </BaseModal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '95%',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 10,
-    flexDirection: 'column',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  modalCloseButton: {
-    fontSize: 24,
-    color: '#666',
-    fontWeight: '300',
-  },
-  modalBody: {
-    maxHeight: 500,
-  },
-  modalBodyContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  doneButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
-  },
-  doneButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  pickerContainer: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  picker: {
-    width: '100%',
-    height: 200,
-  },
-  inputButton: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  inputButtonHalf: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-  },
-  inputButtonInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    width: '100%',
-  },
-  inputButtonIcon: {
-    position: 'absolute',
-    left: 0,
-  },
-  inputButtonText: {
-    fontSize: 18,
-    color: '#007AFF',
-    fontWeight: '500',
-    textAlign: 'center',
-    flex: 1,
-  },
+  // Modal, input, and button styles moved to src/styles/modals.ts, src/styles/inputs.ts, and src/styles/buttons.ts
+  // All styles moved to src/styles/inputs.ts and src/styles/buttons.ts
   summaryContainer: {
     backgroundColor: '#E3F2FD',
     borderRadius: 12,
@@ -618,45 +484,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#e0e0e0',
     gap: 12,
   },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  commentBox: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    marginTop: 6,
-  },
-  commentInput: {
-    minHeight: 72,
-    fontSize: 14,
-    fontWeight: '500',
-    textAlignVertical: 'top',
-  },
+  // Button and comment styles moved to src/styles/buttons.ts and src/styles/inputs.ts
 });
 
 export default NewRequestModal;

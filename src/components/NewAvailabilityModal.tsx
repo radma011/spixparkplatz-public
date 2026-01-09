@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -11,13 +10,17 @@ import {
   useColorScheme,
   Platform,
   Switch,
-  KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {formatDateLabel, formatTime} from '../utils/dateUtils';
 import {getColors} from '../theme/colors';
 import {ParkingAvailability, RecurrenceRule} from '../models/ParkingAvailability';
+import BaseModal from './common/Modal';
+import Button from './common/Button';
+import {modalStyles} from '../styles/modals';
+import {inputStyles} from '../styles/inputs';
+import {buttonStyles} from '../styles/buttons';
 
 interface Props {
   visible: boolean;
@@ -36,6 +39,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
 }) => {
   const colors = getColors(useColorScheme());
   const [selectedSpot, setSelectedSpot] = useState<string>('');
+  const [showSpotPicker, setShowSpotPicker] = useState(false);
   const [isRecurring, setIsRecurring] = useState(false);
   const [autoOffer, setAutoOffer] = useState(true);
 
@@ -95,7 +99,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
       setEndDate(null);
       setStartTime(now);
       setEndTime(defaultUntil);
-      setSelectedSpot('');
+      setSelectedSpot(availableSpots.length > 0 ? availableSpots[0] : '');
       setIsRecurring(false);
       setRecurrencePattern('daily');
       setRecurrenceInterval(1);
@@ -180,70 +184,96 @@ const NewAvailabilityModal: React.FC<Props> = ({
     setShowEndDatePicker(false);
     setShowStartTimePicker(false);
     setShowEndTimePicker(false);
+    setShowSpotPicker(false);
     onClose();
   };
 
   return (
-    <>
-      <Modal
-        visible={visible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={handleClose}>
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{width: '100%', maxWidth: 500}}>
-            <View
-              style={[
-                styles.modalContent,
-                {backgroundColor: colors.surface},
-                colors.isDark && {borderWidth: 1, borderColor: colors.border, shadowOpacity: 0, elevation: 0},
-              ]}>
-              <View style={[styles.modalHeader, {borderBottomColor: colors.border}]}>
-                <Text style={[styles.modalTitle, {color: colors.text}]}>
-                  {editingAvailability ? 'Verfügbarkeit bearbeiten' : 'Neue Verfügbarkeit'}
-                </Text>
-                <TouchableOpacity onPress={handleClose}>
-                  <Text style={[styles.modalCloseButton, {color: colors.subtext}]}>✕</Text>
+    <BaseModal
+      visible={visible}
+      onClose={handleClose}
+      title={editingAvailability ? 'Verfügbarkeit bearbeiten' : 'Neue Verfügbarkeit'}
+      footer={
+        <>
+          <Button
+            variant="cancel"
+            label="Abbrechen"
+            onPress={handleClose}
+            disabled={isSubmitting}
+            style={{backgroundColor: colors.surface2}}
+            textStyle={{color: colors.text}}
+          />
+          <Button
+            variant="primary"
+            label={isSubmitting ? 'Wird gespeichert...' : editingAvailability ? 'Speichern' : 'Erstellen'}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+            loading={isSubmitting}
+            style={{backgroundColor: colors.brand}}
+          />
+        </>
+      }>
+      <ScrollView
+        style={modalStyles.modalBody}
+        contentContainerStyle={modalStyles.modalBodyContent}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => {
+          if (showSpotPicker) {
+            setShowSpotPicker(false);
+          }
+        }}>
+        {/* Parkplatz-Auswahl */}
+        <View style={inputStyles.inputGroup}>
+          <View style={inputStyles.inputLabelRow}>
+            <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Parkplatz *</Text>
+            {availableSpots.length > 1 ? (
+              <View style={inputStyles.spotPickerContainer}>
+                <TouchableOpacity
+                  onPress={() => setShowSpotPicker(!showSpotPicker)}
+                  style={[inputStyles.spotPickerButton, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                  <Text style={[inputStyles.spotText, {color: colors.text}]}>P {selectedSpot}</Text>
+                  <MaterialCommunityIcons name="chevron-down" size={20} color={colors.text} />
                 </TouchableOpacity>
+                {showSpotPicker && (
+                  <View
+                    style={[inputStyles.pickerCard, {backgroundColor: colors.surface, borderColor: colors.border}]}
+                    pointerEvents="box-none">
+                    <View pointerEvents="auto">
+                      <ScrollView style={inputStyles.pickerBody}>
+                        {availableSpots.map((spot) => (
+                          <TouchableOpacity
+                            key={spot}
+                            onPress={() => {
+                              setSelectedSpot(spot);
+                              setShowSpotPicker(false);
+                            }}
+                            activeOpacity={0.7}
+                            style={[
+                              inputStyles.pickerItem,
+                              {borderBottomColor: colors.border},
+                              selectedSpot === spot && {backgroundColor: colors.surface2},
+                            ]}>
+                            <Text style={[inputStyles.pickerItemText, {color: colors.text}]}>P {spot}</Text>
+                            {selectedSpot === spot && (
+                              <MaterialCommunityIcons name="check" size={20} color={colors.brand} />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                )}
               </View>
+            ) : (
+              <Text style={[inputStyles.spotText, {color: colors.text}]}>P {availableSpots[0]}</Text>
+            )}
+          </View>
+        </View>
 
-              <ScrollView 
-                style={styles.modalBody}
-                contentContainerStyle={styles.modalBodyContent}
-                keyboardShouldPersistTaps="handled">
-              {/* Parkplatz-Auswahl */}
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, {color: colors.text}]}>Parkplatz *</Text>
-                <View style={styles.spotButtons}>
-                  {availableSpots.map((spot) => (
-                    <TouchableOpacity
-                      key={spot}
-                      style={[
-                        styles.spotButton,
-                        {
-                          backgroundColor: selectedSpot === spot ? colors.brand : colors.surface2,
-                          borderColor: selectedSpot === spot ? colors.brand : colors.border,
-                        },
-                      ]}
-                      onPress={() => setSelectedSpot(spot)}>
-                      <Text
-                        style={[
-                          styles.spotButtonText,
-                          {color: selectedSpot === spot ? '#fff' : colors.text},
-                        ]}>
-                        {spot}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Wiederkehrend Toggle */}
-              <View style={styles.inputGroup}>
-                <View style={styles.switchRow}>
-                  <Text style={[styles.inputLabel, {color: colors.text}]}>Wiederkehrend</Text>
+        {/* Wiederkehrend Toggle */}
+        <View style={inputStyles.inputGroup}>
+          <View style={inputStyles.switchRow}>
+            <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Wiederkehrend</Text>
                   <Switch
                     value={isRecurring}
                     onValueChange={setIsRecurring}
@@ -253,10 +283,10 @@ const NewAvailabilityModal: React.FC<Props> = ({
                 </View>
               </View>
 
-              {/* Automatisch anbieten Toggle */}
-              <View style={styles.inputGroup}>
-                <View style={styles.switchRow}>
-                  <Text style={[styles.inputLabel, {color: colors.text}]}>Automatisch anbieten</Text>
+        {/* Automatisch anbieten Toggle */}
+        <View style={inputStyles.inputGroup}>
+          <View style={inputStyles.switchRow}>
+            <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Automatisch anbieten</Text>
                   <Switch
                     value={autoOffer}
                     onValueChange={setAutoOffer}
@@ -268,144 +298,262 @@ const NewAvailabilityModal: React.FC<Props> = ({
 
               {isRecurring ? (
                 <>
-                  {/* Zeitraum (Startdatum, Enddatum) */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, {color: colors.text}]}>Zeitraum</Text>
-                    <View style={styles.dateRow}>
-                      <View style={styles.dateInputHalf}>
-                        <Text style={[styles.dateInputLabel, {color: colors.subtext}]}>Startdatum *</Text>
+          {/* Zeitraum (Startdatum, Enddatum) */}
+          <View style={inputStyles.inputGroup}>
+            <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Zeitraum</Text>
+            <View style={inputStyles.dateRow}>
+              <View style={inputStyles.dateInputHalf}>
+                <View style={inputStyles.inputLabelRow}>
+                  <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Startdatum *</Text>
+                  {showStartDatePicker && (
+                    <TouchableOpacity
+                      onPress={() => setShowStartDatePicker(false)}
+                      style={buttonStyles.doneButton}>
+                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[
+                    buttonStyles.inputButton,
+                    buttonStyles.inputButtonHalf,
+                    {backgroundColor: colors.surface2, borderColor: colors.border},
+                  ]}
+                  onPress={() => setShowStartDatePicker(true)}>
+                  <View style={inputStyles.inputButtonInner}>
+                    <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                    <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                      {formatDateLabel(startDate)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {showStartDatePicker && (
+                  Platform.OS === 'android' ? (
+                    <DateTimePicker
+                      value={startDate}
+                      mode="date"
+                      display="default"
+                      minimumDate={new Date()}
+                      onChange={(event, date) => {
+                        setShowStartDatePicker(false);
+                        if (event.type === 'dismissed') return;
+                        if (date) setStartDate(date);
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      <DateTimePicker
+                        value={startDate}
+                        mode="date"
+                        display="spinner"
+                        minimumDate={new Date()}
+                        onChange={(event, date) => {
+                          if (date) setStartDate(date);
+                        }}
+                        style={inputStyles.picker}
+                      />
+                    </View>
+                  )
+                )}
+              </View>
+              <View style={inputStyles.dateInputHalf}>
+                <View style={inputStyles.inputLabelRow}>
+                  <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Enddatum</Text>
+                  {(showEndDatePicker || endDate) && (
+                    <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
+                      {showEndDatePicker && (
                         <TouchableOpacity
-                          style={[
-                            styles.inputButton,
-                            {backgroundColor: colors.surface2, borderColor: colors.border},
-                          ]}
-                          onPress={() => setShowStartDatePicker(true)}>
-                          <MaterialCommunityIcons name="calendar" size={20} color={colors.text} />
-                          <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                            {formatDateLabel(startDate)}
-                          </Text>
+                          onPress={() => setShowEndDatePicker(false)}
+                          style={buttonStyles.doneButton}>
+                          <Text style={buttonStyles.doneButtonText}>Fertig</Text>
                         </TouchableOpacity>
-                        {showStartDatePicker && (
-                          <DateTimePicker
-                            value={startDate}
-                            mode="date"
-                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                            onChange={(event, date) => {
-                              if (Platform.OS === 'android') {
-                                setShowStartDatePicker(false);
-                                if (event.type === 'dismissed') return;
-                              }
-                              if (date) setStartDate(date);
-                            }}
-                            minimumDate={new Date()}
-                          />
-                        )}
-                      </View>
-                      <View style={styles.dateInputHalf}>
-                        <Text style={[styles.dateInputLabel, {color: colors.subtext}]}>Enddatum</Text>
+                      )}
+                      {endDate && (
                         <TouchableOpacity
-                          style={[
-                            styles.inputButton,
-                            {backgroundColor: colors.surface2, borderColor: colors.border},
-                          ]}
-                          onPress={() => setShowEndDatePicker(true)}>
-                          <MaterialCommunityIcons name="calendar" size={20} color={colors.text} />
-                          <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                            {endDate ? formatDateLabel(endDate) : 'Optional'}
-                          </Text>
+                          style={styles.clearButton}
+                          onPress={() => setEndDate(null)}>
+                          <MaterialCommunityIcons name="close-circle" size={20} color={colors.subtext} />
                         </TouchableOpacity>
-                        {endDate && (
-                          <TouchableOpacity
-                            style={styles.clearButton}
-                            onPress={() => setEndDate(null)}>
-                            <MaterialCommunityIcons name="close-circle" size={20} color={colors.subtext} />
-                          </TouchableOpacity>
-                        )}
-                        {showEndDatePicker && (
-                          <DateTimePicker
-                            value={endDate || new Date()}
-                            mode="date"
-                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                            onChange={(event, date) => {
-                              if (Platform.OS === 'android') {
-                                setShowEndDatePicker(false);
-                                if (event.type === 'dismissed') return;
-                              }
-                              if (date) setEndDate(date);
-                            }}
-                            minimumDate={startDate}
-                          />
-                        )}
-                      </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[
+                    buttonStyles.inputButton,
+                    buttonStyles.inputButtonHalf,
+                    {backgroundColor: colors.surface2, borderColor: colors.border},
+                  ]}
+                  onPress={() => setShowEndDatePicker(true)}>
+                  <View style={inputStyles.inputButtonInner}>
+                    <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                    <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                      {endDate ? formatDateLabel(endDate) : 'Optional'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {showEndDatePicker && (
+                  Platform.OS === 'android' ? (
+                    <DateTimePicker
+                      value={endDate || new Date()}
+                      mode="date"
+                      display="default"
+                      minimumDate={startDate}
+                      onChange={(event, date) => {
+                        setShowEndDatePicker(false);
+                        if (event.type === 'dismissed') return;
+                        if (date) setEndDate(date);
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      <DateTimePicker
+                        value={endDate || new Date()}
+                        mode="date"
+                        display="spinner"
+                        minimumDate={startDate}
+                        onChange={(event, date) => {
+                          if (date) setEndDate(date);
+                        }}
+                        style={inputStyles.picker}
+                      />
+                    </View>
+                  )
+                )}
+              </View>
                     </View>
                   </View>
 
-                  {/* Zeit (Start-Zeit, End-Zeit) */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, {color: colors.text}]}>Zeit *</Text>
-                    <View style={styles.dateRow}>
-                      <View style={styles.dateInputHalf}>
-                        <Text style={[styles.dateInputLabel, {color: colors.subtext}]}>Start-Zeit</Text>
-                        <TouchableOpacity
-                          style={[
-                            styles.inputButton,
-                            {backgroundColor: colors.surface2, borderColor: colors.border},
-                          ]}
-                          onPress={() => setShowStartTimePicker(true)}>
-                          <MaterialCommunityIcons name="clock-outline" size={20} color={colors.text} />
-                          <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                            {formatTime(startTime)}
-                          </Text>
-                        </TouchableOpacity>
-                        {showStartTimePicker && (
-                          <DateTimePicker
-                            value={startTime}
-                            mode="time"
-                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                            onChange={(event, time) => {
-                              if (Platform.OS === 'android') {
-                                setShowStartTimePicker(false);
-                                if (event.type === 'dismissed') return;
-                              }
-                              if (time) setStartTime(time);
-                            }}
-                          />
-                        )}
-                      </View>
-                      <View style={styles.dateInputHalf}>
-                        <Text style={[styles.dateInputLabel, {color: colors.subtext}]}>End-Zeit</Text>
-                        <TouchableOpacity
-                          style={[
-                            styles.inputButton,
-                            {backgroundColor: colors.surface2, borderColor: colors.border},
-                          ]}
-                          onPress={() => setShowEndTimePicker(true)}>
-                          <MaterialCommunityIcons name="clock-outline" size={20} color={colors.text} />
-                          <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                            {formatTime(endTime)}
-                          </Text>
-                        </TouchableOpacity>
-                        {showEndTimePicker && (
-                          <DateTimePicker
-                            value={endTime}
-                            mode="time"
-                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                            onChange={(event, time) => {
-                              if (Platform.OS === 'android') {
-                                setShowEndTimePicker(false);
-                                if (event.type === 'dismissed') return;
-                              }
-                              if (time) setEndTime(time);
-                            }}
-                          />
-                        )}
-                      </View>
+          {/* Zeit (Start-Zeit, End-Zeit) */}
+          <View style={inputStyles.inputGroup}>
+            <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Zeit *</Text>
+            <View style={inputStyles.dateRow}>
+              <View style={inputStyles.dateInputHalf}>
+                <View style={inputStyles.inputLabelRow}>
+                  <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Start-Zeit</Text>
+                  {showStartTimePicker && (
+                    <TouchableOpacity
+                      onPress={() => setShowStartTimePicker(false)}
+                      style={buttonStyles.doneButton}>
+                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[
+                    buttonStyles.inputButton,
+                    buttonStyles.inputButtonHalf,
+                    {backgroundColor: colors.surface2, borderColor: colors.border},
+                  ]}
+                  onPress={() => setShowStartTimePicker(true)}>
+                  <View style={inputStyles.inputButtonInner}>
+                    <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                    <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                      {formatTime(startTime)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {showStartTimePicker && (
+                  Platform.OS === 'android' ? (
+                    <DateTimePicker
+                      value={startTime}
+                      mode="time"
+                      display="default"
+                      onChange={(event, time) => {
+                        setShowStartTimePicker(false);
+                        if (event.type === 'dismissed') return;
+                        if (time) setStartTime(time);
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      <DateTimePicker
+                        value={startTime}
+                        mode="time"
+                        display="spinner"
+                        onChange={(event, time) => {
+                          if (time) setStartTime(time);
+                        }}
+                        style={inputStyles.picker}
+                      />
+                    </View>
+                  )
+                )}
+              </View>
+              <View style={inputStyles.dateInputHalf}>
+                <View style={inputStyles.inputLabelRow}>
+                  <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>End-Zeit</Text>
+                  {showEndTimePicker && (
+                    <TouchableOpacity
+                      onPress={() => setShowEndTimePicker(false)}
+                      style={buttonStyles.doneButton}>
+                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[
+                    buttonStyles.inputButton,
+                    buttonStyles.inputButtonHalf,
+                    {backgroundColor: colors.surface2, borderColor: colors.border},
+                  ]}
+                  onPress={() => setShowEndTimePicker(true)}>
+                  <View style={inputStyles.inputButtonInner}>
+                    <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                    <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                      {formatTime(endTime)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {showEndTimePicker && (
+                  Platform.OS === 'android' ? (
+                    <DateTimePicker
+                      value={endTime}
+                      mode="time"
+                      display="default"
+                      onChange={(event, time) => {
+                        setShowEndTimePicker(false);
+                        if (event.type === 'dismissed') return;
+                        if (time) setEndTime(time);
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      <DateTimePicker
+                        value={endTime}
+                        mode="time"
+                        display="spinner"
+                        onChange={(event, time) => {
+                          if (time) setEndTime(time);
+                        }}
+                        style={inputStyles.picker}
+                      />
+                    </View>
+                  )
+                )}
+              </View>
                     </View>
                   </View>
 
-                  {/* Wiederholungsmuster */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, {color: colors.text}]}>Wiederholungsmuster</Text>
+          {/* Wiederholungsmuster */}
+          <View style={inputStyles.inputGroup}>
+            <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Wiederholungsmuster</Text>
                     <View style={styles.patternButtons}>
                       {(['daily', 'weekly', 'monthly'] as const).map((pattern) => (
                         <TouchableOpacity
@@ -431,10 +579,10 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     </View>
                   </View>
 
-                  {/* Interval */}
-                  {recurrencePattern !== 'weekly' && (
-                    <View style={styles.inputGroup}>
-                      <Text style={[styles.inputLabel, {color: colors.text}]}>Intervall</Text>
+          {/* Interval */}
+          {recurrencePattern !== 'weekly' && (
+            <View style={inputStyles.inputGroup}>
+              <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Intervall</Text>
                       <View style={styles.intervalRow}>
                         <Text style={[styles.intervalLabel, {color: colors.text}]}>
                           Alle {recurrenceInterval} {recurrencePattern === 'daily' ? 'Tage' : 'Monate'}
@@ -458,10 +606,10 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     </View>
                   )}
 
-                  {/* Wochentage (für weekly) */}
-                  {recurrencePattern === 'weekly' && (
-                    <View style={styles.inputGroup}>
-                      <Text style={[styles.inputLabel, {color: colors.text}]}>Wochentage *</Text>
+          {/* Wochentage (für weekly) */}
+          {recurrencePattern === 'weekly' && (
+            <View style={inputStyles.inputGroup}>
+              <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Wochentage *</Text>
                       <View style={styles.daysRow}>
                         {dayNames.map((day, index) => (
                           <TouchableOpacity
@@ -491,28 +639,28 @@ const NewAvailabilityModal: React.FC<Props> = ({
                 </>
               ) : (
                 <>
-                  {/* Von (Datum + Zeit) */}
-                  <View style={styles.inputGroup}>
-                    <View style={styles.inputLabelRow}>
-                      <Text style={[styles.inputLabel, {color: colors.text}]}>Von</Text>
+          {/* Von (Datum + Zeit) */}
+          <View style={inputStyles.inputGroup}>
+            <View style={inputStyles.inputLabelRow}>
+              <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Von</Text>
                       {(showFromDatePicker || showFromTimePicker) && (
                         <TouchableOpacity
                           onPress={() => {
                             setShowFromDatePicker(false);
                             setShowFromTimePicker(false);
                           }}
-                          style={styles.doneButton}>
-                          <Text style={styles.doneButtonText}>Fertig</Text>
+                          style={buttonStyles.doneButton}>
+                          <Text style={buttonStyles.doneButtonText}>Fertig</Text>
                         </TouchableOpacity>
                       )}
                     </View>
-                    <View style={styles.dateTimeRow}>
-                      <TouchableOpacity
-                        style={[
-                          styles.inputButton,
-                          styles.inputButtonHalf,
-                          {backgroundColor: colors.surface2, borderColor: colors.border},
-                        ]}
+            <View style={inputStyles.dateTimeRow}>
+              <TouchableOpacity
+                style={[
+                  buttonStyles.inputButton,
+                  buttonStyles.inputButtonHalf,
+                  {backgroundColor: colors.surface2, borderColor: colors.border},
+                ]}
                         onPress={() => {
                           const next = !showFromDatePicker;
                           setShowFromDatePicker(next);
@@ -522,15 +670,17 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             setShowUntilTimePicker(false);
                           }
                         }}>
-                        <MaterialCommunityIcons name="calendar" size={20} color={colors.text} />
-                        <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                          {formatDateLabel(fromDateTime)}
-                        </Text>
+                        <View style={inputStyles.inputButtonInner}>
+                          <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                          <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                            {formatDateLabel(fromDateTime)}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[
-                          styles.inputButton,
-                          styles.inputButtonHalf,
+                          buttonStyles.inputButton,
+                          buttonStyles.inputButtonHalf,
                           {backgroundColor: colors.surface2, borderColor: colors.border},
                         ]}
                         onPress={() => {
@@ -542,78 +692,128 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             setShowUntilTimePicker(false);
                           }
                         }}>
-                        <MaterialCommunityIcons name="clock-outline" size={20} color={colors.text} />
-                        <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                          {formatTime(fromDateTime)}
-                        </Text>
+                        <View style={inputStyles.inputButtonInner}>
+                          <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                          <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                            {formatTime(fromDateTime)}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
                     {showFromDatePicker && (
-                      <DateTimePicker
-                        value={fromDateTime}
-                        mode="date"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        onChange={(event, date) => {
-                          if (Platform.OS === 'android') {
+                      Platform.OS === 'android' ? (
+                        <DateTimePicker
+                          value={fromDateTime}
+                          mode="date"
+                          display="default"
+                          minimumDate={new Date()}
+                          onChange={(event, date) => {
                             setShowFromDatePicker(false);
                             if (event.type === 'dismissed') return;
-                          }
-                          if (date) {
-                            const next = new Date(date);
-                            next.setHours(fromDateTime.getHours(), fromDateTime.getMinutes(), 0, 0);
-                            setFromDateTime(next);
-                          }
-                        }}
-                        minimumDate={new Date()}
-                      />
+                            if (date) {
+                              const next = new Date(date);
+                              next.setHours(fromDateTime.getHours(), fromDateTime.getMinutes(), 0, 0);
+                              setFromDateTime(next);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          <DateTimePicker
+                            value={fromDateTime}
+                            mode="date"
+                            display="spinner"
+                            minimumDate={new Date()}
+                            onChange={(event, date) => {
+                              if (date) {
+                                const next = new Date(date);
+                                next.setHours(fromDateTime.getHours(), fromDateTime.getMinutes(), 0, 0);
+                                setFromDateTime(next);
+                              }
+                            }}
+                            style={inputStyles.picker}
+                          />
+                        </View>
+                      )
                     )}
                     {showFromTimePicker && (
-                      <DateTimePicker
-                        value={fromDateTime}
-                        mode="time"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        onChange={(event, time) => {
-                          if (Platform.OS === 'android') {
+                      Platform.OS === 'android' ? (
+                        <DateTimePicker
+                          value={fromDateTime}
+                          mode="time"
+                          display="default"
+                          minuteInterval={15}
+                          onChange={(event, time) => {
                             setShowFromTimePicker(false);
                             if (event.type === 'dismissed') return;
-                          }
-                          if (time) {
-                            const next = new Date(fromDateTime);
-                            next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                            setFromDateTime(next);
-                            // Auto-adjust until if needed
-                            if (untilDateTime <= next) {
-                              const adjustedUntil = new Date(next.getTime() + 60 * 60 * 1000);
-                              setUntilDateTime(adjustedUntil);
+                            if (time) {
+                              const next = new Date(fromDateTime);
+                              next.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                              setFromDateTime(next);
+                              // Auto-adjust until if needed
+                              if (untilDateTime <= next) {
+                                const adjustedUntil = new Date(next.getTime() + 60 * 60 * 1000);
+                                setUntilDateTime(adjustedUntil);
+                              }
                             }
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          <DateTimePicker
+                            value={fromDateTime}
+                            mode="time"
+                            display="spinner"
+                            minuteInterval={15}
+                            onChange={(event, time) => {
+                              if (time) {
+                                const next = new Date(fromDateTime);
+                                next.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                                setFromDateTime(next);
+                                // Auto-adjust until if needed
+                                if (untilDateTime <= next) {
+                                  const adjustedUntil = new Date(next.getTime() + 60 * 60 * 1000);
+                                  setUntilDateTime(adjustedUntil);
+                                }
+                              }
+                            }}
+                            style={inputStyles.picker}
+                          />
+                        </View>
+                      )
                     )}
                   </View>
 
-                  {/* Bis (Datum + Zeit) */}
-                  <View style={styles.inputGroup}>
-                    <View style={styles.inputLabelRow}>
-                      <Text style={[styles.inputLabel, {color: colors.text}]}>Bis</Text>
+          {/* Bis (Datum + Zeit) */}
+          <View style={inputStyles.inputGroup}>
+            <View style={inputStyles.inputLabelRow}>
+              <Text style={[inputStyles.inputLabel, {color: colors.text}]}>Bis</Text>
                       {(showUntilDatePicker || showUntilTimePicker) && (
                         <TouchableOpacity
                           onPress={() => {
                             setShowUntilDatePicker(false);
                             setShowUntilTimePicker(false);
                           }}
-                          style={styles.doneButton}>
-                          <Text style={styles.doneButtonText}>Fertig</Text>
+                          style={buttonStyles.doneButton}>
+                          <Text style={buttonStyles.doneButtonText}>Fertig</Text>
                         </TouchableOpacity>
                       )}
                     </View>
-                    <View style={styles.dateTimeRow}>
-                      <TouchableOpacity
-                        style={[
-                          styles.inputButton,
-                          styles.inputButtonHalf,
-                          {backgroundColor: colors.surface2, borderColor: colors.border},
-                        ]}
+            <View style={inputStyles.dateTimeRow}>
+              <TouchableOpacity
+                style={[
+                  buttonStyles.inputButton,
+                  buttonStyles.inputButtonHalf,
+                  {backgroundColor: colors.surface2, borderColor: colors.border},
+                ]}
                         onPress={() => {
                           const next = !showUntilDatePicker;
                           setShowUntilDatePicker(next);
@@ -623,15 +823,17 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             setShowUntilTimePicker(false);
                           }
                         }}>
-                        <MaterialCommunityIcons name="calendar" size={20} color={colors.text} />
-                        <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                          {formatDateLabel(untilDateTime)}
-                        </Text>
+                        <View style={inputStyles.inputButtonInner}>
+                          <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                          <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                            {formatDateLabel(untilDateTime)}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[
-                          styles.inputButton,
-                          styles.inputButtonHalf,
+                          buttonStyles.inputButton,
+                          buttonStyles.inputButtonHalf,
                           {backgroundColor: colors.surface2, borderColor: colors.border},
                         ]}
                         onPress={() => {
@@ -643,205 +845,127 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             setShowUntilDatePicker(false);
                           }
                         }}>
-                        <MaterialCommunityIcons name="clock-outline" size={20} color={colors.text} />
-                        <Text style={[styles.inputButtonText, {color: colors.text}]}>
-                          {formatTime(untilDateTime)}
-                        </Text>
+                        <View style={inputStyles.inputButtonInner}>
+                          <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
+                          <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
+                            {formatTime(untilDateTime)}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
                     {showUntilDatePicker && (
-                      <DateTimePicker
-                        value={untilDateTime}
-                        mode="date"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        onChange={(event, date) => {
-                          if (Platform.OS === 'android') {
+                      Platform.OS === 'android' ? (
+                        <DateTimePicker
+                          value={untilDateTime}
+                          mode="date"
+                          display="default"
+                          minimumDate={fromDateTime}
+                          onChange={(event, date) => {
                             setShowUntilDatePicker(false);
                             if (event.type === 'dismissed') return;
-                          }
-                          if (date) {
-                            const next = new Date(date);
-                            next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
-                            if (next > fromDateTime) {
-                              setUntilDateTime(next);
-                            } else {
-                              Alert.alert('Fehler', 'Bis muss nach Von liegen');
+                            if (date) {
+                              const next = new Date(date);
+                              next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
+                              if (next > fromDateTime) {
+                                setUntilDateTime(next);
+                              } else {
+                                Alert.alert('Fehler', 'Bis muss nach Von liegen');
+                              }
                             }
-                          }
-                        }}
-                        minimumDate={fromDateTime}
-                      />
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          <DateTimePicker
+                            value={untilDateTime}
+                            mode="date"
+                            display="spinner"
+                            minimumDate={fromDateTime}
+                            onChange={(event, date) => {
+                              if (date) {
+                                const next = new Date(date);
+                                next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
+                                if (next > fromDateTime) {
+                                  setUntilDateTime(next);
+                                } else {
+                                  Alert.alert('Fehler', 'Bis muss nach Von liegen');
+                                }
+                              }
+                            }}
+                            style={inputStyles.picker}
+                          />
+                        </View>
+                      )
                     )}
                     {showUntilTimePicker && (
-                      <DateTimePicker
-                        value={untilDateTime}
-                        mode="time"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        onChange={(event, time) => {
-                          if (Platform.OS === 'android') {
+                      Platform.OS === 'android' ? (
+                        <DateTimePicker
+                          value={untilDateTime}
+                          mode="time"
+                          display="default"
+                          minuteInterval={15}
+                          onChange={(event, time) => {
                             setShowUntilTimePicker(false);
                             if (event.type === 'dismissed') return;
-                          }
-                          if (time) {
-                            const next = new Date(untilDateTime);
-                            next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                            if (next > fromDateTime) {
-                              setUntilDateTime(next);
-                            } else {
-                              Alert.alert('Fehler', 'Bis muss nach Von liegen');
+                            if (time) {
+                              const next = new Date(untilDateTime);
+                              next.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                              if (next > fromDateTime) {
+                                setUntilDateTime(next);
+                              } else {
+                                Alert.alert('Fehler', 'Bis muss nach Von liegen');
+                              }
                             }
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          <DateTimePicker
+                            value={untilDateTime}
+                            mode="time"
+                            display="spinner"
+                            minuteInterval={15}
+                            onChange={(event, time) => {
+                              if (time) {
+                                const next = new Date(untilDateTime);
+                                next.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                                if (next > fromDateTime) {
+                                  setUntilDateTime(next);
+                                } else {
+                                  Alert.alert('Fehler', 'Bis muss nach Von liegen');
+                                }
+                              }
+                            }}
+                            style={inputStyles.picker}
+                          />
+                        </View>
+                      )
                     )}
                   </View>
                 </>
               )}
-              </ScrollView>
-
-              <View style={[styles.modalFooter, {borderTopColor: colors.border}]}>
-                <TouchableOpacity
-                  style={[styles.cancelButton, {backgroundColor: colors.surface2}]}
-                  onPress={handleClose}
-                  disabled={isSubmitting}>
-                  <Text style={[styles.cancelButtonText, {color: colors.text}]}>Abbrechen</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.submitButton, {backgroundColor: colors.brand}]}
-                  onPress={handleSubmit}
-                  disabled={isSubmitting}>
-                  <Text style={styles.submitButtonText}>
-                    {isSubmitting ? 'Wird gespeichert...' : editingAvailability ? 'Speichern' : 'Erstellen'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-    </>
+      </ScrollView>
+    </BaseModal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  // Modal, input, and button styles moved to src/styles/modals.ts, src/styles/inputs.ts, and src/styles/buttons.ts
+  // Only component-specific styles remain below
+  clearButton: {
+    position: 'absolute',
+    right: 8,
+    top: 32,
   },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    width: '100%',
-    maxWidth: 500,
-    maxHeight: '95%',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 10,
-    flexDirection: 'column',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  modalCloseButton: {
-    fontSize: 24,
-    fontWeight: '300',
-  },
-  modalBody: {
-    maxHeight: 500,
-  },
-  modalBodyContent: {
-    padding: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 12,
-    borderTopWidth: 1,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  inputLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  dateInputLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  dateInputHalf: {
-    flex: 1,
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  inputButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 8,
-  },
-  inputButtonHalf: {
-    flex: 1,
-  },
-  inputButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  spotButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  spotButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  spotButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+  // Spot picker styles moved to src/styles/inputs.ts
   patternButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -909,38 +1033,7 @@ const styles = StyleSheet.create({
     right: 8,
     top: 32,
   },
-  doneButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#007AFF',
-  },
-  doneButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  submitButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  // Button styles moved to src/styles/buttons.ts
 });
 
 export default NewAvailabilityModal;

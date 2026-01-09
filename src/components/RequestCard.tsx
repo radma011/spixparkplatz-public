@@ -1,11 +1,17 @@
 import React from 'react';
 import {Alert, View, Text, StyleSheet, TouchableOpacity, useColorScheme} from 'react-native';
 import {ParkingRequest} from '../models/ParkingRequest';
-import {formatDateRange, getTodayTomorrowBadge} from '../utils/dateUtils';
+import {formatDateRange} from '../utils/dateUtils';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {normalizePhone, tryOpenUrl} from '../utils/contactLinks';
 import {getColors} from '../theme/colors';
 import {RequestOffer} from '../models/RequestOffer';
+import ActionButton from './common/ActionButton';
+import StatusChip from './common/StatusChip';
+import DayBadge from './common/DayBadge';
+import {buttonStyles} from '../styles/buttons';
+import {cardStyles} from '../styles/cards';
+import {chipStyles} from '../styles/chips';
+import {showContactOptions} from '../utils/contactUtils';
 
 interface Props {
   request: ParkingRequest;
@@ -22,6 +28,7 @@ interface Props {
   focusOfferId?: string | null;
   onOpenComments?: (requestId: string) => void;
   highlight?: boolean;
+  isOffering?: boolean;
 }
 
 const RequestCard: React.FC<Props> = ({
@@ -39,6 +46,7 @@ const RequestCard: React.FC<Props> = ({
   focusOfferId,
   onOpenComments,
   highlight,
+  isOffering = false,
 }) => {
   const colors = getColors(useColorScheme());
   const isMyRequest = request.requestedBy === currentUserId;
@@ -61,7 +69,6 @@ const RequestCard: React.FC<Props> = ({
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const isFulfilled = request.isFulfilled;
   const isArchived = !!request.isArchived;
-  const dayBadge = getTodayTomorrowBadge(request.from);
 
   const hasOfferOrFulfilled = hasOffer || isFulfilled;
   const showOffersList = request.requestedBy === currentUserId && !isFulfilled && !hasOfferOrFulfilled;
@@ -243,127 +250,58 @@ const RequestCard: React.FC<Props> = ({
   const showHeaderContact =
     (canContactOfferer || canContactOnFulfilled || canContactRequesterOnOpen) && !!contactPhone;
 
-  const handleContact = () => {
-    if (!contactPhone) {
-      Alert.alert(
-        'Kontakt',
-        'Keine Telefonnummer im Profil hinterlegt (oder Profil ist noch nicht synchronisiert).',
-      );
-      return;
-    }
-    const normalized = normalizePhone(contactPhone || '');
-    if (!normalized) {
-      Alert.alert('Fehler', 'Keine gültige Telefonnummer vorhanden');
-      return;
-    }
-
-    const {e164, digits} = normalized;
-
-    Alert.alert(
-      'Kontakt',
-      'Wie möchtest du die Person kontaktieren?',
-      [
-        {
-          text: 'Anrufen',
-          onPress: async () => {
-            const ok = await tryOpenUrl(`tel:${e164}`);
-            if (!ok) Alert.alert('Fehler', 'Konnte Telefon-App nicht öffnen');
-          },
-        },
-        {
-          text: 'SMS/iMessage',
-          onPress: async () => {
-            const ok = await tryOpenUrl(`sms:${e164}`);
-            if (!ok) Alert.alert('Fehler', 'Konnte Nachrichten-App nicht öffnen');
-          },
-        },
-        {
-          text: 'WhatsApp',
-          onPress: async () => {
-            // wa.me requires digits only
-            const ok = await tryOpenUrl(`https://wa.me/${digits}`);
-            if (!ok) Alert.alert('Fehler', 'Konnte WhatsApp nicht öffnen');
-          },
-        },
-        {
-          text: 'Signal',
-          onPress: async () => {
-            const ok = await tryOpenUrl(`sgnl://send?phone=${encodeURIComponent(e164)}`);
-            if (!ok) Alert.alert('Fehler', 'Konnte Signal nicht öffnen');
-          },
-        },
-        {text: 'Abbrechen', style: 'cancel'},
-      ],
-    );
-  };
 
   const isStandby = myActiveOffer?.status === 'standby' && hasOffer;
   
   return (
     <View
       style={[
-        styles.card,
+        cardStyles.card,
         {backgroundColor: colors.surface},
         colors.isDark && {shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: colors.border},
         isArchived && {opacity: 0.55},
         isStandby && {opacity: 0.6},
-        highlight && styles.cardHighlight,
+        highlight && cardStyles.cardHighlight,
       ]}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleContainer}>
-          <View style={styles.titleRow}>
+      <View style={cardStyles.cardHeader}>
+        <View style={cardStyles.cardTitleContainer}>
+          <View style={cardStyles.titleRow}>
             {showHeaderContact && (
               <TouchableOpacity
                 accessibilityLabel={contactTitle}
                 style={[
-                  styles.headerContactBtn,
+                  cardStyles.headerContactBtn,
                   {backgroundColor: colors.surface2, borderColor: colors.border},
                 ]}
-                onPress={handleContact}>
+                onPress={() => showContactOptions(contactPhone)}>
                 <MaterialCommunityIcons name="message-text-outline" size={18} color={colors.text} />
               </TouchableOpacity>
             )}
             <Text
               style={[
-                styles.cardTitle,
-                isMyRequest && styles.myRequestTitle,
+                cardStyles.cardTitle,
+                isMyRequest && {color: '#007AFF'},
                 {color: colors.text},
               ]}>
               {displayTitle}
             </Text>
           </View>
-          <Text style={[styles.cardSubtitle, {color: colors.subtext}]}>
+          <Text style={[cardStyles.cardSubtitle, {color: colors.subtext}]}>
             {subtitleWithArchived}
           </Text>
         </View>
-        <View style={styles.badgesRow}>
-          {dayBadge && (
-            <View style={styles.dayBadge}>
-              <Text style={styles.dayBadgeText}>{dayBadge}</Text>
-            </View>
-          )}
+        <View style={chipStyles.badgesRow}>
+          <DayBadge date={request.from} />
           {isArchived ? (
-            <View style={[styles.chip, styles.archivedChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>Aufgehoben</Text>
-            </View>
+            <StatusChip type="archived" label="Aufgehoben" />
           ) : isFulfilled ? (
-            <View style={[styles.chip, styles.fulfilledChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>Erfüllt</Text>
-            </View>
+            <StatusChip type="fulfilled" label="Erfüllt" />
           ) : isMyRequest ? (
-            <View style={[styles.chip, styles.myRequestChip]}>
-              <Text style={styles.chipText}>Meine Anfrage</Text>
-            </View>
+            <StatusChip type="myRequest" label="Meine Anfrage" />
           ) : hasOffer ? (
-            <View style={[styles.chip, styles.offerChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>
-                Angeboten
-              </Text>
-            </View>
+            <StatusChip type="offer" label="Angeboten" />
           ) : (
-            <View style={[styles.chip, styles.openChip]}>
-              <Text style={[styles.chipText, styles.chipTextWhite]}>Offen</Text>
-            </View>
+            <StatusChip type="open" label="Offen" />
           )}
         </View>
       </View>
@@ -384,14 +322,14 @@ const RequestCard: React.FC<Props> = ({
                 {onOpenComments && (
                   <TouchableOpacity
                     onPress={() => onOpenComments(request.id)}
-                    style={styles.commentChipRow}
+                    style={chipStyles.commentChipRow}
                     activeOpacity={0.7}>
-                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                    <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
                     </View>
                   </TouchableOpacity>
@@ -415,8 +353,8 @@ const RequestCard: React.FC<Props> = ({
                         {isFullOffer ? 'Vollständig' : 'Teilweise'}
                       </Text>
                       {myActiveOffer.status === 'standby' && (
-                        <View style={[styles.standbyBadge, {backgroundColor: '#FF9500', borderColor: '#FF9500'}]}>
-                          <Text style={styles.standbyBadgeText}>Standby</Text>
+                        <View style={[chipStyles.standbyBadge, {backgroundColor: '#FF9500', borderColor: '#FF9500'}]}>
+                          <Text style={chipStyles.standbyBadgeText}>Standby</Text>
                         </View>
                       )}
                     </View>
@@ -458,14 +396,14 @@ const RequestCard: React.FC<Props> = ({
                 {onOpenComments && (
                   <TouchableOpacity
                     onPress={() => onOpenComments(request.id)}
-                    style={styles.commentChipRow}
+                    style={chipStyles.commentChipRow}
                     activeOpacity={0.7}>
-                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                    <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
                     </View>
                   </TouchableOpacity>
@@ -505,14 +443,14 @@ const RequestCard: React.FC<Props> = ({
                 {onOpenComments && (
                   <TouchableOpacity
                     onPress={() => onOpenComments(request.id)}
-                    style={styles.commentChipRow}
+                    style={chipStyles.commentChipRow}
                     activeOpacity={0.7}>
-                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                    <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
                     </View>
                   </TouchableOpacity>
@@ -546,14 +484,14 @@ const RequestCard: React.FC<Props> = ({
                 {onOpenComments && (
                   <TouchableOpacity
                     onPress={() => onOpenComments(request.id)}
-                    style={styles.commentChipRow}
+                    style={chipStyles.commentChipRow}
                     activeOpacity={0.7}>
-                    <View style={[styles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                      <Text style={[styles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                    <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
                         {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
                       </Text>
                     </View>
-                    <View style={[styles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.brand}]}>
+                    <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
                       <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
                     </View>
                   </TouchableOpacity>
@@ -682,18 +620,14 @@ const RequestCard: React.FC<Props> = ({
                     </Text>
                   </View>
                   {!isAccepted && (
-                    <TouchableOpacity
-                      disabled={!onAcceptOffer}
+                    <ActionButton
                       onPress={() => onAcceptOffer?.(o)}
-                      style={[
-                        styles.actionBtn,
-                        styles.actionBlue,
-                        styles.actionBtnCompact,
-                        !onAcceptOffer && {opacity: 0.5},
-                      ]}>
-                      <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
-                      <Text style={styles.actionTextWhite}>Annehmen</Text>
-                    </TouchableOpacity>
+                      label="Annehmen"
+                      icon="check-circle-outline"
+                      variant="blue"
+                      compact={true}
+                      disabled={!onAcceptOffer}
+                    />
                   )}
                 </View>
               );
@@ -709,14 +643,13 @@ const RequestCard: React.FC<Props> = ({
         {isArchived ? null : (
           <>
         {!isMyRequest && !hasOffer && !isFulfilled && mySpots.length > 0 && (
-          <TouchableOpacity 
-            style={[styles.actionBtn, styles.actionPrimary]} 
-            onPress={() => onOffer(request)}>
-            <MaterialCommunityIcons name="hand-extended-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>
-              {mySpots.length === 1 ? `Anbieten (${mySpots[0]})` : 'Anbieten'}
-            </Text>
-          </TouchableOpacity>
+          <ActionButton
+            onPress={() => onOffer(request)}
+            label={mySpots.length === 1 ? `Anbieten (${mySpots[0]})` : 'Anbieten'}
+            icon="hand-extended-outline"
+            variant="primary"
+            loading={isOffering}
+          />
         )}
 
         {/* Annehmen-Button: nur anzeigen, wenn Angebot noch existiert (offeredSpotId, offeredBy, fullOffer) */}
@@ -730,8 +663,7 @@ const RequestCard: React.FC<Props> = ({
          fullOffer.status === 'active' && 
          fullOffer.offererId === request.offeredBy && (
           <View style={styles.actionBtnRow}>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionBlue, styles.actionBtnCompact]}
+            <ActionButton
               onPress={() => {
                 if (!onAcceptOffer) return;
                 if (!fullOffer) {
@@ -744,17 +676,20 @@ const RequestCard: React.FC<Props> = ({
                   return;
                 }
                 onAcceptOffer(fullOffer);
-              }}>
-              <MaterialCommunityIcons name="check-circle-outline" size={16} color="#fff" />
-              <Text style={styles.actionTextWhite}>Annehmen</Text>
-            </TouchableOpacity>
+              }}
+              label="Annehmen"
+              icon="check-circle-outline"
+              variant="blue"
+              compact={true}
+            />
             {onWithdraw && (
-              <TouchableOpacity 
-                style={[styles.actionBtn, styles.actionRed, styles.actionBtnCompact]} 
-                onPress={() => onWithdraw(request)}>
-                <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
-                <Text style={styles.actionTextWhite}>Anfrage zurückziehen</Text>
-              </TouchableOpacity>
+              <ActionButton
+                onPress={() => onWithdraw(request)}
+                label="Anfrage zurückziehen"
+                icon="trash-can-outline"
+                variant="red"
+                compact={true}
+              />
             )}
           </View>
         )}
@@ -763,35 +698,41 @@ const RequestCard: React.FC<Props> = ({
 
         {/* Storno-Button für Anbieter: anzeigen, wenn ich ein aktives Angebot habe (auch bei Teilangeboten) */}
         {isMyOffer && myActiveOffer && !isArchived && !isFulfilled && (
-          <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onCancelOffer(request)}>
-            <MaterialCommunityIcons name="close-circle-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Storno</Text>
-          </TouchableOpacity>
+          <ActionButton
+            onPress={() => onCancelOffer(request)}
+            label="Storno"
+            icon="close-circle-outline"
+            variant="red"
+          />
         )}
 
         {/* Storno-Button für Anbieter bei erfüllten Anfragen */}
         {canOffererCancelFulfilled && onCancelOffer && (
-          <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onCancelOffer(request)}>
-            <MaterialCommunityIcons name="close-circle-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Storno</Text>
-          </TouchableOpacity>
+          <ActionButton
+            onPress={() => onCancelOffer(request)}
+            label="Storno"
+            icon="close-circle-outline"
+            variant="red"
+          />
         )}
 
         {isMyRequest && !isFulfilled && !hasOffer && (
-          <TouchableOpacity style={[styles.actionBtn, styles.actionRed]} onPress={() => onWithdraw(request)}>
-            <MaterialCommunityIcons name="trash-can-outline" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Anfrage zurückziehen</Text>
-          </TouchableOpacity>
+          <ActionButton
+            onPress={() => onWithdraw(request)}
+            label="Anfrage zurückziehen"
+            icon="trash-can-outline"
+            variant="red"
+          />
         )}
 
         {/* Aufheben-Button für Requester bei erfüllten Anfragen */}
         {canRequesterUnfulfill && onArchiveFulfilled && (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionRed]}
-            onPress={() => onArchiveFulfilled(request)}>
-            <MaterialCommunityIcons name="backup-restore" size={16} color="#fff" />
-            <Text style={styles.actionTextWhite}>Aufheben</Text>
-          </TouchableOpacity>
+          <ActionButton
+            onPress={() => onArchiveFulfilled(request)}
+            label="Aufheben"
+            icon="backup-restore"
+            variant="red"
+          />
         )}
           </>
         )}
@@ -801,133 +742,7 @@ const RequestCard: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  cardHighlight: {
-    borderWidth: 2,
-    borderColor: '#16A34A',
-  },
-  badgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dayBadge: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  dayBadgeText: {
-    color: '#991B1B',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  cardTitleContainer: {
-    flex: 1,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerContactBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
-    borderWidth: 1,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  myRequestTitle: {
-    color: '#007AFF',
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 1,
-  },
-  commentChipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 8,
-    gap: 6,
-  },
-  commentChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    maxWidth: '100%',
-    minHeight: 32,
-    justifyContent: 'center',
-  },
-  commentChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 16,
-  },
-  commentIconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  myRequestChip: {
-    backgroundColor: '#E3F2FD',
-  },
-  offerChip: {
-    backgroundColor: '#4CAF50',
-  },
-  openChip: {
-    backgroundColor: '#FF9800',
-  },
-  fulfilledChip: {
-    backgroundColor: '#2196F3',
-  },
-  archivedChip: {
-    backgroundColor: 'red',
-  },
-  chipText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  chipTextWhite: {
-    color: '#fff',
-  },
+  // Card, chip, and badge styles moved to src/styles/cards.ts and src/styles/chips.ts
   timeRangeText: {
     fontSize: 12,
     fontWeight: '600',
@@ -988,17 +803,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  standbyBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-  },
-  standbyBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#fff',
-  },
+  // Standby badge styles moved to src/styles/chips.ts
   standbyText: {
     fontSize: 10,
     fontWeight: '600',
@@ -1095,37 +900,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexShrink: 0,
   },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-  },
-  actionBtnCompact: {
-    alignSelf: 'flex-start',
-  },
-  actionTextWhite: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  actionPrimary: {
-    backgroundColor: '#16A34A',
-  },
-  actionBlue: {
-    backgroundColor: '#2563EB',
-  },
-  actionDark: {
-    backgroundColor: '#111827',
-  },
-  actionRed: {
-    backgroundColor: '#DC2626',
-  },
-  actionGray: {
-    backgroundColor: '#6B7280',
-  },
+  // Action button styles moved to src/styles/buttons.ts
 });
 
 export default RequestCard;
