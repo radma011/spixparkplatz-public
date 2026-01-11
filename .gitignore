@@ -97,3 +97,4 @@ firebase-config.js
 !.yarn/versions
 .git.backup
 android/gradle.properties
+android/gradle.properties

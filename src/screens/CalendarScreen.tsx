@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme} from 'react-native';
+import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme, Dimensions, useWindowDimensions} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import FirestoreService from '../services/FirestoreService';
@@ -135,6 +135,9 @@ type CalendarEntry = {
 const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, onOpenRequest}) => {
   const insets = useSafeAreaInsets();
   const colors = getColors(useColorScheme());
+  const {width, height} = useWindowDimensions();
+  const isLandscape = width > height;
+  const isTablet = Math.min(width, height) >= 600; // Tablet threshold
   const [mode, setMode] = useState<'month' | 'week'>('month');
   const today = useMemo(() => {
     const d = new Date();
@@ -580,94 +583,194 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       </View>
 
       {mode === 'month' ? (
-        <View style={styles.monthContent}>
-          <View style={styles.weekdaysRow}>
-            {WEEKDAYS_DE.map((w) => (
-              <Text key={w} style={[styles.weekday, {color: colors.isDark ? '#9CA3AF' : styles.weekday.color}]}>
-                {w}
-              </Text>
-            ))}
-          </View>
+        <View style={[styles.monthContent, isLandscape && isTablet && styles.monthContentLandscapeTablet]}>
+          {isLandscape && isTablet ? (
+            // Landscape Tablet: Two-column layout
+            <View style={styles.landscapeTabletLayout}>
+              {/* Left column: Calendar grid */}
+              <View style={styles.landscapeCalendarColumn}>
+                <View style={styles.weekdaysRow}>
+                  {WEEKDAYS_DE.map((w) => (
+                    <Text key={w} style={[styles.weekday, {color: colors.isDark ? '#9CA3AF' : styles.weekday.color}]}>
+                      {w}
+                    </Text>
+                  ))}
+                </View>
+                <View style={styles.grid}>
+                  {grid.map((c) => {
+                    if (!c.day) return <View key={c.key} style={styles.cell} />;
+                    const day = new Date(cursor.getFullYear(), cursor.getMonth(), c.day);
+                    day.setHours(0, 0, 0, 0);
+                    const k = dayKey(day);
+                    const stats = monthDayStats[k] || {open: 0, hasOffer: 0, offer: 0, other: 0};
+                    const isSelected = k === selectedKey;
+                    const isToday = k === todayKey;
 
-          <View style={styles.grid}>
-            {grid.map((c) => {
-              if (!c.day) return <View key={c.key} style={styles.cell} />;
-              const day = new Date(cursor.getFullYear(), cursor.getMonth(), c.day);
-              day.setHours(0, 0, 0, 0);
-              const k = dayKey(day);
-              const stats = monthDayStats[k] || {open: 0, hasOffer: 0, offer: 0, other: 0};
-              const isSelected = k === selectedKey;
-              const isToday = k === todayKey;
-
-              const hasDots = (stats.open > 0 && showOpen) || 
-                             (stats.hasOffer > 0 && showHasOffer) || 
-                             (stats.offer > 0 && showOffer) || 
-                             (stats.availability > 0 && availabilityFilter !== 'none') || 
-                             (stats.other > 0 && showRequest);
-              
-              return (
-                <TouchableOpacity
-                  key={c.key}
-                  onPress={() => setSelectedDate(day)}
-                  style={[
-                    styles.cell,
-                    isSelected && [
-                      styles.cellSelected,
-                      colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
-                    ],
-                    isToday && styles.cellTodayOutline,
-                  ]}>
-                  <View style={styles.dayContent}>
-                    <View style={styles.dayTextContainer}>
-                      <Text
+                    const hasDots = (stats.open > 0 && showOpen) || 
+                                   (stats.hasOffer > 0 && showHasOffer) || 
+                                   (stats.offer > 0 && showOffer) || 
+                                   (stats.availability > 0 && availabilityFilter !== 'none') || 
+                                   (stats.other > 0 && showRequest);
+                    
+                    return (
+                      <TouchableOpacity
+                        key={c.key}
+                        onPress={() => setSelectedDate(day)}
                         style={[
-                          styles.dayText,
-                          {color: colors.text},
-                          isSelected && styles.dayTextSelected,
+                          styles.cell,
+                          isSelected && [
+                            styles.cellSelected,
+                            colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
+                          ],
+                          isToday && styles.cellTodayOutline,
                         ]}>
-                        {c.day}
-                      </Text>
-                      <View style={styles.dotsRow}>
-                        {hasDots ? (
-                          <>
-                            {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
-                            {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
-                            {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
-                            {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
-                            {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
-                          </>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <View style={styles.dayListHeader}>
-            <Text style={[styles.dayListTitle, {color: colors.text}]}>
-              Einträge · {formatDateLabel(selectedDate)}
-            </Text>
-            {selectedKey === todayKey ? <Text style={styles.dayListBadge}>Heute</Text> : null}
-          </View>
-
-          <ScrollView style={styles.dayList} contentContainerStyle={styles.dayListContent}>
-            {selectedDayEntries.length === 0 ? (
-              <Text style={[styles.weekEmpty, {color: colors.subtext}]}>Keine Einträge</Text>
-            ) : (
-              selectedDayEntries.map((e) => (
-                <TouchableOpacity
-                  key={`${e.kind}-${e.id}-${selectedKey}`}
-                  onPress={() => onOpenRequest(e.id, e.isFulfilled ? 'fulfilled' : 'active')}
-                  style={[styles.eventPill, eventStyleFor(e)]}>
-                  <Text style={eventTextStyleFor(e)} numberOfLines={1}>
-                    {formatEntryLine(e, selectedDate)}
+                        <View style={styles.dayContent}>
+                          <View style={styles.dayTextContainer}>
+                            <Text
+                              style={[
+                                styles.dayText,
+                                {color: colors.text},
+                                isSelected && styles.dayTextSelected,
+                              ]}>
+                              {c.day}
+                            </Text>
+                            <View style={styles.dotsRow}>
+                              {hasDots ? (
+                                <>
+                                  {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
+                                  {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
+                                  {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
+                                  {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
+                                  {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
+                                </>
+                              ) : null}
+                            </View>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+              
+              {/* Right column: Day entries */}
+              <View style={[styles.landscapeEntriesColumn, {borderLeftColor: colors.border}]}>
+                <View style={styles.dayListHeader}>
+                  <Text style={[styles.dayListTitle, {color: colors.text}]}>
+                    Einträge · {formatDateLabel(selectedDate)}
                   </Text>
-                </TouchableOpacity>
-              ))
-            )}
-          </ScrollView>
+                  {selectedKey === todayKey ? <Text style={styles.dayListBadge}>Heute</Text> : null}
+                </View>
+                <ScrollView style={styles.dayList} contentContainerStyle={styles.dayListContent}>
+                  {selectedDayEntries.length === 0 ? (
+                    <Text style={[styles.weekEmpty, {color: colors.subtext}]}>Keine Einträge</Text>
+                  ) : (
+                    selectedDayEntries.map((e) => (
+                      <TouchableOpacity
+                        key={`${e.kind}-${e.id}-${selectedKey}`}
+                        onPress={() => onOpenRequest(e.id, e.isFulfilled ? 'fulfilled' : 'active')}
+                        style={[styles.eventPill, eventStyleFor(e)]}>
+                        <Text style={eventTextStyleFor(e)} numberOfLines={1}>
+                          {formatEntryLine(e, selectedDate)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            </View>
+          ) : (
+            // Portrait: Original layout
+            <>
+              <View style={styles.weekdaysRow}>
+                {WEEKDAYS_DE.map((w) => (
+                  <Text key={w} style={[styles.weekday, {color: colors.isDark ? '#9CA3AF' : styles.weekday.color}]}>
+                    {w}
+                  </Text>
+                ))}
+              </View>
+
+              <View style={styles.grid}>
+                {grid.map((c) => {
+                  if (!c.day) return <View key={c.key} style={styles.cell} />;
+                  const day = new Date(cursor.getFullYear(), cursor.getMonth(), c.day);
+                  day.setHours(0, 0, 0, 0);
+                  const k = dayKey(day);
+                  const stats = monthDayStats[k] || {open: 0, hasOffer: 0, offer: 0, other: 0};
+                  const isSelected = k === selectedKey;
+                  const isToday = k === todayKey;
+
+                  const hasDots = (stats.open > 0 && showOpen) || 
+                                 (stats.hasOffer > 0 && showHasOffer) || 
+                                 (stats.offer > 0 && showOffer) || 
+                                 (stats.availability > 0 && availabilityFilter !== 'none') || 
+                                 (stats.other > 0 && showRequest);
+                  
+                  return (
+                    <TouchableOpacity
+                      key={c.key}
+                      onPress={() => setSelectedDate(day)}
+                      style={[
+                        styles.cell,
+                        isSelected && [
+                          styles.cellSelected,
+                          colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
+                        ],
+                        isToday && styles.cellTodayOutline,
+                      ]}>
+                      <View style={styles.dayContent}>
+                        <View style={styles.dayTextContainer}>
+                          <Text
+                            style={[
+                              styles.dayText,
+                              {color: colors.text},
+                              isSelected && styles.dayTextSelected,
+                            ]}>
+                            {c.day}
+                          </Text>
+                          <View style={styles.dotsRow}>
+                            {hasDots ? (
+                              <>
+                                {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
+                                {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
+                                {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
+                                {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
+                                {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
+                              </>
+                            ) : null}
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.dayListHeader}>
+                <Text style={[styles.dayListTitle, {color: colors.text}]}>
+                  Einträge · {formatDateLabel(selectedDate)}
+                </Text>
+                {selectedKey === todayKey ? <Text style={styles.dayListBadge}>Heute</Text> : null}
+              </View>
+
+              <ScrollView style={styles.dayList} contentContainerStyle={styles.dayListContent}>
+                {selectedDayEntries.length === 0 ? (
+                  <Text style={[styles.weekEmpty, {color: colors.subtext}]}>Keine Einträge</Text>
+                ) : (
+                  selectedDayEntries.map((e) => (
+                    <TouchableOpacity
+                      key={`${e.kind}-${e.id}-${selectedKey}`}
+                      onPress={() => onOpenRequest(e.id, e.isFulfilled ? 'fulfilled' : 'active')}
+                      style={[styles.eventPill, eventStyleFor(e)]}>
+                      <Text style={eventTextStyleFor(e)} numberOfLines={1}>
+                        {formatEntryLine(e, selectedDate)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </>
+          )}
         </View>
       ) : (
         <ScrollView style={styles.weekList} contentContainerStyle={styles.weekListContent}>
@@ -845,6 +948,24 @@ const styles = StyleSheet.create({
   monthContent: {
     flex: 1,
     minHeight: 0,
+  },
+  monthContentLandscapeTablet: {
+    // No maxHeight needed - using two-column layout instead
+  },
+  landscapeTabletLayout: {
+    flexDirection: 'row',
+    flex: 1,
+    gap: 0,
+  },
+  landscapeCalendarColumn: {
+    width: '50%',
+    paddingHorizontal: 12,
+  },
+  landscapeEntriesColumn: {
+    width: '50%',
+    borderLeftWidth: 1,
+    paddingLeft: 16,
+    paddingRight: 16,
   },
   grid: {
     flexDirection: 'row',
