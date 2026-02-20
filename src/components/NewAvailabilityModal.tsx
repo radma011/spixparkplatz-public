@@ -11,6 +11,7 @@ import {
   Platform,
   Switch,
 } from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {formatDateLabel, formatTime} from '../utils/dateUtils';
@@ -21,6 +22,15 @@ import Button from './common/Button';
 import {modalStyles} from '../styles/modals';
 import {inputStyles} from '../styles/inputs';
 import {buttonStyles} from '../styles/buttons';
+import {
+  adjustDateKeepingTime,
+  adjustTimeKeepingDate,
+  ensureEndAfterStart,
+  adjustTimesOnStartChange,
+  adjustTimeOnEndChange,
+  adjustDatesOnStartChange,
+  adjustDateOnEndChange,
+} from '../utils/dateTimeValidation';
 
 interface Props {
   visible: boolean;
@@ -83,7 +93,9 @@ const NewAvailabilityModal: React.FC<Props> = ({
         setEndTime(editingAvailability.until);
         setRecurrencePattern(editingAvailability.recurrence.pattern);
         setRecurrenceInterval(editingAvailability.recurrence.interval || 1);
-        setSelectedDays(editingAvailability.recurrence.daysOfWeek || []);
+        // Convert JS dayOfWeek (Sunday-first) to UI indices (Monday-first)
+        const jsDays = editingAvailability.recurrence.daysOfWeek || [];
+        setSelectedDays(jsDays.map((jsDay) => jsDayToUiIndex(jsDay)));
       } else {
         setFromDateTime(editingAvailability.from);
         setUntilDateTime(editingAvailability.until);
@@ -108,15 +120,36 @@ const NewAvailabilityModal: React.FC<Props> = ({
     }
   }, [editingAvailability, visible]);
 
-  const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  // Monday-first day names (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
+  const dayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
-  const toggleDay = (day: number) => {
-    setSelectedDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()));
+  // Convert UI index (Monday-first: 0=Mo, 1=Di, ..., 6=So) to JS dayOfWeek (Sunday-first: 0=So, 1=Mo, ..., 6=Sa)
+  const uiIndexToJsDay = (uiIndex: number): number => {
+    // UI: 0=Mo, 1=Di, 2=Mi, 3=Do, 4=Fr, 5=Sa, 6=So
+    // JS: 0=So, 1=Mo, 2=Di, 3=Mi, 4=Do, 5=Fr, 6=Sa
+    return uiIndex === 6 ? 0 : uiIndex + 1;
+  };
+
+  // Convert JS dayOfWeek (Sunday-first) to UI index (Monday-first)
+  const jsDayToUiIndex = (jsDay: number): number => {
+    // JS: 0=So, 1=Mo, 2=Di, 3=Mi, 4=Do, 5=Fr, 6=Sa
+    // UI: 0=Mo, 1=Di, 2=Mi, 3=Do, 4=Fr, 5=Sa, 6=So
+    return jsDay === 0 ? 6 : jsDay - 1;
+  };
+
+  const toggleDay = (uiIndex: number) => {
+    setSelectedDays((prev) => {
+      if (prev.includes(uiIndex)) {
+        return prev.filter((d) => d !== uiIndex).sort();
+      } else {
+        return [...prev, uiIndex].sort();
+      }
+    });
   };
 
   const handleSubmit = async () => {
     if (!selectedSpot) {
-      Alert.alert('Fehler', 'Bitte wähle einen Parkplatz aus');
+      showAlert('Fehler', 'Bitte wähle einen Parkplatz aus');
       return;
     }
 
@@ -147,10 +180,11 @@ const NewAvailabilityModal: React.FC<Props> = ({
 
       if (recurrencePattern === 'weekly') {
         if (selectedDays.length === 0) {
-          Alert.alert('Fehler', 'Bitte wähle mindestens einen Wochentag aus');
+          showAlert('Fehler', 'Bitte wähle mindestens einen Wochentag aus');
           return;
         }
-        recurrence.daysOfWeek = selectedDays;
+        // Convert UI indices (Monday-first) to JS dayOfWeek (Sunday-first)
+        recurrence.daysOfWeek = selectedDays.map((uiIndex) => uiIndexToJsDay(uiIndex));
       }
 
       if (endDate) {
@@ -173,7 +207,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
       await onSubmit(selectedSpot, from, until, recurrence, autoOffer);
       onClose();
     } catch (error: any) {
-      Alert.alert('Fehler', error?.message || 'Verfügbarkeit konnte nicht erstellt werden');
+      showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht erstellt werden');
     } finally {
       setIsSubmitting(false);
     }
@@ -310,13 +344,6 @@ const NewAvailabilityModal: React.FC<Props> = ({
               <View style={inputStyles.dateInputHalf}>
                 <View style={inputStyles.inputLabelRow}>
                   <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Startdatum *</Text>
-                  {showStartDatePicker && (
-                    <TouchableOpacity
-                      onPress={() => setShowStartDatePicker(false)}
-                      style={buttonStyles.doneButton}>
-                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
                 <TouchableOpacity
                   style={[
@@ -324,7 +351,15 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     buttonStyles.inputButtonHalf,
                     {backgroundColor: colors.surface2, borderColor: colors.border},
                   ]}
-                  onPress={() => setShowStartDatePicker(true)}>
+                  onPress={() => {
+                    const next = !showStartDatePicker;
+                    setShowStartDatePicker(next);
+                    if (next) {
+                      setShowEndDatePicker(false);
+                      setShowStartTimePicker(false);
+                      setShowEndTimePicker(false);
+                    }
+                  }}>
                   <View style={inputStyles.inputButtonInner}>
                     <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
                     <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
@@ -332,59 +367,16 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     </Text>
                   </View>
                 </TouchableOpacity>
-                {showStartDatePicker && (
-                  Platform.OS === 'android' ? (
-                    <DateTimePicker
-                      value={startDate}
-                      mode="date"
-                      display="default"
-                      minimumDate={new Date()}
-                      onChange={(event, date) => {
-                        setShowStartDatePicker(false);
-                        if (event.type === 'dismissed') return;
-                        if (date) setStartDate(date);
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={[
-                        inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
-                      ]}>
-                      <DateTimePicker
-                        value={startDate}
-                        mode="date"
-                        display="spinner"
-                        minimumDate={new Date()}
-                        onChange={(event, date) => {
-                          if (date) setStartDate(date);
-                        }}
-                        style={inputStyles.picker}
-                      />
-                    </View>
-                  )
-                )}
               </View>
               <View style={inputStyles.dateInputHalf}>
                 <View style={inputStyles.inputLabelRow}>
                   <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Enddatum</Text>
-                  {(showEndDatePicker || endDate) && (
-                    <View style={{flexDirection: 'row', gap: 8, alignItems: 'center'}}>
-                      {showEndDatePicker && (
-                        <TouchableOpacity
-                          onPress={() => setShowEndDatePicker(false)}
-                          style={buttonStyles.doneButton}>
-                          <Text style={buttonStyles.doneButtonText}>Fertig</Text>
-                        </TouchableOpacity>
-                      )}
-                      {endDate && (
-                        <TouchableOpacity
-                          style={styles.clearButton}
-                          onPress={() => setEndDate(null)}>
-                          <MaterialCommunityIcons name="close-circle" size={20} color={colors.subtext} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
+                  {endDate && (
+                    <TouchableOpacity
+                      style={styles.clearButton}
+                      onPress={() => setEndDate(null)}>
+                      <MaterialCommunityIcons name="close-circle" size={20} color={colors.subtext} />
+                    </TouchableOpacity>
                   )}
                 </View>
                 <TouchableOpacity
@@ -393,7 +385,15 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     buttonStyles.inputButtonHalf,
                     {backgroundColor: colors.surface2, borderColor: colors.border},
                   ]}
-                  onPress={() => setShowEndDatePicker(true)}>
+                  onPress={() => {
+                    const next = !showEndDatePicker;
+                    setShowEndDatePicker(next);
+                    if (next) {
+                      setShowStartDatePicker(false);
+                      setShowStartTimePicker(false);
+                      setShowEndTimePicker(false);
+                    }
+                  }}>
                   <View style={inputStyles.inputButtonInner}>
                     <MaterialCommunityIcons name="calendar" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
                     <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
@@ -401,64 +401,132 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     </Text>
                   </View>
                 </TouchableOpacity>
-                {showEndDatePicker && (
-                  Platform.OS === 'android' ? (
-                    <DateTimePicker
-                      value={endDate || new Date()}
-                      mode="date"
-                      display="default"
-                      minimumDate={startDate}
-                      onChange={(event, date) => {
-                        setShowEndDatePicker(false);
-                        if (event.type === 'dismissed') return;
-                        if (date) setEndDate(date);
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={[
-                        inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
-                      ]}>
-                      <DateTimePicker
-                        value={endDate || new Date()}
-                        mode="date"
-                        display="spinner"
-                        minimumDate={startDate}
-                        onChange={(event, date) => {
-                          if (date) setEndDate(date);
-                        }}
-                        style={inputStyles.picker}
-                      />
-                    </View>
-                  )
-                )}
               </View>
-                    </View>
-                  </View>
+            </View>
+            {/* iOS Date Pickers - render inline spinner (no extra field) */}
+            {Platform.OS === 'ios' && showStartDatePicker && (
+              <View style={[
+                inputStyles.pickerContainer,
+                {
+                  backgroundColor: colors.surface2,
+                  borderColor: colors.border,
+                  marginTop: 8,
+                  width: '100%',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                },
+              ]}>
+                <DateTimePicker
+                  value={startDate}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={new Date()}
+                  onChange={(event, date) => {
+                    if (date) {
+                      setStartDate(date);
+                      // Ensure endDate is not before startDate
+                      if (endDate) {
+                        const adjusted = adjustDateOnEndChange(date, endDate, 0);
+                        setEndDate(adjusted);
+                      }
+                    }
+                  }}
+                  style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {Platform.OS === 'ios' && showEndDatePicker && (
+              <View style={[
+                inputStyles.pickerContainer,
+                {
+                  backgroundColor: colors.surface2,
+                  borderColor: colors.border,
+                  marginTop: 8,
+                  width: '100%',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                },
+              ]}>
+                <DateTimePicker
+                  value={endDate || new Date()}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={startDate}
+                  onChange={(event, date) => {
+                    if (date) {
+                      // Ensure endDate is not before startDate
+                      if (date < startDate) {
+                        setEndDate(startDate);
+                      } else {
+                        setEndDate(date);
+                      }
+                    }
+                  }}
+                  style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {/* Android Date Pickers - rendered inline */}
+            {Platform.OS === 'android' && showStartDatePicker && (
+              <DateTimePicker
+                value={startDate}
+                mode="date"
+                display="default"
+                minimumDate={new Date()}
+                onChange={(event, date) => {
+                  setShowStartDatePicker(false);
+                  if (event.type === 'dismissed') return;
+                  if (date) {
+                    setStartDate(date);
+                    // Ensure endDate is not before startDate
+                    if (endDate) {
+                      const adjusted = adjustDateOnEndChange(date, endDate, 0);
+                      setEndDate(adjusted);
+                    }
+                  }
+                }}
+              />
+            )}
+            {Platform.OS === 'android' && showEndDatePicker && (
+              <DateTimePicker
+                value={endDate || new Date()}
+                mode="date"
+                display="default"
+                minimumDate={startDate}
+                onChange={(event, date) => {
+                  setShowEndDatePicker(false);
+                  if (event.type === 'dismissed') return;
+                  if (date) {
+                    // Ensure endDate is not before startDate
+                    const adjusted = adjustDateOnEndChange(startDate, date, 0);
+                    setEndDate(adjusted);
+                  }
+                }}
+              />
+            )}
+          </View>
 
           {/* Zeit (Start-Zeit, End-Zeit) */}
           <View style={inputStyles.inputGroup}>
             <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Zeit *</Text>
             <View style={inputStyles.dateRow}>
               <View style={inputStyles.dateInputHalf}>
-                <View style={inputStyles.inputLabelRow}>
-                  <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Start-Zeit</Text>
-                  {showStartTimePicker && (
-                    <TouchableOpacity
-                      onPress={() => setShowStartTimePicker(false)}
-                      style={buttonStyles.doneButton}>
-                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>Start-Zeit</Text>
                 <TouchableOpacity
                   style={[
                     buttonStyles.inputButton,
                     buttonStyles.inputButtonHalf,
                     {backgroundColor: colors.surface2, borderColor: colors.border},
                   ]}
-                  onPress={() => setShowStartTimePicker(true)}>
+                  onPress={() => {
+                    const next = !showStartTimePicker;
+                    setShowStartTimePicker(next);
+                    if (next) {
+                      setShowStartDatePicker(false);
+                      setShowEndDatePicker(false);
+                      setShowEndTimePicker(false);
+                    }
+                  }}>
                   <View style={inputStyles.inputButtonInner}>
                     <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
                     <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
@@ -466,55 +534,24 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     </Text>
                   </View>
                 </TouchableOpacity>
-                {showStartTimePicker && (
-                  Platform.OS === 'android' ? (
-                    <DateTimePicker
-                      value={startTime}
-                      mode="time"
-                      display="default"
-                      onChange={(event, time) => {
-                        setShowStartTimePicker(false);
-                        if (event.type === 'dismissed') return;
-                        if (time) setStartTime(time);
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={[
-                        inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
-                      ]}>
-                      <DateTimePicker
-                        value={startTime}
-                        mode="time"
-                        display="spinner"
-                        onChange={(event, time) => {
-                          if (time) setStartTime(time);
-                        }}
-                        style={inputStyles.picker}
-                      />
-                    </View>
-                  )
-                )}
               </View>
               <View style={inputStyles.dateInputHalf}>
-                <View style={inputStyles.inputLabelRow}>
-                  <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>End-Zeit</Text>
-                  {showEndTimePicker && (
-                    <TouchableOpacity
-                      onPress={() => setShowEndTimePicker(false)}
-                      style={buttonStyles.doneButton}>
-                      <Text style={buttonStyles.doneButtonText}>Fertig</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <Text style={[inputStyles.dateInputLabel, {color: colors.subtext}]}>End-Zeit</Text>
                 <TouchableOpacity
                   style={[
                     buttonStyles.inputButton,
                     buttonStyles.inputButtonHalf,
                     {backgroundColor: colors.surface2, borderColor: colors.border},
                   ]}
-                  onPress={() => setShowEndTimePicker(true)}>
+                  onPress={() => {
+                    const next = !showEndTimePicker;
+                    setShowEndTimePicker(next);
+                    if (next) {
+                      setShowStartDatePicker(false);
+                      setShowEndDatePicker(false);
+                      setShowStartTimePicker(false);
+                    }
+                  }}>
                   <View style={inputStyles.inputButtonInner}>
                     <MaterialCommunityIcons name="clock-outline" size={16} color={colors.text} style={inputStyles.inputButtonIcon} />
                     <Text style={[buttonStyles.inputButtonText, {color: colors.brand}]}>
@@ -522,39 +559,116 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     </Text>
                   </View>
                 </TouchableOpacity>
-                {showEndTimePicker && (
-                  Platform.OS === 'android' ? (
-                    <DateTimePicker
-                      value={endTime}
-                      mode="time"
-                      display="default"
-                      onChange={(event, time) => {
-                        setShowEndTimePicker(false);
-                        if (event.type === 'dismissed') return;
-                        if (time) setEndTime(time);
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={[
-                        inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
-                      ]}>
-                      <DateTimePicker
-                        value={endTime}
-                        mode="time"
-                        display="spinner"
-                        onChange={(event, time) => {
-                          if (time) setEndTime(time);
-                        }}
-                        style={inputStyles.picker}
-                      />
-                    </View>
-                  )
-                )}
               </View>
-                    </View>
-                  </View>
+            </View>
+            {/* iOS Time Pickers - render inline spinner (no extra field) */}
+            {Platform.OS === 'ios' && showStartTimePicker && (
+              <View style={[
+                inputStyles.pickerContainer,
+                {
+                  backgroundColor: colors.surface2,
+                  borderColor: colors.border,
+                  marginTop: 8,
+                  width: '100%',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                },
+              ]}>
+                <DateTimePicker
+                  value={startTime}
+                  mode="time"
+                  display="spinner"
+                  onChange={(event, time) => {
+                    if (time) {
+                      setStartTime(time);
+                      // Check if endTime is before startTime (same day)
+                      const startTimeOnly = new Date(startDate);
+                      startTimeOnly.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                      const endTimeOnly = new Date(startDate);
+                      endTimeOnly.setHours(endTime.getHours(), endTime.getMinutes(), 0, 0);
+                      // If endTime is before or equal to startTime, adjust endTime
+                      if (endTimeOnly <= startTimeOnly) {
+                        const adjustedEndTime = new Date(startTimeOnly);
+                        adjustedEndTime.setHours(time.getHours() + 1, time.getMinutes(), 0, 0);
+                        setEndTime(adjustedEndTime);
+                      }
+                    }
+                  }}
+                  style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {Platform.OS === 'ios' && showEndTimePicker && (
+              <View style={[
+                inputStyles.pickerContainer,
+                {
+                  backgroundColor: colors.surface2,
+                  borderColor: colors.border,
+                  marginTop: 8,
+                  width: '100%',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                },
+              ]}>
+                <DateTimePicker
+                  value={endTime}
+                  mode="time"
+                  display="spinner"
+                  onChange={(event, time) => {
+                    if (time) {
+                      // Check if endTime is before startTime (same day)
+                      const startTimeOnly = new Date(startDate);
+                      startTimeOnly.setHours(startTime.getHours(), startTime.getMinutes(), 0, 0);
+                      const endTimeOnly = new Date(startDate);
+                      endTimeOnly.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                      // If endTime is before or equal to startTime, it's OK (will be next day in submit)
+                      // But we can set it to at least startTime + 1 hour for better UX
+                      if (endTimeOnly <= startTimeOnly) {
+                        const adjustedEndTime = new Date(startTimeOnly);
+                        adjustedEndTime.setHours(startTime.getHours() + 1, startTime.getMinutes(), 0, 0);
+                        setEndTime(adjustedEndTime);
+                      } else {
+                        setEndTime(time);
+                      }
+                    }
+                  }}
+                  style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {/* Android Time Pickers - rendered inline */}
+            {Platform.OS === 'android' && showStartTimePicker && (
+              <DateTimePicker
+                value={startTime}
+                mode="time"
+                display="default"
+                onChange={(event, time) => {
+                  setShowStartTimePicker(false);
+                  if (event.type === 'dismissed') return;
+                  if (time) {
+                    const result = adjustTimesOnStartChange(startDate, time, endTime, 1);
+                    setStartTime(result.start);
+                    setEndTime(result.end);
+                  }
+                }}
+              />
+            )}
+            {Platform.OS === 'android' && showEndTimePicker && (
+              <DateTimePicker
+                value={endTime}
+                mode="time"
+                display="default"
+                onChange={(event, time) => {
+                  setShowEndTimePicker(false);
+                  if (event.type === 'dismissed') return;
+                  if (time) {
+                    const adjusted = adjustTimeOnEndChange(startDate, startTime, time, 1);
+                    setEndTime(adjusted);
+                  }
+                }}
+              />
+            )}
+          </View>
 
           {/* Wiederholungsmuster */}
           <View style={inputStyles.inputGroup}>
@@ -616,23 +730,23 @@ const NewAvailabilityModal: React.FC<Props> = ({
             <View style={inputStyles.inputGroup}>
               <Text style={[inputStyles.inputLabelStandalone, {color: colors.text}]}>Wochentage *</Text>
                       <View style={styles.daysRow}>
-                        {dayNames.map((day, index) => (
+                        {dayNames.map((day, uiIndex) => (
                           <TouchableOpacity
-                            key={index}
+                            key={uiIndex}
                             style={[
                               styles.dayButton,
                               {
-                                backgroundColor: selectedDays.includes(index)
+                                backgroundColor: selectedDays.includes(uiIndex)
                                   ? colors.brand
                                   : colors.surface2,
-                                borderColor: selectedDays.includes(index) ? colors.brand : colors.border,
+                                borderColor: selectedDays.includes(uiIndex) ? colors.brand : colors.border,
                               },
                             ]}
-                            onPress={() => toggleDay(index)}>
+                            onPress={() => toggleDay(uiIndex)}>
                             <Text
                               style={[
                                 styles.dayButtonText,
-                                {color: selectedDays.includes(index) ? '#fff' : colors.text},
+                                {color: selectedDays.includes(uiIndex) ? '#fff' : colors.text},
                               ]}>
                               {day}
                             </Text>
@@ -716,9 +830,9 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             setShowFromDatePicker(false);
                             if (event.type === 'dismissed') return;
                             if (date) {
-                              const next = new Date(date);
-                              next.setHours(fromDateTime.getHours(), fromDateTime.getMinutes(), 0, 0);
-                              setFromDateTime(next);
+                              const result = adjustDateKeepingTime(date, fromDateTime, untilDateTime, 1);
+                              setFromDateTime(result.adjusted);
+                              setUntilDateTime(result.other);
                             }
                           }}
                         />
@@ -735,9 +849,9 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             minimumDate={new Date()}
                             onChange={(event, date) => {
                               if (date) {
-                                const next = new Date(date);
-                                next.setHours(fromDateTime.getHours(), fromDateTime.getMinutes(), 0, 0);
-                                setFromDateTime(next);
+                                const result = adjustDateKeepingTime(date, fromDateTime, untilDateTime, 1);
+                                setFromDateTime(result.adjusted);
+                                setUntilDateTime(result.other);
                               }
                             }}
                             style={inputStyles.picker}
@@ -756,14 +870,9 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             setShowFromTimePicker(false);
                             if (event.type === 'dismissed') return;
                             if (time) {
-                              const next = new Date(fromDateTime);
-                              next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                              setFromDateTime(next);
-                              // Auto-adjust until if needed
-                              if (untilDateTime <= next) {
-                                const adjustedUntil = new Date(next.getTime() + 60 * 60 * 1000);
-                                setUntilDateTime(adjustedUntil);
-                              }
+                              const result = adjustTimeKeepingDate(fromDateTime, time, untilDateTime, 1);
+                              setFromDateTime(result.adjusted);
+                              setUntilDateTime(result.other);
                             }
                           }}
                         />
@@ -780,14 +889,9 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             minuteInterval={15}
                             onChange={(event, time) => {
                               if (time) {
-                                const next = new Date(fromDateTime);
-                                next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                                setFromDateTime(next);
-                                // Auto-adjust until if needed
-                                if (untilDateTime <= next) {
-                                  const adjustedUntil = new Date(next.getTime() + 60 * 60 * 1000);
-                                  setUntilDateTime(adjustedUntil);
-                                }
+                                const result = adjustTimeKeepingDate(fromDateTime, time, untilDateTime, 1);
+                                setFromDateTime(result.adjusted);
+                                setUntilDateTime(result.other);
                               }
                             }}
                             style={inputStyles.picker}
@@ -871,7 +975,8 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             if (date) {
                               const next = new Date(date);
                               next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
-                              setUntilDateTime(next);
+                              const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                              setUntilDateTime(adjusted);
                             }
                           }}
                         />
@@ -890,7 +995,8 @@ const NewAvailabilityModal: React.FC<Props> = ({
                               if (date) {
                                 const next = new Date(date);
                                 next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
-                                setUntilDateTime(next);
+                                const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                                setUntilDateTime(adjusted);
                               }
                             }}
                             style={inputStyles.picker}
@@ -911,7 +1017,8 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             if (time) {
                               const next = new Date(untilDateTime);
                               next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                              setUntilDateTime(next);
+                              const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                              setUntilDateTime(adjusted);
                             }
                           }}
                         />
@@ -930,7 +1037,8 @@ const NewAvailabilityModal: React.FC<Props> = ({
                               if (time) {
                                 const next = new Date(untilDateTime);
                                 next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-                                setUntilDateTime(next);
+                                const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                                setUntilDateTime(adjusted);
                               }
                             }}
                             style={inputStyles.picker}

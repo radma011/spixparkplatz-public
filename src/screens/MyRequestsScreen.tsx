@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   useColorScheme,
 } from 'react-native';
+import {confirmAlert, showAlert} from '../utils/alertUtils';
 import {getApp} from '@react-native-firebase/app';
 import {getAuth} from '@react-native-firebase/auth';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -40,24 +41,20 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
   const offerUnsubsRef = useRef<Record<string, () => void>>({});
 
   const handleDeleteRequest = (requestId: string) => {
-    Alert.alert(
+    confirmAlert(
       'Anfrage löschen',
       'Möchtest du diese Anfrage wirklich löschen?',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Löschen',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ParkingRequestService.deleteRequest(requestId);
-            } catch (e) {
-              console.error('Fehler beim Löschen:', e);
-              Alert.alert('Fehler', 'Anfrage konnte nicht gelöscht werden');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await ParkingRequestService.deleteRequest(requestId);
+        } catch (e) {
+          console.error('Fehler beim Löschen:', e);
+          showAlert('Fehler', 'Anfrage konnte nicht gelöscht werden');
+        }
+      },
+      undefined,
+      'Löschen',
+      'Abbrechen',
     );
   };
 
@@ -129,8 +126,37 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
       if (offerUnsubsRef.current[requestId]) return;
       offerUnsubsRef.current[requestId] = ParkingRequestService.watchOffersForRequest(requestId).onSnapshot(
         (snap: any) => {
+          const previousOffers = offersByRequestId[requestId] || [];
+          const previousOfferIds = new Set(previousOffers.map((o) => o.id));
+          
           const offers: RequestOffer[] = (snap?.docs ?? []).map((d: any) => {
             const data = d.data();
+            const createdAt = data.createdAt ? (data.createdAt as any).toDate() : undefined;
+            
+            // Check if this is a new offer (not in previous offers)
+            const isNewOffer = !previousOfferIds.has(d.id);
+            if (isNewOffer && createdAt) {
+              // Check if it was created very recently (within 10 seconds) - likely auto-match
+              const now = new Date();
+              const timeSinceCreation = now.getTime() - createdAt.getTime();
+              const isLikelyAutoMatch = timeSinceCreation < 10000; // 10 seconds
+              
+              // Only log in development mode
+              if (process.env.NODE_ENV !== 'production') {
+                console.log('[Auto-Matching] New offer detected on my request:', {
+                  offerId: d.id,
+                  requestId,
+                  spotId: data.spotId,
+                  offererId: data.offererId,
+                  from: data.from ? (data.from as any).toDate().toISOString() : 'unknown',
+                  until: data.until ? (data.until as any).toDate().toISOString() : 'unknown',
+                  createdAt: createdAt.toISOString(),
+                  timeSinceCreation: `${Math.round(timeSinceCreation / 1000)}s`,
+                  likelyAutoMatch: isLikelyAutoMatch,
+                });
+              }
+            }
+            
             return {
               id: d.id,
               requestId,
@@ -233,11 +259,11 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
             onAcceptOffer={async (offer) => {
               try {
                 await ParkingRequestService.acceptOffer(item.id, offer);
-                Alert.alert('Erfolg', 'Angebot angenommen');
+                showAlert('Erfolg', 'Angebot angenommen');
               } catch (error: any) {
                 console.error('Fehler beim Annehmen des Angebots:', error);
                 const errorMessage = error?.message || 'Unbekannter Fehler';
-                Alert.alert('Fehler', errorMessage);
+                showAlert('Fehler', errorMessage);
               }
             }}
           />

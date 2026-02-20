@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   Modal,
   useColorScheme,
+  Platform,
 } from 'react-native';
+import {confirmAlert, showAlert} from '../utils/alertUtils';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import AuthService, {UserData} from '../services/AuthService';
@@ -97,7 +99,7 @@ const ProfileScreen: React.FC<Props> = ({
 
   const handleSave = async () => {
     if (!username.trim()) {
-      Alert.alert('Fehler', 'Bitte gib einen Benutzernamen ein');
+      showAlert('Fehler', 'Bitte gib einen Benutzernamen ein');
       return;
     }
 
@@ -107,29 +109,23 @@ const ProfileScreen: React.FC<Props> = ({
 
     // Warnung wenn Facility-Code geändert wird
     if (facilityCodeChanged) {
+      const message = 'Du bist dabei, deine Parkanlagen-Gruppe zu wechseln.\n\n' +
+        'Aktuelle Gruppe: ' + normalizedOldCode + '\n' +
+        'Neue Gruppe: ' + normalizedNewCode + '\n\n' +
+        'Wenn du den Code änderst:\n' +
+        '• Du verlierst den Zugriff auf alle Anfragen deiner alten Gruppe\n' +
+        '• Du siehst nur noch Anfragen der neuen Gruppe\n' +
+        '• Deine bestehenden Anfragen bleiben in der alten Gruppe\n\n' +
+        'Möchtest du wirklich die Gruppe wechseln?';
+      
       const confirmed = await new Promise<boolean>((resolve) => {
-        Alert.alert(
+        confirmAlert(
           '⚠️ Gruppe verlassen',
-          'Du bist dabei, deine Parkanlagen-Gruppe zu wechseln.\n\n' +
-            'Aktuelle Gruppe: ' + normalizedOldCode + '\n' +
-            'Neue Gruppe: ' + normalizedNewCode + '\n\n' +
-            'Wenn du den Code änderst:\n' +
-            '• Du verlierst den Zugriff auf alle Anfragen deiner alten Gruppe\n' +
-            '• Du siehst nur noch Anfragen der neuen Gruppe\n' +
-            '• Deine bestehenden Anfragen bleiben in der alten Gruppe\n\n' +
-            'Möchtest du wirklich die Gruppe wechseln?',
-          [
-            {
-              text: 'Abbrechen',
-              style: 'cancel',
-              onPress: () => resolve(false),
-            },
-            {
-              text: 'Ja, Gruppe wechseln',
-              style: 'destructive',
-              onPress: () => resolve(true),
-            },
-          ],
+          message,
+          () => resolve(true),
+          () => resolve(false),
+          'Ja, Gruppe wechseln',
+          'Abbrechen',
         );
       });
 
@@ -140,7 +136,7 @@ const ProfileScreen: React.FC<Props> = ({
       // Validiere neuen Facility-Code
       const isValidFacility = await FirestoreService.validateFacilityCode(normalizedNewCode);
       if (!isValidFacility) {
-        Alert.alert(
+        showAlert(
           'Ungültiger Code',
           'Der eingegebene Parkanlagen-Code existiert nicht. Bitte überprüfe den Code oder kontaktiere den Administrator.',
         );
@@ -163,17 +159,17 @@ const ProfileScreen: React.FC<Props> = ({
       if (updatedUserData) {
         onUserDataUpdated(updatedUserData);
         if (facilityCodeChanged) {
-          Alert.alert(
+          showAlert(
             'Gruppe gewechselt',
             'Du hast erfolgreich die Parkanlagen-Gruppe gewechselt. Die App wird jetzt die Anfragen der neuen Gruppe anzeigen.',
           );
         } else {
-          Alert.alert('Erfolg', 'Profil erfolgreich aktualisiert');
+          showAlert('Erfolg', 'Profil erfolgreich aktualisiert');
         }
       }
     } catch (error: any) {
       console.error('Fehler beim Aktualisieren:', error);
-      Alert.alert('Fehler', 'Profil konnte nicht aktualisiert werden');
+      showAlert('Fehler', 'Profil konnte nicht aktualisiert werden');
     } finally {
       setLoading(false);
     }
@@ -181,19 +177,19 @@ const ProfileScreen: React.FC<Props> = ({
 
   const handleResetPassword = async () => {
     if (!resetEmail.trim() || !resetEmail.includes('@')) {
-      Alert.alert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
+      showAlert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
       return;
     }
 
     setLoading(true);
     try {
       await AuthService.resetPassword(resetEmail.trim());
-      Alert.alert(
+      showAlert(
         'E-Mail gesendet',
         'Eine E-Mail zum Zurücksetzen des Passworts wurde an ' +
           resetEmail +
           ' gesendet.',
-        [{text: 'OK', onPress: () => setShowResetPassword(false)}],
+        () => setShowResetPassword(false),
       );
     } catch (error: any) {
       let errorMessage = 'Passwort konnte nicht zurückgesetzt werden';
@@ -202,7 +198,7 @@ const ProfileScreen: React.FC<Props> = ({
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = 'Ungültige E-Mail-Adresse';
       }
-      Alert.alert('Fehler', errorMessage);
+      showAlert('Fehler', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -216,7 +212,7 @@ const ProfileScreen: React.FC<Props> = ({
     setLoading(true);
     try {
       await AuthService.requestEmailChange(newEmail.trim());
-      Alert.alert(
+      showAlert(
         'Bestätigung gesendet',
         'Wir haben eine Bestätigungs-E-Mail an die neue Adresse gesendet. Bitte den Link dort öffnen. Danach die App kurz neu starten (oder einmal ab- und wieder anmelden), damit die Änderung überall sichtbar ist.',
       );
@@ -230,68 +226,99 @@ const ProfileScreen: React.FC<Props> = ({
       } else if (error?.code === 'auth/email-already-in-use') {
         msg = 'Diese E-Mail-Adresse wird bereits verwendet';
       }
-      Alert.alert('Fehler', msg);
+      showAlert('Fehler', msg);
     } finally {
       setLoading(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Abmelden',
-      'Möchtest du dich wirklich abmelden?',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Abmelden',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await AuthService.logout();
-            } catch (e) {
-              console.error('Logout-Fehler:', e);
-              Alert.alert('Fehler', 'Abmeldung fehlgeschlagen');
-            }
+    console.log('[ProfileScreen] handleLogout called');
+    
+    // Use window.confirm for web, Alert.alert for native
+    const isWeb = typeof window !== 'undefined' && window.confirm;
+    
+    if (isWeb) {
+      const confirmed = window.confirm('Möchtest du dich wirklich abmelden?');
+      console.log('[ProfileScreen] User confirmed logout:', confirmed);
+      if (!confirmed) {
+        console.log('[ProfileScreen] User cancelled logout');
+        return;
+      }
+    } else {
+      Alert.alert(
+        'Abmelden',
+        'Möchtest du dich wirklich abmelden?',
+        [
+          {text: 'Abbrechen', style: 'cancel'},
+          {
+            text: 'Abmelden',
+            style: 'destructive',
+            onPress: async () => {
+              await performLogout();
+            },
           },
-        },
-      ],
-    );
+        ],
+      );
+      return;
+    }
+    
+    // Perform logout directly for web
+    performLogout();
+  };
+  
+  const performLogout = async () => {
+    try {
+      console.log('[ProfileScreen] Logout button pressed');
+      setLoading(true);
+      console.log('[ProfileScreen] Starting logout...');
+      await AuthService.logout();
+      console.log('[ProfileScreen] Logout successful - waiting for auth state change');
+      // Logout successful - Auth state listener will handle UI update
+      // Force a small delay to ensure auth state updates
+      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log('[ProfileScreen] After delay - checking if user is still logged in');
+    } catch (e: any) {
+      console.error('[ProfileScreen] Logout-Fehler:', e);
+      const errorMessage = e?.message || e?.code || 'Abmeldung fehlgeschlagen';
+      if (typeof window !== 'undefined' && window.alert) {
+        window.alert(`Abmeldung fehlgeschlagen: ${errorMessage}`);
+      } else {
+        Alert.alert('Fehler', `Abmeldung fehlgeschlagen: ${errorMessage}`);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
+    const message = 'Möchtest du wirklich deinen Account und alle deine Daten unwiderruflich löschen?\n\nAlle deine Daten werden dauerhaft gelöscht:\n• Dein Profil\n• Alle deine Anfragen\n• Alle deine Angebote\n• Alle deine Kommentare\n\nDiese Aktion kann NICHT rückgängig gemacht werden.';
+    
+    confirmAlert(
       '⚠️ Account löschen',
-      'Möchtest du wirklich deinen Account und alle deine Daten unwiderruflich löschen?\n\nAlle deine Daten werden dauerhaft gelöscht:\n• Dein Profil\n• Alle deine Anfragen\n• Alle deine Angebote\n• Alle deine Kommentare\n\nDiese Aktion kann NICHT rückgängig gemacht werden.',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Ja, Account löschen',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await AuthService.deleteAccount();
-              // User wird automatisch ausgeloggt nach erfolgreichem Löschen
-              Alert.alert(
-                'Account gelöscht',
-                'Dein Account und alle zugehörigen Daten wurden erfolgreich gelöscht.',
-                [{text: 'OK'}],
-              );
-            } catch (error: any) {
-              console.error('Fehler beim Löschen des Accounts:', error);
-              let errorMessage = 'Account konnte nicht gelöscht werden';
-              if (error?.code === 'functions/http-error') {
-                errorMessage = error?.message || errorMessage;
-              } else if (error?.message) {
-                errorMessage = error.message;
-              }
-              Alert.alert('Fehler', errorMessage);
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ],
+      message,
+      async () => {
+        setLoading(true);
+        try {
+          await AuthService.deleteAccount();
+          // User wird automatisch ausgeloggt nach erfolgreichem Löschen
+          showAlert('Account gelöscht', 'Dein Account und alle zugehörigen Daten wurden erfolgreich gelöscht.');
+        } catch (error: any) {
+          console.error('Fehler beim Löschen des Accounts:', error);
+          let errorMessage = 'Account konnte nicht gelöscht werden';
+          if (error?.code === 'functions/http-error') {
+            errorMessage = error?.message || errorMessage;
+          } else if (error?.message) {
+            errorMessage = error.message;
+          }
+          showAlert('Fehler', errorMessage);
+        } finally {
+          setLoading(false);
+        }
+      },
+      undefined,
+      'Ja, Account löschen',
+      'Abbrechen',
     );
   };
 
@@ -302,7 +329,13 @@ const ProfileScreen: React.FC<Props> = ({
           <Text style={styles.backButtonText}>← Zurück</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profil</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+        <TouchableOpacity 
+          onPress={() => {
+            console.log('[ProfileScreen] Header logout icon clicked!');
+            handleLogout();
+          }} 
+          style={styles.iconButton}
+          activeOpacity={0.7}>
           <MaterialCommunityIcons name="logout-variant" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -492,8 +525,12 @@ const ProfileScreen: React.FC<Props> = ({
 
           <TouchableOpacity
             style={styles.logoutButton}
-            onPress={handleLogout}
-            disabled={loading}>
+            onPress={() => {
+              console.log('[ProfileScreen] Logout button clicked!');
+              handleLogout();
+            }}
+            disabled={loading}
+            activeOpacity={0.7}>
             <MaterialCommunityIcons name="logout-variant" size={18} color="#fff" />
             <Text style={styles.logoutButtonText}>Abmelden</Text>
           </TouchableOpacity>

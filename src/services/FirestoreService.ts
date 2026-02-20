@@ -250,12 +250,15 @@ class FirestoreService {
       console.log('Could not check for recent identical requests:', error);
     }
     
+    // Normalize facilityCode (trim + uppercase) so server-side matching and filters work reliably
+    const normalizedFacilityCode = String(facilityCode ?? '').trim().toUpperCase();
+
     // Create new request with auto-generated ID
     const requestRef = doc(this.requestsCollection);
     const request: ParkingRequest = {
       id: requestRef.id,
       requestedBy: userId,
-      facilityCode: facilityCode,
+      facilityCode: normalizedFacilityCode,
       // username/phone are resolved from users_public for display/contact
       from,
       until,
@@ -265,7 +268,7 @@ class FirestoreService {
     const trimmed = String(initialComment ?? '').trim();
     await setDoc(requestRef, {
       requestedBy: userId,
-      facilityCode: facilityCode,
+      facilityCode: normalizedFacilityCode,
       from: fromTs,
       until: untilTs,
       isFulfilled: false,

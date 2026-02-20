@@ -91,6 +91,28 @@ service cloud.firestore {
           'archivedAt'
         ]);
     }
+
+    function isWithdrawRequestUpdate() {
+      // Allow requester to withdraw (archive) their own request and remove offer fields.
+      // This is used when a request has an offer but the requester wants to withdraw it.
+      return isAuthenticated()
+        && resource.data.requestedBy == request.auth.uid
+        && resource.data.isFulfilled == false
+        && request.resource.data.isArchived == true
+        && request.resource.data.archivedBy == request.auth.uid
+        && request.resource.data.archivedAt is timestamp
+        && !('offeredSpotId' in request.resource.data)
+        && !('offeredBy' in request.resource.data)
+        && !('offeredAt' in request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isArchived',
+          'archivedBy',
+          'archivedAt',
+          'offeredSpotId',
+          'offeredBy',
+          'offeredAt'
+        ]);
+    }
     
     // Users Collection
     match /users/{userId} {
@@ -143,8 +165,9 @@ service cloud.firestore {
       // Updates:
       // - first offer can be attached by any authenticated offering user (constrained)
       // - offerer can cancel their offer (constrained)
+      // - requester can withdraw their request (archive + remove offer fields)
       // Fulfillment is determined server-side when accepted offers fully cover the window.
-      allow update: if isFirstOfferUpdate() || isCancelOfferUpdate() || isArchiveUpdate();
+      allow update: if isFirstOfferUpdate() || isCancelOfferUpdate() || isArchiveUpdate() || isWithdrawRequestUpdate();
       
       // Only the requester can delete their own request
       // Only allow deleting (withdrawing) a request while it's not fulfilled

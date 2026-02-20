@@ -4,7 +4,7 @@
  */
 
 import React, {useEffect, useState} from 'react';
-import {StatusBar, StyleSheet, useColorScheme, ActivityIndicator, View, Linking} from 'react-native';
+import {StatusBar, StyleSheet, useColorScheme, ActivityIndicator, View, Linking, Platform} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {getApp} from '@react-native-firebase/app';
 import {getMessaging, getInitialNotification, onNotificationOpenedApp} from '@react-native-firebase/messaging';
@@ -22,11 +22,22 @@ function App(): React.JSX.Element {
   const [initialFacilityCode, setInitialFacilityCode] = useState<string | undefined>(undefined);
 
   useEffect(() => {
+    // Deep links only work on native platforms, not on web
+    if (Platform.OS === 'web') {
+      setLoading(false);
+      return;
+    }
+
     // Handle deep links on app start
     const handleDeepLink = (url: string | null) => {
       if (!url) return;
       
       console.log('Deep link received:', url);
+      
+      // Only handle parkplatz:// URLs, ignore http/https URLs
+      if (!url.startsWith('parkplatz://')) {
+        return;
+      }
       
       // Parse parkplatz://register?code=XXX
       // Try multiple parsing methods for robustness
@@ -58,8 +69,6 @@ function App(): React.JSX.Element {
         const normalizedCode = code.trim().toUpperCase();
         console.log('Extracted facility code:', normalizedCode);
         setInitialFacilityCode(normalizedCode);
-      } else {
-        console.warn('Could not extract code from deep link:', url);
       }
     };
 
@@ -87,6 +96,7 @@ function App(): React.JSX.Element {
 
     // Auth State Listener einrichten
     const unsubscribe = AuthService.onAuthStateChanged((userData) => {
+      console.log('[App] Auth state changed callback:', userData ? `User: ${userData.uid}` : 'User: null (logged out)');
       setUser(userData);
       setLoading(false);
     });

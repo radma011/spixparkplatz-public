@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpixParkplatz – App herunterladen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #3b82f6;
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      line-height: 1.5;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 2.5rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .logo {
+      width: 88px;
+      height: 88px;
+      border-radius: 18px;
+      margin-bottom: 1.5rem;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+      object-fit: contain;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .version {
+      font-size: 0.875rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .download-heading {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+
+    .download-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .hint {
+      margin-bottom: 2rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      text-align: left;
+    }
+
+    .hint-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .hint-text {
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+
+    .hint-text + .hint-text {
+      margin-top: 0.5rem;
+    }
+
+    a.download-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem 0;
+      text-decoration: none;
+      border-radius: 10px;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    a.download-btn:hover {
+      opacity: 0.9;
+      transform: scale(1.02);
+    }
+
+    a.download-btn:active {
+      transform: scale(0.98);
+    }
+
+    .download-btn .btn-badge {
+      display: block;
+      height: 50px;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+    }
+
+    .download-btn .btn-badge-ios {
+      height: 44px;
+    }
+
+    .download-btn-web {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem 1.5rem;
+      text-decoration: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      margin-top: 1rem;
+    }
+
+    .download-btn-web:hover {
+      opacity: 0.9;
+      transform: scale(1.02);
+    }
+
+    .download-btn-web:active {
+      transform: scale(0.98);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="logo.png" alt="SpixParkplatz" class="logo" width="88" height="88">
+    <h1>SpixParkplatz</h1>
+    <p class="version" id="version">Version wird geladen…</p>
+
+    <div class="hint">
+      <p class="hint-title">Android: Installation aus unbekannten Quellen</p>
+      <p class="hint-text">
+        Beim ersten Installieren muss auf dem Gerät die Option „Installation aus unbekannten Quellen“ (bzw. „Unbekannte Apps installieren“) für den verwendeten Browser aktiviert werden. Nach dem Download die APK-Datei öffnen und die Installation bestätigen.
+      </p>
+    </div>
+
+    <h2 class="download-heading">DOWNLOAD</h2>
+    <div class="download-row">
+      <a href="SpixParkplatz.apk" class="download-btn" download title="Android-App herunterladen">
+        <img class="btn-badge" src="https://upload.wikimedia.org/wikipedia/commons/6/66/Android_robot.png" alt="Android" width="50" height="50">
+      </a>
+      <a href="https://apps.apple.com/ch/app/spixparkplatz/id6757194584" class="download-btn" target="_blank" rel="noopener noreferrer" title="Im App Store öffnen">
+        <img class="btn-badge btn-badge-ios" src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" width="120" height="40">
+      </a>
+    </div>
+    <a href="https://aviationsapps.com/apps/spixparkplatz/" class="download-btn-web" target="_blank" rel="noopener noreferrer" title="App online im Browser nutzen">
+      App online im Browser nutzen
+    </a>
+  </div>
+
+  <script>
+    (function () {
+      var base = window.location.pathname.replace(/\/?index\.html$/, '') || '.';
+      var versionEl = document.getElementById('version');
+
+      // Add cache-busting query parameter to prevent stale cache
+      var cacheBuster = '?t=' + Date.now();
+      var versionUrl = base + '/version.json' + cacheBuster;
+      console.log('Fetching version from:', versionUrl);
+      fetch(versionUrl, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
+        .then(function (res) {
+          console.log('Response status:', res.status);
+          return res.ok ? res.json() : null;
+        })
+        .then(function (data) {
+          console.log('Version data received:', data);
+          if (data && data.versionName) {
+            versionEl.textContent = 'Version ' + data.versionName;
+            if (data.versionCode) {
+              versionEl.textContent += ' (' + data.versionCode + ')';
+            }
+          } else {
+            versionEl.textContent = '';
+          }
+        })
+        .catch(function (err) {
+          console.error('Error fetching version:', err);
+          versionEl.textContent = '';
+        });
+    })();
+  </script>
+</body>
+</html>

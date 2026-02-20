@@ -198,8 +198,34 @@ class AuthService {
   // Logout
   async logout(): Promise<void> {
     try {
+      console.log('[AuthService] Logout called');
+      // Check if auth instance is valid
+      if (!this.auth) {
+        console.error('[AuthService] Auth instance not available');
+        throw new Error('Auth instance not available');
+      }
+      
+      console.log('[AuthService] Current user before logout:', this.auth.currentUser?.uid || 'null');
+      
+      // Sign out
+      console.log('[AuthService] Calling signOut...');
       await signOut(this.auth);
+      console.log('[AuthService] signOut completed');
+      
+      // Verify logout was successful
+      const currentUserAfterLogout = this.auth.currentUser;
+      console.log('[AuthService] Current user after logout:', currentUserAfterLogout?.uid || 'null');
+      
+      if (currentUserAfterLogout) {
+        console.warn('[AuthService] User still authenticated after signOut, retrying...');
+        // Retry once
+        await signOut(this.auth);
+        console.log('[AuthService] Retry signOut completed');
+      } else {
+        console.log('[AuthService] Logout successful - user is null');
+      }
     } catch (error: any) {
+      console.error('[AuthService] Logout error:', error);
       logFirebaseAuthError('Logout-Fehler (Firebase Auth):', error);
       throw error;
     }
@@ -237,7 +263,9 @@ class AuthService {
 
   // Auth State Listener
   onAuthStateChanged(callback: (user: UserData | null) => void) {
+    console.log('[AuthService] Setting up auth state listener');
     return onAuthStateChanged(this.auth, async (firebaseUser) => {
+      console.log('[AuthService] Auth state changed:', firebaseUser ? `User: ${firebaseUser.uid}` : 'User: null (logged out)');
       if (firebaseUser) {
         try {
           const userData = await FirestoreService.getUserData(firebaseUser.uid);
@@ -255,12 +283,14 @@ class AuthService {
               phone: userData.phone,
             });
           }
+          console.log('[AuthService] Calling callback with userData:', userData ? `User: ${userData.uid}` : 'null');
           callback(userData);
         } catch (error) {
           console.error('Fehler beim Abrufen der User-Daten:', error);
           callback(null);
         }
       } else {
+        console.log('[AuthService] User logged out, calling callback with null');
         callback(null);
       }
     });

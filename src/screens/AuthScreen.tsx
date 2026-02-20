@@ -1,5 +1,5 @@
 import React, {useState, useEffect} from 'react';
-import {View, StyleSheet, Linking} from 'react-native';
+import {View, StyleSheet, Linking, Platform} from 'react-native';
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './RegisterScreen';
 
@@ -21,9 +21,19 @@ const AuthScreen: React.FC<Props> = ({onAuthSuccess, initialFacilityCode}) => {
   }, [initialFacilityCode]);
 
   useEffect(() => {
+    // Deep links only work on native platforms, not on web
+    if (Platform.OS === 'web') {
+      return;
+    }
+
     // Handle deep links when app is already running (for when user is not logged in)
     const handleDeepLink = (url: string | null) => {
       if (!url) return;
+      
+      // Only handle parkplatz:// URLs, ignore http/https URLs
+      if (!url.startsWith('parkplatz://')) {
+        return;
+      }
       
       console.log('AuthScreen: Deep link received:', url);
       

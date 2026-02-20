@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, Share, Alert} from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import QRCode from 'react-native-qrcode-svg';
 import {useColorScheme} from 'react-native';
 import {getColors} from '../theme/colors';
@@ -22,7 +23,7 @@ const QRCodeGenerator: React.FC<Props> = ({facilityCode, facilityName}) => {
       });
     } catch (error: any) {
       if (error.message !== 'User did not share') {
-        Alert.alert('Fehler', 'QR-Code konnte nicht geteilt werden');
+        showAlert('Fehler', 'QR-Code konnte nicht geteilt werden');
       }
     }
   };

@@ -54,6 +54,9 @@ class ParkingAvailabilityService {
       isActive: (data.isActive as boolean) ?? true,
       isMatched: (data.isMatched as boolean) ?? false,
       matchedRequestId: data.matchedRequestId as string | undefined,
+      isArchived: (data.isArchived as boolean) ?? false,
+      archivedAt: data.archivedAt?.toDate ? data.archivedAt.toDate() : undefined,
+      archivedBy: data.archivedBy as string | undefined,
       autoOffer: (data.autoOffer as boolean) ?? true,
       createdAt,
       updatedAt,
@@ -77,11 +80,27 @@ class ParkingAvailabilityService {
     phone?: string,
     autoOffer?: boolean,
   ): Promise<string> {
+    const normalizedFacilityCode = facilityCode.trim().toUpperCase();
+    const autoOfferEnabled = autoOffer !== false; // default true
+
+    // Only log in development mode
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Auto-Matching] Creating availability:', {
+        facilityCode: normalizedFacilityCode,
+        spotId,
+        from: from.toISOString(),
+        until: until.toISOString(),
+        isRecurring: !!recurrence,
+        recurrencePattern: recurrence?.pattern,
+        autoOffer: autoOfferEnabled,
+      });
+    }
+
     const availabilityRef = doc(this.availabilitiesCollection);
     
     const availabilityData: any = {
       userId,
-      facilityCode: facilityCode.trim().toUpperCase(),
+      facilityCode: normalizedFacilityCode,
       spotId,
       from: Timestamp.fromDate(from),
       until: Timestamp.fromDate(until),
@@ -108,7 +127,20 @@ class ParkingAvailabilityService {
     }
 
     await setDoc(availabilityRef, availabilityData);
-    return availabilityRef.id;
+    const availabilityId = availabilityRef.id;
+
+    // Only log in development mode
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Auto-Matching] Availability created:', {
+        availabilityId,
+        facilityCode: normalizedFacilityCode,
+        spotId,
+        autoOffer: autoOfferEnabled,
+        willAutoMatch: autoOfferEnabled ? 'Yes - will automatically create offers for matching requests' : 'No - owner will be notified of potential matches',
+      });
+    }
+
+    return availabilityId;
   }
 
   /**
@@ -201,6 +233,23 @@ class ParkingAvailabilityService {
   }
 
   /**
+   * Get all active availabilities in a facility synchronously
+   */
+  async getFacilityAvailabilities(facilityCode: string): Promise<ParkingAvailability[]> {
+    const normalizedCode = facilityCode.trim().toUpperCase();
+    const q = query(this.availabilitiesCollection);
+    const snapshot = await getDocs(q);
+    return snapshot.docs
+      .map((doc) => this.availabilityFromDocSnap(doc))
+      .filter(
+      (av) =>
+        av.facilityCode === normalizedCode &&
+        !av.isArchived &&
+        (av.isActive === true || av.isActive === undefined),
+    );
+  }
+
+  /**
    * Watch all active availabilities in a facility (filtered by facilityCode and isActive client-side)
    * Note: This queries all availabilities and filters client-side to avoid composite index requirements
    * This is not ideal for performance but works without requiring a composite index
@@ -223,6 +272,7 @@ class ParkingAvailabilityService {
               const data = doc.data();
               return (
                 data.facilityCode === normalizedCode &&
+                data.isArchived !== true &&
                 (data.isActive === true || data.isActive === undefined)
               );
             });

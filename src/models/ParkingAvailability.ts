@@ -17,6 +17,10 @@ export interface ParkingAvailability {
   isActive: boolean;
   isMatched?: boolean;
   matchedRequestId?: string;
+  /** Gesetzt bei automatischer Archivierung 24h nach Ende der (letzten) Verfügbarkeit */
+  isArchived?: boolean;
+  archivedAt?: Date;
+  archivedBy?: string;
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;

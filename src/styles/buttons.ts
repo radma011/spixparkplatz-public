@@ -86,6 +86,9 @@ export const buttonStyles = StyleSheet.create({
   inputButtonText: {
     fontSize: 16,
     fontWeight: '500',
+    textAlign: 'center',
+    flex: 1,
+    marginLeft: 24, // Offset für Icon (16px Icon + 8px spacing)
   },
   doneButton: {
     paddingHorizontal: 12,

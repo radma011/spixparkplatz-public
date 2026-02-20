@@ -26,16 +26,24 @@ export function calculateNextOccurrences(
   let iterations = 0;
   const maxIterations = 1000; // Safety limit
 
+  // Helper: Get Monday of the week (Monday-first)
+  const getMondayOfWeek = (date: Date): Date => {
+    const monday = new Date(date);
+    const day = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+    const daysFromMonday = day === 0 ? 6 : day - 1; // Sunday = 6 days from Monday
+    monday.setDate(date.getDate() - daysFromMonday);
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  };
+
   // For weekly with specific days, we need a different approach
   if (recurrence.pattern === 'weekly' && recurrence.daysOfWeek && recurrence.daysOfWeek.length > 0) {
     // Start checking from today or startDate, whichever is later
     let checkDate = new Date(Math.max(now.getTime(), startDate.getTime()));
     checkDate.setHours(0, 0, 0, 0);
 
-    // Calculate start week (Sunday of the week containing startDate)
-    const startWeekStart = new Date(startDate);
-    startWeekStart.setDate(startDate.getDate() - startDate.getDay());
-    startWeekStart.setHours(0, 0, 0, 0);
+    // Calculate start week (Monday of the week containing startDate)
+    const startWeekStart = getMondayOfWeek(startDate);
 
     while (occurrences.length < count && iterations < maxIterations) {
       iterations++;
@@ -43,12 +51,13 @@ export function calculateNextOccurrences(
       // Check each selected day in the current week
       for (const dayOfWeek of recurrence.daysOfWeek) {
         const testDate = new Date(checkDate);
-        // Get the Sunday of current week
-        const weekStart = new Date(testDate);
-        weekStart.setDate(testDate.getDate() - testDate.getDay());
-        // Add day offset to get the specific day
+        // Get the Monday of current week
+        const weekStart = getMondayOfWeek(testDate);
+        // Add day offset to get the specific day (dayOfWeek: 0=Sunday, 1=Monday, ..., 6=Saturday)
         const targetDate = new Date(weekStart);
-        targetDate.setDate(weekStart.getDate() + dayOfWeek);
+        // Convert JS dayOfWeek to days from Monday: 0=So -> +6, 1=Mo -> +0, 2=Di -> +1, etc.
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        targetDate.setDate(weekStart.getDate() + daysFromMonday);
         targetDate.setHours(startHours, startMinutes, 0, 0);
 
         // Must be on or after startDate

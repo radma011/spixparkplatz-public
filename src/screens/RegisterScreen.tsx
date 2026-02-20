@@ -10,7 +10,9 @@ import {
   View,
   Switch,
   useColorScheme,
+  Platform,
 } from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AuthService from '../services/AuthService';
 import FirestoreService from '../services/FirestoreService';
@@ -67,27 +69,27 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
 
   const validateForm = (): boolean => {
     if (!username.trim()) {
-      Alert.alert('Fehler', 'Bitte gib einen Benutzernamen ein');
+      showAlert('Fehler', 'Bitte gib einen Benutzernamen ein');
       return false;
     }
 
     if (!facilityCode.trim()) {
-      Alert.alert('Fehler', 'Bitte gib einen Parkanlagen-Code ein');
+      showAlert('Fehler', 'Bitte gib einen Parkanlagen-Code ein');
       return false;
     }
 
     if (!email.trim() || !email.includes('@')) {
-      Alert.alert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
+      showAlert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
       return false;
     }
 
     if (!password || password.length < 6) {
-      Alert.alert('Fehler', 'Das Passwort muss mindestens 6 Zeichen lang sein');
+      showAlert('Fehler', 'Das Passwort muss mindestens 6 Zeichen lang sein');
       return false;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Fehler', 'Die Passwörter stimmen nicht überein');
+      showAlert('Fehler', 'Die Passwörter stimmen nicht überein');
       return false;
     }
 
@@ -100,7 +102,7 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
     }
 
     if (createNewFacility && !facilityName.trim()) {
-      Alert.alert('Fehler', 'Bitte gib einen Namen für die Parkanlage ein');
+      showAlert('Fehler', 'Bitte gib einen Namen für die Parkanlage ein');
       return;
     }
 
@@ -123,9 +125,7 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
       const successMessage = createNewFacility
         ? 'Registrierung erfolgreich! Du bist jetzt Administrator dieser Parkanlage.'
         : 'Registrierung erfolgreich!';
-      Alert.alert('Erfolg', successMessage, [
-        {text: 'OK', onPress: onRegisterSuccess},
-      ]);
+      showAlert('Erfolg', successMessage, onRegisterSuccess);
     } catch (error: any) {
       let errorMessage = 'Registrierung fehlgeschlagen';
       if (error.code === 'auth/email-already-in-use') {
@@ -141,7 +141,7 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
       } else if (error.message) {
         errorMessage = error.message;
       }
-      Alert.alert('Fehler', errorMessage);
+      showAlert('Fehler', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -246,27 +246,57 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
         editable={!loading}
       />
 
-      <Text style={[styles.label, {color: colors.text}]}>Passwort *</Text>
-      <TextInput
-        style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-        placeholder="Mindestens 6 Zeichen"
-        placeholderTextColor={colors.subtext}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        editable={!loading}
-      />
+      {Platform.OS === 'web' ? (
+        <form onSubmit={(e) => { e.preventDefault(); handleRegister(); }} style={{width: '100%', maxWidth: 400}}>
+          <Text style={[styles.label, {color: colors.text}]}>Passwort *</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="Mindestens 6 Zeichen"
+            placeholderTextColor={colors.subtext}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            editable={!loading}
+            autoComplete="new-password"
+          />
 
-      <Text style={[styles.label, {color: colors.text}]}>Passwort bestätigen *</Text>
-      <TextInput
-        style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-        placeholder="Passwort wiederholen"
-        placeholderTextColor={colors.subtext}
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-        editable={!loading}
-      />
+          <Text style={[styles.label, {color: colors.text}]}>Passwort bestätigen *</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="Passwort wiederholen"
+            placeholderTextColor={colors.subtext}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            editable={!loading}
+            autoComplete="new-password"
+          />
+        </form>
+      ) : (
+        <>
+          <Text style={[styles.label, {color: colors.text}]}>Passwort *</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="Mindestens 6 Zeichen"
+            placeholderTextColor={colors.subtext}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            editable={!loading}
+          />
+
+          <Text style={[styles.label, {color: colors.text}]}>Passwort bestätigen *</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="Passwort wiederholen"
+            placeholderTextColor={colors.subtext}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            editable={!loading}
+          />
+        </>
+      )}
 
       <Text style={[styles.label, {color: colors.text}]}>Parkplatz-Nummer(n) (optional, bis zu 3)</Text>
       {[0, 1, 2].map((index) => (

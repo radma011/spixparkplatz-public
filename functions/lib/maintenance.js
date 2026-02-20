@@ -3,6 +3,73 @@ function pad2(n) {
 }
 
 /**
+ * Returns the end Date of the last occurrence for a recurring availability, or null if infinite.
+ * For one-time availabilities, use doc.until directly.
+ * @param {object} av - availability doc with from, until (Timestamps), recurrence
+ * @returns {Date|null} - end of last occurrence, or null if no end (infinite recurrence)
+ */
+function getLastOccurrenceEnd(av) {
+  const rec = av.recurrence;
+  if (!rec) return null;
+
+  const from = av.from.toDate ? av.from.toDate() : new Date(av.from);
+  const until = av.until.toDate ? av.until.toDate() : new Date(av.until);
+  const endDate = rec.endDate ? (rec.endDate.toDate ? rec.endDate.toDate() : new Date(rec.endDate)) : null;
+  const occurrences = rec.occurrences != null ? rec.occurrences : null;
+  const pattern = rec.pattern || 'daily';
+  const interval = rec.interval || 1;
+
+  if (!endDate && occurrences == null) return null;
+
+  const durationMs = until.getTime() - from.getTime();
+  const startHours = from.getHours();
+  const startMinutes = from.getMinutes();
+
+  let lastStart = null;
+  let count = 0;
+  let current = new Date(from);
+  current.setHours(startHours, startMinutes, 0, 0);
+
+  const maxIter = 10000;
+  let iter = 0;
+
+  if (pattern === 'daily') {
+    while (iter++ < maxIter) {
+      if (endDate && current > endDate) break;
+      if (occurrences != null && count >= occurrences) break;
+      lastStart = new Date(current);
+      count++;
+      current.setDate(current.getDate() + interval);
+      current.setHours(startHours, startMinutes, 0, 0);
+    }
+  } else if (pattern === 'weekly') {
+    while (iter++ < maxIter) {
+      if (endDate && current > endDate) break;
+      if (occurrences != null && count >= occurrences) break;
+      lastStart = new Date(current);
+      count++;
+      current.setDate(current.getDate() + 7 * interval);
+      current.setHours(startHours, startMinutes, 0, 0);
+    }
+  } else if (pattern === 'monthly') {
+    while (iter++ < maxIter) {
+      if (endDate && current > endDate) break;
+      if (occurrences != null && count >= occurrences) break;
+      lastStart = new Date(current);
+      count++;
+      current.setMonth(current.getMonth() + interval);
+      current.setHours(startHours, startMinutes, 0, 0);
+    }
+  } else {
+    return null;
+  }
+
+  if (!lastStart) return null;
+  const lastEnd = new Date(lastStart.getTime() + durationMs);
+  return lastEnd;
+}
+
+/**
  * Format time as HH:mm in Europe/Berlin timezone.
  * @param {Date} date - Date object (typically in UTC from Firestore)
  * @returns {string} - Formatted time like "21:00"
@@ -253,7 +320,67 @@ async function runScheduledParkingMaintenance({admin, db, nowMs, sendPushToUser,
     console.log('scheduledParkingMaintenance archive pass failed:', e?.message ?? e);
   }
 
-  return {reminder: reminderStats, archivedCount};
+  // ---- (3) Auto-archive availabilities 24h after end ----
+  // One-time: 24h after until. Recurring: 24h after end of last occurrence (only if endDate or occurrences set).
+  const availabilityArchiveThresholdMs = nowMs - 24 * 60 * 60 * 1000;
+  const availabilityArchiveThresholdTs = admin.firestore.Timestamp.fromMillis(availabilityArchiveThresholdMs);
+  let archivedAvailabilitiesCount = 0;
+
+  try {
+    const availabilitiesSnap = await db
+      .collection('parking_availabilities')
+      .limit(300)
+      .get();
+
+    const toArchive = [];
+    for (const d of availabilitiesSnap.docs) {
+      const data = d.data() || {};
+      if (data.isArchived === true) continue;
+
+      const hasRecurrence = data.recurrence && typeof data.recurrence === 'object';
+      let shouldArchive = false;
+
+      if (!hasRecurrence) {
+        const until = data.until?.toDate ? data.until.toDate() : null;
+        if (until && until.getTime() <= availabilityArchiveThresholdMs) {
+          shouldArchive = true;
+        }
+      } else {
+        const lastEnd = getLastOccurrenceEnd({...data, from: data.from, until: data.until});
+        if (lastEnd != null && lastEnd.getTime() <= availabilityArchiveThresholdMs) {
+          shouldArchive = true;
+        }
+      }
+
+      if (shouldArchive) {
+        toArchive.push(d.ref);
+      }
+    }
+
+    if (toArchive.length > 0 && !dryRun) {
+      const batch = db.batch();
+      toArchive.forEach((ref) => {
+        batch.set(
+          ref,
+          {
+            isArchived: true,
+            archivedBy: 'system',
+            archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            archivedReason: 'auto_expired_24h',
+          },
+          {merge: true},
+        );
+      });
+      await batch.commit();
+      archivedAvailabilitiesCount = toArchive.length;
+    } else if (toArchive.length > 0 && dryRun) {
+      archivedAvailabilitiesCount = toArchive.length;
+    }
+  } catch (e) {
+    console.log('scheduledParkingMaintenance availability archive pass failed:', e?.message ?? e);
+  }
+
+  return {reminder: reminderStats, archivedCount, archivedAvailabilitiesCount};
 }
 
 module.exports = {

@@ -41,6 +41,12 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Web build output
+web-build/
+
+# Web fonts (copied from node_modules)
+web/fonts/
+
 # ------------------------------------------------------------
 # Secrets (do NOT commit)
 # ------------------------------------------------------------

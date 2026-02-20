@@ -72,9 +72,9 @@ class PushNotificationService {
   // FCM Token initialisieren und speichern
   async initializeToken(userId: string): Promise<string | null> {
     try {
-      // Push-Notifications werden auf macOS nicht unterstützt
-      if (Platform.OS === 'macos') {
-        console.log('Push-Notifications werden auf macOS nicht unterstützt');
+      // Push-Notifications werden auf macOS und Web nicht unterstützt
+      if (Platform.OS === 'macos' || Platform.OS === 'web') {
+        console.log(`Push-Notifications werden auf ${Platform.OS} nicht unterstützt`);
         return null;
       }
 

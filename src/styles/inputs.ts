@@ -74,10 +74,16 @@ export const inputStyles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    width: '100%',
+    maxWidth: '100%',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
   },
   picker: {
     width: '100%',
+    maxWidth: '100%',
     height: 200,
+    alignSelf: 'stretch',
   },
   // Spot picker styles
   spotPickerContainer: {

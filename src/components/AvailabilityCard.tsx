@@ -46,8 +46,13 @@ const AvailabilityCard: React.FC<Props> = ({
         return interval === 1 ? 'Täglich' : `Alle ${interval} Tage`;
       case 'weekly':
         if (availability.recurrence.daysOfWeek && availability.recurrence.daysOfWeek.length > 0) {
-          const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-          const days = availability.recurrence.daysOfWeek.map((d) => dayNames[d]).join(', ');
+          // Monday-first day names (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
+          const dayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+          // Convert JS dayOfWeek (0=So, 1=Mo, ...) to Monday-first index (0=Mo, 1=Di, ..., 6=So)
+          const jsDayToMondayFirst = (jsDay) => jsDay === 0 ? 6 : jsDay - 1;
+          const days = availability.recurrence.daysOfWeek
+            .map((jsDay) => dayNames[jsDayToMondayFirst(jsDay)])
+            .join(', ');
           return `Wöchentlich (${days})`;
         }
         return interval === 1 ? 'Wöchentlich' : `Alle ${interval} Wochen`;
@@ -58,11 +63,6 @@ const AvailabilityCard: React.FC<Props> = ({
     }
   };
 
-  const handleLongPress = () => {
-    if (isRecurringAvailability && availability.recurrence) {
-      setShowDebugModal(true);
-    }
-  };
 
   const nextOccurrences = isRecurringAvailability && availability.recurrence
     ? calculateNextOccurrences(
@@ -76,10 +76,7 @@ const AvailabilityCard: React.FC<Props> = ({
 
   return (
     <>
-      <TouchableOpacity
-        activeOpacity={1}
-        onLongPress={handleLongPress}
-        delayLongPress={500}>
+      <TouchableOpacity activeOpacity={1}>
         <View
           style={[
             cardStyles.card,
@@ -117,16 +114,19 @@ const AvailabilityCard: React.FC<Props> = ({
         )}
       </View>
 
-      {/* Recurrence Chips - unterhalb der Überschrift */}
+      {/* Recurrence Label (tap öffnet Modal mit wiederkehrenden Terminen) */}
       {isRecurringAvailability && isActive && (
-        <View style={styles.recurrenceChipsRow}>
+        <TouchableOpacity
+          style={styles.recurrenceChipsRow}
+          onPress={() => setShowDebugModal(true)}
+          activeOpacity={0.7}>
           <View style={[styles.badge, {backgroundColor: colors.brand + '40'}]}>
             <MaterialCommunityIcons name="repeat" size={12} color={colors.brand} />
             <Text style={[styles.badgeText, {color: colors.brand, marginLeft: 4}]}>
               {recurrenceLabel()}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
       )}
 
       {/* Time Range */}
@@ -136,21 +136,6 @@ const AvailabilityCard: React.FC<Props> = ({
           {formatDateRange(availability.from, availability.until)}
         </Text>
       </View>
-
-      {/* Recurrence Info */}
-      {isRecurringAvailability && availability.recurrence && (
-        <View style={styles.recurrenceInfo}>
-          <Text style={[styles.recurrenceText, {color: colors.subtext}]}>
-            {recurrenceLabel()}
-            {availability.recurrence.endDate && (
-              <> · Bis {formatDateRange(availability.recurrence.endDate, availability.recurrence.endDate)}</>
-            )}
-            {availability.recurrence.occurrences && (
-              <> · {availability.recurrence.occurrences} Wiederholungen</>
-            )}
-          </Text>
-        </View>
-      )}
 
       {/* Status */}
       {!isActive && (
@@ -214,7 +199,7 @@ const AvailabilityCard: React.FC<Props> = ({
     </View>
       </TouchableOpacity>
 
-      {/* Debug Modal für wiederkehrende Verfügbarkeiten */}
+      {/* Modal: wiederkehrende Termine (öffnet sich bei Tap auf das Wiederkehrend-Label) */}
       {isRecurringAvailability && (
         <Modal
           visible={showDebugModal}
@@ -225,12 +210,25 @@ const AvailabilityCard: React.FC<Props> = ({
             <View style={[styles.debugModalContent, {backgroundColor: colors.surface}]}>
               <View style={[styles.debugModalHeader, {borderBottomColor: colors.border}]}>
                 <Text style={[styles.debugModalTitle, {color: colors.text}]}>
-                  Nächste 10 Termine (Debug)
+                  Wiederkehrende Termine
                 </Text>
                 <TouchableOpacity onPress={() => setShowDebugModal(false)}>
                   <Text style={[styles.debugModalClose, {color: colors.subtext}]}>✕</Text>
                 </TouchableOpacity>
               </View>
+              {availability.recurrence && (
+                <View style={[styles.recurrenceSummaryInModal, {borderBottomColor: colors.border}]}>
+                  <Text style={[styles.recurrenceSummaryText, {color: colors.subtext}]}>
+                    {recurrenceLabel()}
+                    {availability.recurrence.endDate && (
+                      <> · Bis {formatDateRange(availability.recurrence.endDate, availability.recurrence.endDate)}</>
+                    )}
+                    {availability.recurrence.occurrences != null && (
+                      <> · {availability.recurrence.occurrences} Wiederholungen</>
+                    )}
+                  </Text>
+                </View>
+              )}
               <ScrollView style={styles.debugModalBody}>
                 {nextOccurrences.length > 0 ? (
                   nextOccurrences.map((occurrence, index) => (
@@ -310,15 +308,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  recurrenceInfo: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.1)',
-  },
-  recurrenceText: {
-    fontSize: 12,
-  },
   statusRow: {
     marginTop: 8,
     flexDirection: 'row',
@@ -379,6 +368,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  recurrenceSummaryInModal: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  recurrenceSummaryText: {
+    fontSize: 13,
   },
   debugModalHeader: {
     flexDirection: 'row',

@@ -12,6 +12,7 @@ import {
   useColorScheme,
   Alert,
 } from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {getColors} from '../theme/colors';
@@ -86,7 +87,7 @@ export default function CommentsModal({visible, requestId, currentUserId, public
     if (!requestId || !editingId) return;
     const t = editingText.trim();
     if (!t) {
-      Alert.alert('Fehler', 'Kommentar darf nicht leer sein');
+      showAlert('Fehler', 'Kommentar darf nicht leer sein');
       return;
     }
     setIsSavingEdit(true);

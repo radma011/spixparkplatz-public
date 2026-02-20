@@ -11,8 +11,9 @@ import {
   ActivityIndicator,
   useColorScheme,
 } from 'react-native';
+import {confirmAlert, showAlert} from '../utils/alertUtils';
 import {getApp} from '@react-native-firebase/app';
-import {getAuth} from '@react-native-firebase/auth';
+import {getAuth, onAuthStateChanged} from '@react-native-firebase/auth';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ParkingRequestService from '../services/ParkingRequestService';
@@ -73,7 +74,20 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const requestsUnsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    initialize();
+    // Wait for authentication to be ready before initializing
+    const auth = getAuth(getApp());
+    if (auth.currentUser) {
+      initialize();
+    } else {
+      // Wait for auth state to be ready
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          initialize();
+          unsubscribe();
+        }
+      });
+      return () => unsubscribe();
+    }
   }, []);
 
   // Setup listeners and re-setup when facilityCode changes
@@ -281,12 +295,39 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   }, []);
 
   const initialize = async () => {
+    // Ensure user is authenticated before proceeding
+    const auth = getAuth(getApp());
+    
     try {
+      if (!auth.currentUser) {
+        console.warn('User not authenticated, skipping initialization');
+        return;
+      }
+
+      // Verify auth token is available
+      try {
+        await auth.currentUser.getIdToken();
+      } catch (tokenError) {
+        console.error('Failed to get auth token:', tokenError);
+        throw new Error('Authentication token not available');
+      }
+
       // Ensure current user's public profile exists for other users (and for immediate UI resolution)
-      await FirestoreService.upsertPublicUserData(currentUserId, {
-        username: currentUserData.username,
-        phone: currentUserData.phone,
-      });
+      try {
+        await FirestoreService.upsertPublicUserData(currentUserId, {
+          username: currentUserData.username,
+          phone: currentUserData.phone,
+        });
+      } catch (upsertError: any) {
+        console.error('Error upserting public user data:', upsertError);
+        // Log detailed error information
+        console.error('User ID:', currentUserId);
+        console.error('Auth UID:', auth.currentUser?.uid);
+        console.error('Error code:', upsertError?.code);
+        console.error('Error message:', upsertError?.message);
+        // Don't throw - this is not critical for app functionality
+        // The user can still use the app even if public profile update fails
+      }
 
       await ParkingRequestService.initializeFCMToken(currentUserId);
       
@@ -299,8 +340,20 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         const userSpot = await ParkingRequestService.getUserParkingSpot(currentUserId);
         setMySpotId(userSpot);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Initialisierungsfehler:', error);
+      // Log more details about permission errors
+      if (error?.code === 'permission-denied' || error?.message?.includes('permission')) {
+        console.error('Permission denied. Make sure:');
+        console.error('1. Firestore rules are deployed: npm run deploy:rules');
+        console.error('2. User is authenticated:', auth?.currentUser?.uid || 'NO USER');
+        console.error('3. Auth token is valid');
+        console.error('4. Error details:', {
+          code: error?.code,
+          message: error?.message,
+          stack: error?.stack,
+        });
+      }
     }
   };
 
@@ -316,12 +369,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       until,
       comment,
     );
-    Alert.alert('Erfolg', 'Anfrage erstellt!');
+    showAlert('Erfolg', 'Anfrage erstellt!');
   };
 
   const offerParkingSpot = async (request: ParkingRequest) => {
     if (mySpots.length === 0) {
-      Alert.alert('Fehler', 'Du hast keinen Parkplatz zugewiesen');
+      showAlert('Fehler', 'Du hast keinen Parkplatz zugewiesen');
       return;
     }
     setOfferingRequestId(request.id);
@@ -332,9 +385,9 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const fulfillRequest = async (request: ParkingRequest) => {
     try {
       await ParkingRequestService.fulfillRequest(request.id);
-      Alert.alert('Erfolg', 'Anfrage als erfüllt markiert');
+      showAlert('Erfolg', 'Anfrage als erfüllt markiert');
     } catch (error) {
-      Alert.alert('Fehler', 'Ein Fehler ist aufgetreten');
+      showAlert('Fehler', 'Ein Fehler ist aufgetreten');
     }
   };
 
@@ -357,10 +410,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         currentUserData.phone,
         autoOffer,
       );
-      Alert.alert('Erfolg', 'Verfügbarkeit erstellt!');
+      showAlert('Erfolg', 'Verfügbarkeit erstellt!');
     } catch (error: any) {
       console.error('Fehler beim Erstellen der Verfügbarkeit:', error);
-      Alert.alert('Fehler', error?.message || 'Verfügbarkeit konnte nicht erstellt werden');
+      showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht erstellt werden');
     }
   };
 
@@ -377,103 +430,87 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   ) => {
     try {
       await ParkingAvailabilityService.updateAvailability(availabilityId, updates);
-      Alert.alert('Erfolg', 'Verfügbarkeit aktualisiert!');
+      showAlert('Erfolg', 'Verfügbarkeit aktualisiert!');
     } catch (error: any) {
       console.error('Fehler beim Aktualisieren der Verfügbarkeit:', error);
-      Alert.alert('Fehler', error?.message || 'Verfügbarkeit konnte nicht aktualisiert werden');
+      showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht aktualisiert werden');
     }
   };
 
   const handleDeleteAvailability = async (availability: ParkingAvailability) => {
-    Alert.alert(
+    confirmAlert(
       'Verfügbarkeit löschen',
       'Möchtest du diese Verfügbarkeit wirklich löschen?',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Löschen',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ParkingAvailabilityService.deleteAvailability(availability.id);
-              Alert.alert('Erfolg', 'Verfügbarkeit gelöscht!');
-            } catch (error: any) {
-              console.error('Fehler beim Löschen der Verfügbarkeit:', error);
-              Alert.alert('Fehler', error?.message || 'Verfügbarkeit konnte nicht gelöscht werden');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await ParkingAvailabilityService.deleteAvailability(availability.id);
+          showAlert('Erfolg', 'Verfügbarkeit gelöscht!');
+        } catch (error: any) {
+          console.error('Fehler beim Löschen der Verfügbarkeit:', error);
+          showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht gelöscht werden');
+        }
+      },
+      undefined,
+      'Löschen',
+      'Abbrechen',
     );
   };
 
   const archiveFulfilledRequest = (request: ParkingRequest) => {
-    Alert.alert(
+    confirmAlert(
       'Erfüllung aufheben',
       'Möchtest du diese erfüllte Anfrage wirklich aufheben? Sie wird archiviert (nicht gelöscht).',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Aufheben',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ParkingRequestService.archiveFulfilledRequest(currentUserId, request);
-              Alert.alert('Erfolg', 'Anfrage wurde archiviert');
-            } catch (e) {
-              console.error('Archive failed:', e);
-              Alert.alert('Fehler', 'Anfrage konnte nicht archiviert werden');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await ParkingRequestService.archiveFulfilledRequest(currentUserId, request);
+          showAlert('Erfolg', 'Anfrage wurde archiviert');
+        } catch (e) {
+          console.error('Archive failed:', e);
+          showAlert('Fehler', 'Anfrage konnte nicht archiviert werden');
+        }
+      },
+      undefined,
+      'Aufheben',
+      'Abbrechen',
     );
   };
 
   const cancelOffer = (request: ParkingRequest) => {
-    Alert.alert(
+    confirmAlert(
       'Angebot stornieren',
       'Möchtest du dein Angebot wirklich zurückziehen?',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Stornieren',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Der Anbieter ist der currentUserId (weil isMyOffer nur true ist, wenn offeredBy === currentUserId)
-              await ParkingRequestService.cancelOffer(request.id, currentUserId);
-              Alert.alert('Erfolg', 'Angebot wurde storniert');
-            } catch (e) {
-              console.error('Fehler beim Stornieren:', e);
-              Alert.alert('Fehler', 'Angebot konnte nicht storniert werden');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          // Der Anbieter ist der currentUserId (weil isMyOffer nur true ist, wenn offeredBy === currentUserId)
+          await ParkingRequestService.cancelOffer(request.id, currentUserId);
+          showAlert('Erfolg', 'Angebot wurde storniert');
+        } catch (e) {
+          console.error('Fehler beim Stornieren:', e);
+          showAlert('Fehler', 'Angebot konnte nicht storniert werden');
+        }
+      },
+      undefined,
+      'Stornieren',
+      'Abbrechen',
     );
   };
 
   const withdrawRequest = (request: ParkingRequest) => {
-    Alert.alert(
+    confirmAlert(
       'Anfrage zurückziehen',
       'Möchtest du deine Anfrage wirklich zurückziehen?',
-      [
-        {text: 'Abbrechen', style: 'cancel'},
-        {
-          text: 'Zurückziehen',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ParkingRequestService.deleteRequest(request.id);
-              Alert.alert('Erfolg', 'Anfrage wurde zurückgezogen');
-            } catch (e) {
-              console.error('Fehler beim Zurückziehen:', e);
-              Alert.alert('Fehler', 'Anfrage konnte nicht zurückgezogen werden');
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await ParkingRequestService.deleteRequest(request.id);
+          showAlert('Erfolg', 'Anfrage wurde zurückgezogen');
+        } catch (e) {
+          console.error('Fehler beim Zurückziehen:', e);
+          showAlert('Fehler', 'Anfrage konnte nicht zurückgezogen werden');
+        }
+      },
+      undefined,
+      'Zurückziehen',
+      'Abbrechen',
     );
   };
 
@@ -522,10 +559,39 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       if (offerUnsubsRef.current[requestId]) return;
       offerUnsubsRef.current[requestId] = ParkingRequestService.watchOffersForRequest(requestId).onSnapshot(
         (snap: any) => {
+          const previousOffers = offersByRequestId[requestId] || [];
+          const previousOfferIds = new Set(previousOffers.map((o) => o.id));
+          
           const offers: RequestOffer[] = (snap?.docs ?? [])
             .map((d: any) => {
               const data = d.data();
               const status = data.status ?? 'active';
+              const createdAt = data.createdAt ? (data.createdAt as any).toDate() : undefined;
+              
+              // Check if this is a new offer (not in previous offers)
+              const isNewOffer = !previousOfferIds.has(d.id);
+              if (isNewOffer && createdAt) {
+                // Check if it was created very recently (within 10 seconds) - likely auto-match
+                const now = new Date();
+                const timeSinceCreation = now.getTime() - createdAt.getTime();
+                const isLikelyAutoMatch = timeSinceCreation < 10000; // 10 seconds
+                
+                // Only log in development mode
+                if (process.env.NODE_ENV !== 'production') {
+                  console.log('[Auto-Matching] New offer detected:', {
+                    offerId: d.id,
+                    requestId,
+                    spotId: data.spotId,
+                    offererId: data.offererId,
+                    from: (data.from as any).toDate().toISOString(),
+                    until: (data.until as any).toDate().toISOString(),
+                    createdAt: createdAt.toISOString(),
+                    timeSinceCreation: `${Math.round(timeSinceCreation / 1000)}s`,
+                    likelyAutoMatch: isLikelyAutoMatch,
+                  });
+                }
+              }
+              
               return {
                 id: d.id,
                 requestId,
@@ -534,7 +600,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                 from: (data.from as any).toDate(),
                 until: (data.until as any).toDate(),
                 status: status as 'active' | 'withdrawn' | 'accepted' | 'standby',
-                createdAt: data.createdAt ? (data.createdAt as any).toDate() : undefined,
+                createdAt,
               } as RequestOffer;
             });
           setOffersByRequestId((prev) => ({...prev, [requestId]: offers}));
@@ -882,7 +948,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               onAcceptOffer={async (offer) => {
                 try {
                   await ParkingRequestService.acceptOffer(item.id, offer);
-                  Alert.alert('Erfolg', 'Angebot angenommen');
+                  showAlert('Erfolg', 'Angebot angenommen');
 
                   // Best-effort: poll the request doc briefly to reflect fulfillment faster on slow server roundtrips.
                   // This avoids the UI waiting solely for the stream update (which depends on Cloud Function latency).
@@ -901,7 +967,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                   console.error('Fehler beim Annehmen des Angebots:', error);
                   const errorMessage =
                     error?.message || 'Das Angebot konnte nicht angenommen werden. Es wurde möglicherweise bereits storniert.';
-                  Alert.alert('Fehler', errorMessage);
+                  showAlert('Fehler', errorMessage);
                 }
               }}
               onArchiveFulfilled={archiveFulfilledRequest}
@@ -1024,7 +1090,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
             until,
           );
           if (!ok) {
-            Alert.alert('Fehler', 'Angebot konnte nicht erstellt werden');
+            showAlert('Fehler', 'Angebot konnte nicht erstellt werden');
             setOfferingRequestId(null);
             return;
           }

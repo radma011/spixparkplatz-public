@@ -30,7 +30,32 @@ class ParkingRequestService {
     until: Date,
     initialComment?: string,
   ): Promise<ParkingRequest> {
+    // Only log in development mode
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Auto-Matching] Creating request:', {
+        facilityCode,
+        from: from.toISOString(),
+        until: until.toISOString(),
+        hasComment: !!initialComment,
+      });
+    }
+
     const request = await FirestoreService.createRequest(userId, username, phone, facilityCode, from, until, initialComment);
+
+    // Only log in development mode
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Auto-Matching] Request created:', {
+        requestId: request.id,
+        facilityCode,
+        from: request.from.toISOString(),
+        until: request.until.toISOString(),
+      });
+
+      // Note: Automatic matching is now handled server-side by the onRequestCreated Cloud Function
+      // This ensures reliability, prevents race conditions, and works even when the client is offline
+      console.log('[Auto-Matching] Server-side matching will be triggered automatically by Cloud Function');
+      console.log('[Auto-Matching] Waiting for server-side matching to complete (check offers collection for auto-created offers)');
+    }
 
     // Push-Benachrichtigung an alle User derselben Facility senden
     try {

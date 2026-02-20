@@ -1,22 +1,31 @@
-// firebase-functions v6: v1 + v2 are split. We keep v1 for existing callable functions
-// (to avoid "changing callable -> HTTPS" deployment constraints) and use v2 for HTTP endpoints
-// with public invoker.
-const functions = require('firebase-functions/v1');
+// firebase-functions v6: v1 + v2 are split. Firestore triggers use v2 (2nd Gen) for reliable deploys.
 const {onRequest} = require('firebase-functions/v2/https');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
+const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const {requireAuth, sendPushToUserCore, sendPushToUserByUid, sendPushToAllCore} = require('./lib/push');
 const {runScheduledParkingMaintenance} = require('./lib/maintenance');
+const {findBestMatchingAvailability, calculateOfferTimeWindow} = require('./lib/matching');
 
 admin.initializeApp();
 
 const REGION = 'europe-west3';
-const r1 = functions.region(REGION);
+const firestoreOpt = (document) => ({ document, region: REGION });
 
 /**
  * HTTP variant used by the React Native client (explicit Bearer token).
  */
-exports.sendPushToUserHttp = onRequest({invoker: 'public', region: REGION}, async (req, res) => {
+exports.sendPushToUserHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
   const decoded = await requireAuth(admin, req, res);
   if (!decoded) return;
 
@@ -33,7 +42,17 @@ exports.sendPushToUserHttp = onRequest({invoker: 'public', region: REGION}, asyn
 /**
  * HTTP variant used by the React Native client (explicit Bearer token).
  */
-exports.sendPushToAllHttp = onRequest({invoker: 'public', region: REGION}, async (req, res) => {
+exports.sendPushToAllHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
   const decoded = await requireAuth(admin, req, res);
   if (!decoded) return;
 
@@ -54,7 +73,17 @@ exports.sendPushToAllHttp = onRequest({invoker: 'public', region: REGION}, async
  * Body:
  *   { data?: { nowMs?: number, dryRun?: boolean } }
  */
-exports.runMaintenanceNowHttp = onRequest({invoker: 'public', region: REGION}, async (req, res) => {
+exports.runMaintenanceNowHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
   const decoded = await requireAuth(admin, req, res);
   if (!decoded) return;
 
@@ -79,13 +108,12 @@ exports.runMaintenanceNowHttp = onRequest({invoker: 'public', region: REGION}, a
  * - write offeredBy/offeredSpotId/offeredAt to the request document (so it stops being "open")
  * - withdraw other active offers (partial) automatically
  */
-exports.onOfferCreated = functions.firestore
-exports.onOfferCreated = r1.firestore
-  .document('parking_requests/{requestId}/offers/{offerId}')
-  .onCreate(async (snap, context) => {
-    const requestId = context.params.requestId;
-    const offerId = context.params.offerId;
-    const offer = snap.data() || {};
+exports.onOfferCreatedV2 = onDocumentCreated(
+  firestoreOpt('parking_requests/{requestId}/offers/{offerId}'),
+  async (event) => {
+    const requestId = event.params.requestId;
+    const offerId = event.params.offerId;
+    const offer = (event.data && event.data.data()) || {};
 
     const offererId = offer.offererId;
     const spotId = offer.spotId;
@@ -145,7 +173,8 @@ exports.onOfferCreated = r1.firestore
       });
     });
     await batch.commit();
-  });
+  },
+);
 
 /**
  * Scheduled maintenance:
@@ -173,12 +202,11 @@ exports.scheduledParkingMaintenance = onSchedule(
 exports._runScheduledParkingMaintenance = (args) =>
   runScheduledParkingMaintenance({admin, ...args, db: args.db, sendPushToUser: args.sendPushToUser});
 
-exports.onCommentCreated = functions.firestore
-exports.onCommentCreated = r1.firestore
-  .document('parking_requests/{requestId}/comments/{commentId}')
-  .onCreate(async (snap, context) => {
-    const requestId = context.params.requestId;
-    const data = snap.data() || {};
+exports.onCommentCreatedV2 = onDocumentCreated(
+  firestoreOpt('parking_requests/{requestId}/comments/{commentId}'),
+  async (event) => {
+    const requestId = event.params.requestId;
+    const data = (event.data && event.data.data()) || {};
     const authorId = data.authorId;
     const text = String(data.text || '').trim();
     if (!requestId || !authorId || !text) return;
@@ -221,29 +249,30 @@ exports.onCommentCreated = r1.firestore
     await Promise.all(
       recipients.map(async (uid) => {
         try {
-          await sendPushToUserByUid(String(uid), title, body, {
+          await sendPushToUserByUid(admin, String(uid), title, body, {
             type: 'comment',
             requestId: String(requestId),
-            commentId: String(context.params.commentId),
+            commentId: String(event.params.commentId),
           });
         } catch (e) {
           console.log('Push send (comment) failed:', e?.message ?? e);
         }
       }),
     );
-  });
+  },
+);
 
 /**
  * When a request is updated, check if a full offer was cancelled.
  * If offeredSpotId/offeredBy are removed, reactivate standby offers.
  * Also handle notifications when fulfilled requests are cancelled.
  */
-exports.onRequestUpdated = r1.firestore
-  .document('parking_requests/{requestId}')
-  .onUpdate(async (change, context) => {
-    const requestId = context.params.requestId;
-    const before = change.before.data() || {};
-    const after = change.after.data() || {};
+exports.onRequestUpdatedV2 = onDocumentUpdated(
+  firestoreOpt('parking_requests/{requestId}'),
+  async (event) => {
+    const requestId = event.params.requestId;
+    const before = (event.data && event.data.before && event.data.before.data()) || {};
+    const after = (event.data && event.data.after && event.data.after.data()) || {};
     
     // Check if fulfilled request was cancelled (isFulfilled changed from true to false)
     const wasFulfilled = before.isFulfilled === true;
@@ -308,59 +337,228 @@ exports.onRequestUpdated = r1.firestore
           });
         }
       });
-      
+
       await batch.commit();
     }
-  });
+  },
+);
 
-exports.onRequestCreated = functions.firestore
-exports.onRequestCreated = r1.firestore
-  .document('parking_requests/{requestId}')
-  .onCreate(async (snap, context) => {
-    const requestId = context.params.requestId;
-    const data = snap.data() || {};
+exports.onRequestCreatedV2 = onDocumentCreated(
+  firestoreOpt('parking_requests/{requestId}'),
+  async (event) => {
+    const requestId = event.params.requestId;
+    const data = (event.data && event.data.data()) || {};
     if (data.isArchived === true) return;
 
     const requestedBy = data.requestedBy;
     const initial = String(data.initialCommentText || '').trim();
-    if (!requestedBy || !initial) return;
-
+    
+    // Get request reference (needed for both comment creation and offer creation)
     const reqRef = admin.firestore().collection('parking_requests').doc(String(requestId));
-    const commentsCol = reqRef.collection('comments');
+    
+    // Only create comment if initial comment text exists
+    if (requestedBy && initial) {
+      const commentsCol = reqRef.collection('comments');
 
-    // Avoid duplicating if something already wrote comments.
-    const existing = await commentsCol.limit(1).get();
-    if (!existing.empty) return;
+      // Avoid duplicating if something already wrote comments.
+      const existing = await commentsCol.limit(1).get();
+      if (existing.empty) {
+        await commentsCol.add({
+          authorId: String(requestedBy),
+          text: initial,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
 
-    await commentsCol.add({
-      authorId: String(requestedBy),
-      text: initial,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+        await reqRef.set(
+          {
+            lastCommentText: initial,
+            lastCommentAt: admin.firestore.FieldValue.serverTimestamp(),
+            commentCount: admin.firestore.FieldValue.increment(1),
+            participantIds: admin.firestore.FieldValue.arrayUnion(String(requestedBy)),
+          },
+          {merge: true},
+        );
+      }
+    }
+    
+    // Continue with matching even if no comment (matching should work regardless)
+    if (!requestedBy) {
+      console.log(`[onRequestCreated] Missing requestedBy, skipping matching`);
+      return;
+    }
 
-    await reqRef.set(
-      {
-        lastCommentText: initial,
-        lastCommentAt: admin.firestore.FieldValue.serverTimestamp(),
-        commentCount: admin.firestore.FieldValue.increment(1),
-        participantIds: admin.firestore.FieldValue.arrayUnion(String(requestedBy)),
-      },
-      {merge: true},
-    );
-  });
+    // Try to find matching availability and create auto-offer if enabled
+    try {
+      console.log(`[onRequestCreated] Starting matching for request ${requestId}`);
+      const facilityCode = data.facilityCode;
+      const requestFrom = data.from;
+      const requestUntil = data.until;
+      
+      if (!facilityCode || !requestFrom || !requestUntil) {
+        console.log(`[onRequestCreated] Missing required fields: facilityCode=${facilityCode}, from=${requestFrom}, until=${requestUntil}`);
+        return;
+      }
+      
+      // Normalize facilityCode like the client (trim + uppercase) so matching works regardless of storage format
+      const normalizedFacilityCode = String(facilityCode || '').trim().toUpperCase();
+      if (!normalizedFacilityCode) {
+        console.log('[onRequestCreated] Empty facilityCode after normalize, skipping matching');
+        return;
+      }
+
+      console.log(`[onRequestCreated] Request: facilityCode=${normalizedFacilityCode}, from=${requestFrom.toDate ? requestFrom.toDate().toISOString() : requestFrom}, until=${requestUntil.toDate ? requestUntil.toDate().toISOString() : requestUntil}`);
+
+      // Get all active availabilities in the facility
+      const availabilitiesSnap = await admin.firestore()
+        .collection('parking_availabilities')
+        .get();
+
+      console.log(`[onRequestCreated] Found ${availabilitiesSnap.docs.length} total availabilities`);
+
+      const availabilities = availabilitiesSnap.docs
+        .map((doc) => {
+          const d = doc.data();
+          return { id: doc.id, ...d };
+        })
+        .filter((av) => {
+          const avCode = String(av.facilityCode || '').trim().toUpperCase();
+          return (
+            avCode === normalizedFacilityCode &&
+            av.isArchived !== true &&
+            (av.isActive === true || av.isActive === undefined) &&
+            av.userId !== requestedBy
+          );
+        });
+
+      console.log(`[onRequestCreated] Filtered to ${availabilities.length} matching availabilities in facility ${normalizedFacilityCode}`);
+      
+      if (availabilities.length === 0) {
+        console.log(`[onRequestCreated] No availabilities found for facility ${facilityCode}`);
+        return;
+      }
+      
+      const request = {
+        id: requestId,
+        requestedBy,
+        facilityCode: normalizedFacilityCode,
+        from: requestFrom,
+        until: requestUntil,
+      };
+      
+      const bestMatch = await findBestMatchingAvailability(
+        admin,
+        admin.firestore(),
+        request,
+        availabilities,
+      );
+      
+      console.log(`[onRequestCreated] Best match found:`, bestMatch ? {
+        availabilityId: bestMatch.availabilityId,
+        userId: bestMatch.userId,
+        spotId: bestMatch.spotId,
+        autoOffer: bestMatch.autoOffer,
+      } : 'none');
+      
+      if (bestMatch) {
+        const offerWindow = calculateOfferTimeWindow(
+          requestFrom,
+          requestUntil,
+          bestMatch.from,
+          bestMatch.until,
+        );
+        
+        // Check if autoOffer is enabled
+        if (bestMatch.autoOffer !== false) {
+          console.log(`[onRequestCreated] autoOffer is enabled, creating offer automatically`);
+          // Automatically create offer
+          const offersCol = reqRef.collection('offers');
+          const offerRef = await offersCol.add({
+            offererId: bestMatch.userId,
+            spotId: bestMatch.spotId,
+            from: admin.firestore.Timestamp.fromDate(offerWindow.from),
+            until: admin.firestore.Timestamp.fromDate(offerWindow.until),
+            status: 'active',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          
+          console.log(`[onRequestCreated] Offer created: ${offerRef.id} for spot ${bestMatch.spotId}`);
+          
+          // Notify requester about automatic match
+          try {
+            const isPartial = 
+              offerWindow.from.getTime() !== requestFrom.toDate().getTime() || 
+              offerWindow.until.getTime() !== requestUntil.toDate().getTime();
+            
+            // Get requester username for notification
+            const requesterPublicDoc = await admin.firestore()
+              .collection('users_public')
+              .doc(requestedBy)
+              .get();
+            const requesterUsername = requesterPublicDoc.data()?.username || 'einem Nutzer';
+            
+            await sendPushToUserByUid(
+              admin,
+              requestedBy,
+              isPartial ? 'Teilweise automatisch gefunden' : 'Parkplatz automatisch gefunden!',
+              isPartial
+                ? `Ein passender Parkplatz ${bestMatch.spotId} wurde automatisch gefunden`
+                : `Ein passender Parkplatz ${bestMatch.spotId} wurde automatisch für dich gefunden!`,
+              {
+                type: 'auto_match',
+                requestId,
+                spotId: bestMatch.spotId,
+                offeredBy: bestMatch.userId,
+              },
+            );
+          } catch (e) {
+            console.log('Push send (auto_match) failed:', e);
+          }
+        } else {
+          console.log(`[onRequestCreated] autoOffer is disabled, notifying availability owner`);
+          // autoOffer is false - notify availability owner about potential match
+          try {
+            // Get requester username
+            const requesterPublicDoc = await admin.firestore()
+              .collection('users_public')
+              .doc(requestedBy)
+              .get();
+            const requesterUsername = requesterPublicDoc.data()?.username || 'einem Nutzer';
+            
+            await sendPushToUserByUid(
+              admin,
+              bestMatch.userId,
+              'Potenzielle Übereinstimmung',
+              `${requesterUsername} sucht einen Parkplatz, der zu deiner Verfügbarkeit passt`,
+              {
+                type: 'potential_match',
+                requestId,
+                spotId: bestMatch.spotId,
+                requestedBy,
+              },
+            );
+          } catch (e) {
+            console.log('Push send (potential_match) failed:', e);
+          }
+        }
+      }
+    } catch (e) {
+      // Matching failure should not prevent request creation
+      console.error('Availability matching failed:', e);
+    }
+  },
+);
 
 /**
  * Recompute coverage whenever an offer gets accepted/withdrawn.
  * A request becomes fulfilled ONLY when accepted offers cover the full [from, until] window without gaps.
  */
-exports.onOfferUpdated = functions.firestore
-exports.onOfferUpdated = r1.firestore
-  .document('parking_requests/{requestId}/offers/{offerId}')
-  .onUpdate(async (change, context) => {
-    const requestId = context.params.requestId;
-    const offerId = context.params.offerId;
-    const before = change.before.data() || {};
-    const after = change.after.data() || {};
+exports.onOfferUpdatedV2 = onDocumentUpdated(
+  firestoreOpt('parking_requests/{requestId}/offers/{offerId}'),
+  async (event) => {
+    const requestId = event.params.requestId;
+    const offerId = event.params.offerId;
+    const before = (event.data && event.data.before && event.data.before.data()) || {};
+    const after = (event.data && event.data.after && event.data.after.data()) || {};
     const reqRef = admin.firestore().collection('parking_requests').doc(requestId);
     const reqSnap = await reqRef.get();
     if (!reqSnap.exists) return;
@@ -385,7 +583,7 @@ exports.onOfferUpdated = r1.firestore
           ? `Das Angebot für Parkplatz ${spotId} wurde zurückgezogen!`
           : 'Das Angebot für den Parkplatz wurde zurückgezogen!';
         try {
-          await sendPushToUserByUid(requesterUid, title, body, {
+          await sendPushToUserByUid(admin, requesterUid, title, body, {
             type: 'offer_withdrawn',
             requestId: String(requestId),
             offerId: String(offerId),
@@ -520,7 +718,7 @@ exports.onOfferUpdated = r1.firestore
           ? `Dein Teilangebot für Parkplatz ${spotId} wurde storniert, da ein vollständiges Angebot angenommen wurde.`
           : 'Dein Teilangebot wurde storniert, da ein vollständiges Angebot angenommen wurde.';
         try {
-          await sendPushToUserByUid(String(standbyOffer.offererId), title, body, {
+          await sendPushToUserByUid(admin, String(standbyOffer.offererId), title, body, {
             type: 'offer_cancelled',
             requestId: String(requestId),
             offerId: String(standbyOffer.offerId),
@@ -530,7 +728,8 @@ exports.onOfferUpdated = r1.firestore
         }
       }
     }
-  });
+  },
+);
 
 /**
  * DSGVO: Abrufen aller Benutzerdaten (Art. 15 - Auskunftsrecht)

@@ -12,6 +12,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
 } from 'react-native';
+import {confirmAlert, showAlert} from '../utils/alertUtils';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {ParkingRequest} from '../models/ParkingRequest';
@@ -149,7 +150,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
   const handleSubmit = async () => {
     if (!request) return;
     if (!selectedSpot) {
-      Alert.alert('Fehler', 'Kein Parkplatz ausgewählt');
+      showAlert('Fehler', 'Kein Parkplatz ausgewählt');
       return;
     }
     const offerFrom = isFull ? request.from : clampToRequest(fromDateTime);
@@ -174,25 +175,21 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
           ? `${conflictRequest.requestedByUsername} (${formatDateRange(conflictRequest.from, conflictRequest.until)})`
           : formatDateRange(conflictRequest.from, conflictRequest.until);
         
-        Alert.alert(
+        confirmAlert(
           '⚠️ Überschneidung erkannt',
           `Den Parkplatz ${selectedSpot} hast Du bereits für ${conflict.overlapMinutes} Minuten in diesem Zeitraum angeboten:\n\n${conflictRange}\n\nMöchtest du trotzdem fortfahren?`,
-          [
-            {text: 'Abbrechen', style: 'cancel'},
-            {
-              text: 'Trotzdem anbieten',
-              style: 'destructive',
-              onPress: async () => {
-                setIsSubmitting(true);
-                try {
-                  await onSubmit(selectedSpot, offerFrom, offerUntil, comment.trim() || undefined);
-                  onClose();
-                } finally {
-                  setIsSubmitting(false);
-                }
-              },
-            },
-          ],
+          async () => {
+            setIsSubmitting(true);
+            try {
+              await onSubmit(selectedSpot, offerFrom, offerUntil, comment.trim() || undefined);
+              onClose();
+            } finally {
+              setIsSubmitting(false);
+            }
+          },
+          () => setIsSubmitting(false),
+          'Trotzdem anbieten',
+          'Abbrechen',
         );
         return;
       }
@@ -201,7 +198,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
       // Continue with submission if check fails
     }
     if (offerUntil <= offerFrom) {
-      Alert.alert('Fehler', 'Bis muss nach Von liegen');
+      showAlert('Fehler', 'Bis muss nach Von liegen');
       setIsSubmitting(false);
       return;
     }

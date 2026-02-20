@@ -10,6 +10,7 @@ import {
   Platform,
   TouchableOpacity,
 } from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {formatDateLabel, formatDateRange, formatTime} from '../utils/dateUtils';
@@ -19,6 +20,7 @@ import Button from './common/Button';
 import {modalStyles} from '../styles/modals';
 import {inputStyles} from '../styles/inputs';
 import {buttonStyles} from '../styles/buttons';
+import {adjustDateKeepingTime, adjustTimeKeepingDate, ensureEndAfterStart} from '../utils/dateTimeValidation';
 
 interface Props {
   visible: boolean;
@@ -50,12 +52,8 @@ const NewRequestModal: React.FC<Props> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [comment, setComment] = useState('');
 
-  const ensureUntilAfterFrom = (from: Date, until: Date) => {
-    if (until <= from) {
-      return new Date(from.getTime() + 2 * 60 * 60 * 1000);
-    }
-    return until;
-  };
+  // Import centralized validation utility
+  const {adjustDateKeepingTime, adjustTimeKeepingDate} = require('../utils/dateTimeValidation');
 
   const handleFromDateSelected = (event: any, date?: Date) => {
     // On Android, close the picker when user confirms (type === 'set') or cancels (type === 'dismissed')
@@ -66,10 +64,9 @@ const NewRequestModal: React.FC<Props> = ({
       }
     }
     if (!date) return;
-    const next = new Date(fromDateTime);
-    next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
-    setFromDateTime(next);
-    setUntilDateTime((prev) => ensureUntilAfterFrom(next, prev));
+    const result = adjustDateKeepingTime(date, fromDateTime, untilDateTime, 2);
+    setFromDateTime(result.adjusted);
+    setUntilDateTime(result.other);
   };
 
   const handleFromTimeSelected = (event: any, time?: Date) => {
@@ -81,10 +78,9 @@ const NewRequestModal: React.FC<Props> = ({
       }
     }
     if (!time) return;
-    const next = new Date(fromDateTime);
-    next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-    setFromDateTime(next);
-    setUntilDateTime((prev) => ensureUntilAfterFrom(next, prev));
+    const result = adjustTimeKeepingDate(fromDateTime, time, untilDateTime, 2);
+    setFromDateTime(result.adjusted);
+    setUntilDateTime(result.other);
   };
 
   const handleUntilDateSelected = (event: any, date?: Date) => {
@@ -98,7 +94,7 @@ const NewRequestModal: React.FC<Props> = ({
     if (!date) return;
     const next = new Date(untilDateTime);
     next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
-    setUntilDateTime(ensureUntilAfterFrom(fromDateTime, next));
+    setUntilDateTime(ensureEndAfterStart(fromDateTime, next, 2));
   };
 
   const handleUntilTimeSelected = (event: any, time?: Date) => {
@@ -112,12 +108,12 @@ const NewRequestModal: React.FC<Props> = ({
     if (!time) return;
     const next = new Date(untilDateTime);
     next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-    setUntilDateTime(ensureUntilAfterFrom(fromDateTime, next));
+    setUntilDateTime(ensureEndAfterStart(fromDateTime, next, 2));
   };
 
   const handleSubmit = async () => {
     if (untilDateTime <= fromDateTime) {
-      Alert.alert('Fehler', 'Bis muss nach Von liegen');
+      showAlert('Fehler', 'Bis muss nach Von liegen');
       return;
     }
 
@@ -131,7 +127,7 @@ const NewRequestModal: React.FC<Props> = ({
       setComment('');
       onClose();
     } catch (error) {
-      Alert.alert('Fehler', 'Anfrage konnte nicht erstellt werden');
+      showAlert('Fehler', 'Anfrage konnte nicht erstellt werden');
     } finally {
       setIsSubmitting(false);
     }

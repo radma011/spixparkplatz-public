@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>SpixParkplatz</title>
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="<%= (typeof htmlWebpackPlugin !== "undefined" && htmlWebpackPlugin.options && htmlWebpackPlugin.options.templateParameters && htmlWebpackPlugin.options.templateParameters.basePath) ? htmlWebpackPlugin.options.templateParameters.basePath + "/favicons/favicon-32x32.png" : "/favicons/favicon-32x32.png" %>">
+  <link rel="icon" type="image/png" sizes="16x16" href="<%= (typeof htmlWebpackPlugin !== "undefined" && htmlWebpackPlugin.options && htmlWebpackPlugin.options.templateParameters && htmlWebpackPlugin.options.templateParameters.basePath) ? htmlWebpackPlugin.options.templateParameters.basePath + "/favicons/favicon-16x16.png" : "/favicons/favicon-16x16.png" %>">
+  <link rel="icon" type="image/png" sizes="48x48" href="<%= (typeof htmlWebpackPlugin !== "undefined" && htmlWebpackPlugin.options && htmlWebpackPlugin.options.templateParameters && htmlWebpackPlugin.options.templateParameters.basePath) ? htmlWebpackPlugin.options.templateParameters.basePath + "/favicons/favicon-48x48.png" : "/favicons/favicon-48x48.png" %>">
+  <link rel="apple-touch-icon" sizes="180x180" href="<%= (typeof htmlWebpackPlugin !== "undefined" && htmlWebpackPlugin.options && htmlWebpackPlugin.options.templateParameters && htmlWebpackPlugin.options.templateParameters.basePath) ? htmlWebpackPlugin.options.templateParameters.basePath + "/favicons/apple-touch-icon.png" : "/favicons/apple-touch-icon.png" %>">
+  <link rel="shortcut icon" href="<%= (typeof htmlWebpackPlugin !== "undefined" && htmlWebpackPlugin.options && htmlWebpackPlugin.options.templateParameters && htmlWebpackPlugin.options.templateParameters.basePath) ? htmlWebpackPlugin.options.templateParameters.basePath + "/favicons/favicon.ico" : "/favicons/favicon.ico" %>">
+  <style>
+    @font-face {
+      font-family: 'MaterialCommunityIcons';
+      src: url('<%= (typeof htmlWebpackPlugin !== "undefined" && htmlWebpackPlugin.options && htmlWebpackPlugin.options.templateParameters && htmlWebpackPlugin.options.templateParameters.basePath) ? htmlWebpackPlugin.options.templateParameters.basePath + "/fonts/MaterialCommunityIcons.ttf" : "/fonts/MaterialCommunityIcons.ttf" %>') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    #root {
+      width: 100%;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

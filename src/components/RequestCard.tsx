@@ -1,5 +1,6 @@
 import React from 'react';
 import {Alert, View, Text, StyleSheet, TouchableOpacity, useColorScheme} from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import {ParkingRequest} from '../models/ParkingRequest';
 import {formatDateRange} from '../utils/dateUtils';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -667,12 +668,12 @@ const RequestCard: React.FC<Props> = ({
               onPress={() => {
                 if (!onAcceptOffer) return;
                 if (!fullOffer) {
-                  Alert.alert('Bitte warten', 'Angebotsdetails werden noch geladen.');
+                  showAlert('Bitte warten', 'Angebotsdetails werden noch geladen.');
                   return;
                 }
                 // Zusätzliche Prüfung vor dem Aufruf
                 if (!request.offeredSpotId || !request.offeredBy) {
-                  Alert.alert('Fehler', 'Das Angebot wurde bereits storniert');
+                  showAlert('Fehler', 'Das Angebot wurde bereits storniert');
                   return;
                 }
                 onAcceptOffer(fullOffer);

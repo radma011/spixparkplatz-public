@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import {showAlert} from '../utils/alertUtils';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AuthService from '../services/AuthService';
 import KeyboardAwareScreen from '../components/KeyboardAwareScreen';
@@ -34,7 +35,7 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Fehler', 'Bitte gib E-Mail und Passwort ein');
+      showAlert('Fehler', 'Bitte gib E-Mail und Passwort ein');
       return;
     }
 
@@ -53,7 +54,7 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
       } else if (error.code === 'auth/invalid-credential') {
         errorMessage = 'Ungültige Anmeldedaten';
       }
-      Alert.alert('Fehler', errorMessage);
+      showAlert('Fehler', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -65,39 +66,81 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
       <Text style={[styles.title, {color: colors.text}]}>Anmelden</Text>
       <Text style={[styles.subtitle, {color: colors.subtext}]}>Melde dich an, um Parkplätze zu teilen</Text>
 
-      <Text style={[styles.label, {color: colors.text}]}>E-Mail</Text>
-      <TextInput
-        style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-        placeholder="deine@email.de"
-        placeholderTextColor={colors.subtext}
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        editable={!loading}
-      />
+      {Platform.OS === 'web' ? (
+        <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{width: '100%', maxWidth: 400}}>
+          <Text style={[styles.label, {color: colors.text}]}>E-Mail</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="deine@email.de"
+            placeholderTextColor={colors.subtext}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!loading}
+            autoComplete="email"
+          />
 
-      <Text style={[styles.label, {color: colors.text}]}>Passwort</Text>
-      <TextInput
-        style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-        placeholder="Dein Passwort"
-        placeholderTextColor={colors.subtext}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        editable={!loading}
-      />
+          <Text style={[styles.label, {color: colors.text}]}>Passwort</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="Dein Passwort"
+            placeholderTextColor={colors.subtext}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            editable={!loading}
+            autoComplete="current-password"
+          />
 
-      <TouchableOpacity
-        style={[styles.button, {backgroundColor: colors.brand}, loading && styles.buttonDisabled]}
-        onPress={handleLogin}
-        disabled={loading}>
+          <TouchableOpacity
+            style={[styles.button, {backgroundColor: colors.brand}, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Anmelden</Text>
+            )}
+          </TouchableOpacity>
+        </form>
+      ) : (
+        <>
+          <Text style={[styles.label, {color: colors.text}]}>E-Mail</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="deine@email.de"
+            placeholderTextColor={colors.subtext}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!loading}
+          />
+
+          <Text style={[styles.label, {color: colors.text}]}>Passwort</Text>
+          <TextInput
+            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
+            placeholder="Dein Passwort"
+            placeholderTextColor={colors.subtext}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            editable={!loading}
+          />
+
+          <TouchableOpacity
+            style={[styles.button, {backgroundColor: colors.brand}, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}>
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
           <Text style={styles.buttonText}>Anmelden</Text>
         )}
       </TouchableOpacity>
+        </>
+      )}
 
       <TouchableOpacity
         style={styles.linkButton}
@@ -158,13 +201,13 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
                       setLoading(true);
                       try {
                         await AuthService.resetPassword(resetEmail);
-                        Alert.alert(
+                        showAlert(
                           'E-Mail gesendet',
                           'Eine E-Mail zum Zurücksetzen des Passworts wurde gesendet.',
-                          [{text: 'OK', onPress: () => {
+                          () => {
                             setShowResetPasswordModal(false);
                             setResetEmail('');
-                          }}],
+                          },
                         );
                       } catch (error: any) {
                         let errorMessage = 'Passwort konnte nicht zurückgesetzt werden';
@@ -173,12 +216,12 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
                         } else if (error.code === 'auth/invalid-email') {
                           errorMessage = 'Ungültige E-Mail-Adresse';
                         }
-                        Alert.alert('Fehler', errorMessage);
+                        showAlert('Fehler', errorMessage);
                       } finally {
                         setLoading(false);
                       }
                     } else {
-                      Alert.alert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
+                      showAlert('Fehler', 'Bitte gib eine gültige E-Mail-Adresse ein');
                     }
                   }}
                   disabled={loading}>
