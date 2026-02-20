@@ -68,6 +68,7 @@ functions/.runtimeconfig.json
 android/app/google-services.json
 ios/**/GoogleService-Info.plist
 firebase-config.js
+web/firebase-config.ts
 
 # fastlane
 #
