@@ -103,6 +103,54 @@ exports.runMaintenanceNowHttp = onRequest({invoker: 'public', region: REGION, co
 });
 
 /**
+ * Returns the number of users registered for the given facility.
+ * Caller must be authenticated; may only request the count for their own facility (same facilityCode as in their user doc).
+ */
+exports.getFacilityMemberCountHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  const decoded = await requireAuth(admin, req, res);
+  if (!decoded) return;
+
+  const data = req.body?.data ?? req.body ?? {};
+  const facilityCode = typeof data?.facilityCode === 'string' ? data.facilityCode.trim().toUpperCase() : '';
+  if (!facilityCode) {
+    res.status(400).json({error: {status: 'INVALID_ARGUMENT', message: 'facilityCode required'}});
+    return;
+  }
+
+  const db = admin.firestore();
+  const uid = decoded.uid;
+
+  try {
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (!userSnap.exists) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'User document not found'}});
+      return;
+    }
+    const userFacilityCode = (userSnap.data().facilityCode || '').trim().toUpperCase();
+    if (userFacilityCode !== facilityCode) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'Can only request count for own facility'}});
+      return;
+    }
+
+    const usersSnap = await db.collection('users').where('facilityCode', '==', facilityCode).get();
+    const count = usersSnap.size;
+
+    res.status(200).json({result: {count}});
+  } catch (e) {
+    res.status(500).json({error: {status: 'UNKNOWN', message: e?.message ?? String(e)}});
+  }
+});
+
+/**
  * When an offer is created under parking_requests/{requestId}/offers/{offerId},
  * detect if it covers the full request window. If yes:
  * - write offeredBy/offeredSpotId/offeredAt to the request document (so it stops being "open")

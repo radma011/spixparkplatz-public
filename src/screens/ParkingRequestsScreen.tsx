@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import {confirmAlert, showAlert} from '../utils/alertUtils';
 import {getApp} from '@react-native-firebase/app';
-import {getAuth, onAuthStateChanged} from '@react-native-firebase/auth';
+import {getAuth, getIdToken, onAuthStateChanged} from '@react-native-firebase/auth';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ParkingRequestService from '../services/ParkingRequestService';
@@ -70,6 +70,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const [showComments, setShowComments] = useState(false);
   const [commentsRequestId, setCommentsRequestId] = useState<string | null>(null);
   const [facilityName, setFacilityName] = useState<string | null>(null);
+  const [facilityMemberCount, setFacilityMemberCount] = useState<number | null>(null);
   const [offeringRequestId, setOfferingRequestId] = useState<string | null>(null);
   const requestsUnsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -204,21 +205,25 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     };
   }, [currentUserId, currentUserData.facilityCode]);
 
-  // Load facility name
+  // Load facility name and member count
   useEffect(() => {
-    const loadFacilityName = async () => {
+    const loadFacilityInfo = async () => {
       if (currentUserData.facilityCode) {
         try {
-          const facilityInfo = await FirestoreService.getFacilityInfo(currentUserData.facilityCode);
+          const [facilityInfo, count] = await Promise.all([
+            FirestoreService.getFacilityInfo(currentUserData.facilityCode),
+            FirestoreService.getFacilityMemberCount(currentUserData.facilityCode),
+          ]);
           if (facilityInfo && facilityInfo.name) {
             setFacilityName(facilityInfo.name);
           }
+          setFacilityMemberCount(count);
         } catch (e) {
-          console.error('Error loading facility name:', e);
+          console.error('Error loading facility info:', e);
         }
       }
     };
-    loadFacilityName();
+    loadFacilityInfo();
   }, [currentUserData.facilityCode]);
 
   useEffect(() => {
@@ -306,7 +311,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
       // Verify auth token is available
       try {
-        await auth.currentUser.getIdToken();
+        await getIdToken(auth.currentUser);
       } catch (tokenError) {
         console.error('Failed to get auth token:', tokenError);
         throw new Error('Authentication token not available');
@@ -577,7 +582,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                 const isLikelyAutoMatch = timeSinceCreation < 10000; // 10 seconds
                 
                 // Only log in development mode
-                if (process.env.NODE_ENV !== 'production') {
+                if (__DEV__) {
                   console.log('[Auto-Matching] New offer detected:', {
                     offerId: d.id,
                     requestId,
@@ -797,6 +802,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           <Text style={styles.headerTitle}>Parkplatz-Anfragen</Text>
           {facilityName && (
             <Text style={styles.headerSubtitle}>({facilityName})</Text>
+          )}
+          {facilityMemberCount !== null && (
+            <View style={styles.headerMemberCount}>
+              <MaterialCommunityIcons name="account-group" size={14} color="rgba(255,255,255,0.95)" />
+              <Text style={styles.headerMemberCountText}>{facilityMemberCount} User</Text>
+            </View>
           )}
         </View>
         <View style={styles.headerButtons}>
@@ -1128,20 +1139,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: 8,
     backgroundColor: '#007AFF',
   },
   headerTitleContainer: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'flex-end',
     flex: 1,
     flexWrap: 'wrap',
+    columnGap: 8,
+    rowGap: 3,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
-    marginRight: 4,
+    marginRight: 0,
   },
   headerSubtitle: {
     fontSize: 16,
@@ -1149,12 +1162,27 @@ const styles = StyleSheet.create({
     color: '#fff',
     opacity: 0.9,
   },
+  headerMemberCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    gap: 4,
+  },
+  headerMemberCountText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.95)',
+  },
   headerButtons: {
     flexDirection: 'row',
-    gap: 16,
+    alignSelf: 'flex-start',
   },
   headerButton: {
-    padding: 6,
+    paddingRight: 6,
   },
   spotBanner: {
     backgroundColor: '#E3F2FD',
