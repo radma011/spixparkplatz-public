@@ -7,7 +7,7 @@ Diese Dateien auf den Server legen unter: **https://aviationapps.com/apps/spixpa
 - `index.html` – Startseite mit Logo, Android-Download und iOS-Link
 - `version.json` – wird per Script aus der Android-Build-Version befüllt
 - `logo.png` – Logo (siehe unten)
-- `SpixParkplatz.apk` – die gebaute Android-APK (nach Build hierher kopieren/umbenennen)
+- `SpixParkplatz.apk` – die gebaute Android-APK (wird beim `npm run android:apk` automatisch hierher kopiert)
 
 ## Logo
 
@@ -29,7 +29,7 @@ Das liest `versionName` und `versionCode` aus `android/app/build.gradle` und sch
 
 ## Upload
 
-1. APK bauen: `npm run android:apk`
+1. APK bauen: `npm run android:apk` (kopiert die APK automatisch als `SpixParkplatz.apk` nach `download-page/`)
 2. Version schreiben: `npm run download-page:version`
-3. In `download-page/`: `logo.png` anlegen (falls noch nicht vorhanden), `app-release.apk` als `SpixParkplatz.apk` kopieren
+3. In `download-page/`: `logo.png` anlegen (falls noch nicht vorhanden)
 4. Gesamten Ordner `download-page/` auf den Server nach `/apps/spixparkplatz/` kopieren (z. B. per FTP/SCP), sodass `index.html` unter `https://aviationapps.com/apps/spixparkplatz/` erreichbar ist.

@@ -12,6 +12,7 @@ import {
   useColorScheme,
   Platform,
 } from 'react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {showAlert} from '../utils/alertUtils';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AuthService from '../services/AuthService';
@@ -39,6 +40,8 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
   const [facilityName, setFacilityName] = useState('');
   const [parkingSpots, setParkingSpots] = useState<string[]>(['', '', '']);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Update facility code when initialFacilityCode prop changes (e.g., from deep link)
   useEffect(() => {
@@ -249,52 +252,84 @@ const RegisterScreen: React.FC<Props> = ({onRegisterSuccess, onBackToLogin, init
       {Platform.OS === 'web' ? (
         <form onSubmit={(e) => { e.preventDefault(); handleRegister(); }} style={{width: '100%', maxWidth: 400}}>
           <Text style={[styles.label, {color: colors.text}]}>Passwort *</Text>
-          <TextInput
-            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-            placeholder="Mindestens 6 Zeichen"
-            placeholderTextColor={colors.subtext}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-            autoComplete="new-password"
-          />
+          <View style={[styles.passwordRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+            <TextInput
+              style={[styles.passwordInput, {color: colors.text}]}
+              placeholder="Mindestens 6 Zeichen"
+              placeholderTextColor={colors.subtext}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              editable={!loading}
+              autoComplete="new-password"
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword((v) => !v)}
+              style={styles.eyeButton}
+              accessibilityLabel={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}>
+              <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
 
           <Text style={[styles.label, {color: colors.text}]}>Passwort bestätigen *</Text>
-          <TextInput
-            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-            placeholder="Passwort wiederholen"
-            placeholderTextColor={colors.subtext}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            editable={!loading}
-            autoComplete="new-password"
-          />
+          <View style={[styles.passwordRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+            <TextInput
+              style={[styles.passwordInput, {color: colors.text}]}
+              placeholder="Passwort wiederholen"
+              placeholderTextColor={colors.subtext}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={!showConfirmPassword}
+              editable={!loading}
+              autoComplete="new-password"
+            />
+            <TouchableOpacity
+              onPress={() => setShowConfirmPassword((v) => !v)}
+              style={styles.eyeButton}
+              accessibilityLabel={showConfirmPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}>
+              <MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
         </form>
       ) : (
         <>
           <Text style={[styles.label, {color: colors.text}]}>Passwort *</Text>
-          <TextInput
-            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-            placeholder="Mindestens 6 Zeichen"
-            placeholderTextColor={colors.subtext}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
+          <View style={[styles.passwordRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+            <TextInput
+              style={[styles.passwordInput, {color: colors.text}]}
+              placeholder="Mindestens 6 Zeichen"
+              placeholderTextColor={colors.subtext}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              editable={!loading}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword((v) => !v)}
+              style={styles.eyeButton}
+              accessibilityLabel={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}>
+              <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
 
           <Text style={[styles.label, {color: colors.text}]}>Passwort bestätigen *</Text>
-          <TextInput
-            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-            placeholder="Passwort wiederholen"
-            placeholderTextColor={colors.subtext}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            editable={!loading}
-          />
+          <View style={[styles.passwordRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+            <TextInput
+              style={[styles.passwordInput, {color: colors.text}]}
+              placeholder="Passwort wiederholen"
+              placeholderTextColor={colors.subtext}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={!showConfirmPassword}
+              editable={!loading}
+            />
+            <TouchableOpacity
+              onPress={() => setShowConfirmPassword((v) => !v)}
+              style={styles.eyeButton}
+              accessibilityLabel={showConfirmPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}>
+              <MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
         </>
       )}
 
@@ -370,6 +405,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingRight: 8,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    paddingRight: 8,
+    fontSize: 16,
+  },
+  eyeButton: {
+    padding: 8,
   },
   parkingSpotInputSpacing: {
     marginTop: 12,

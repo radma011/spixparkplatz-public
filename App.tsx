@@ -22,29 +22,31 @@ function App(): React.JSX.Element {
   const [initialFacilityCode, setInitialFacilityCode] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    // Deep links only work on native platforms, not on web
-    if (Platform.OS === 'web') {
+    // Auth State Listener – only this sets loading=false, so we never show Login before auth is ready
+    const unsubscribe = AuthService.onAuthStateChanged((userData) => {
+      console.log('[App] Auth state changed callback:', userData ? `User: ${userData.uid}` : 'User: null (logged out)');
+      setUser(userData);
       setLoading(false);
-      return;
+    });
+
+    // Deep links only on native (not on web)
+    if (Platform.OS === 'web') {
+      return () => unsubscribe();
     }
 
-    // Handle deep links on app start
+    // Handle deep links on app start (native only) – do NOT setLoading(false) here
     const handleDeepLink = (url: string | null) => {
       if (!url) return;
       
       console.log('Deep link received:', url);
       
-      // Only handle parkplatz:// URLs, ignore http/https URLs
       if (!url.startsWith('parkplatz://')) {
         return;
       }
       
-      // Parse parkplatz://register?code=XXX
-      // Try multiple parsing methods for robustness
       let code: string | null = null;
       
       try {
-        // Method 1: Standard URL parsing
         const parsedUrl = new URL(url) as any;
         const host = parsedUrl.host || '';
         const pathname = parsedUrl.pathname || '';
@@ -52,12 +54,10 @@ function App(): React.JSX.Element {
           code = parsedUrl.searchParams?.get('code') || null;
         }
       } catch (e) {
-        // Method 2: Simple regex for parkplatz://register?code=XXX
         const match = url.match(/parkplatz:\/\/register\?code=([^&]+)/i);
         if (match && match[1]) {
           code = match[1];
         } else {
-          // Method 3: Try without host/path
           const match2 = url.match(/parkplatz:\/\/[^?]*\?code=([^&]+)/i);
           if (match2 && match2[1]) {
             code = match2[1];
@@ -72,33 +72,20 @@ function App(): React.JSX.Element {
       }
     };
 
-    // Check if app was opened via deep link
     Linking.getInitialURL()
       .then((url) => {
         if (url) {
           console.log('Initial URL:', url);
           handleDeepLink(url);
         }
-        setLoading(false);
       })
       .catch((err) => {
         console.error('Error getting initial URL:', err);
-        setLoading(false);
       });
 
-    // Listen for deep links while app is running
     const subscription = Linking.addEventListener('url', (event) => {
       console.log('Deep link event:', event.url);
       handleDeepLink(event.url);
-      // If user is logged in, we might want to log them out or show a message
-      // For now, we'll just set the code (user would need to log out to register)
-    });
-
-    // Auth State Listener einrichten
-    const unsubscribe = AuthService.onAuthStateChanged((userData) => {
-      console.log('[App] Auth state changed callback:', userData ? `User: ${userData.uid}` : 'User: null (logged out)');
-      setUser(userData);
-      setLoading(false);
     });
 
     return () => {

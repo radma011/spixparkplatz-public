@@ -9,9 +9,12 @@ const BASE_PATH = process.env.WEB_BASE_PATH || '';
 // Wenn BASE_PATH leer ist, verwende '/' (Root)
 const publicPath = BASE_PATH ? (BASE_PATH.endsWith('/') ? BASE_PATH : BASE_PATH + '/') : '/';
 
+// Development when running dev server (no --mode), production when building with --mode production
+const isProduction = process.env.NODE_ENV === 'production';
+const mode = isProduction ? 'production' : 'development';
+
 module.exports = {
-  // mode will be set by --mode flag in command line (production or development)
-  // Webpack automatically sets process.env.NODE_ENV based on mode
+  mode,
   entry: './index.web.js',
   output: {
     path: path.resolve(__dirname, 'web-build'),
@@ -99,6 +102,11 @@ module.exports = {
       ],
     }),
   ],
+  performance: {
+    hints: false,
+    maxEntrypointSize: 2 * 1024 * 1024,
+    maxAssetSize: 2 * 1024 * 1024,
+  },
   devServer: {
     static: [
       {

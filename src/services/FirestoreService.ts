@@ -74,7 +74,13 @@ class FirestoreService {
         phone: data?.phone,
       });
     }, (error: any) => {
-      console.error('users_public watch error:', uid, error?.code || error?.message || error);
+      const code = String(error?.code ?? error?.message ?? '');
+      if (code.includes('permission-denied')) {
+        // Expected after logout: auth is null but listeners are still active briefly.
+        callback(null);
+        return;
+      }
+      console.error('users_public watch error:', uid, code || error);
     });
   }
 

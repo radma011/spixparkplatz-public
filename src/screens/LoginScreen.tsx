@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {showAlert} from '../utils/alertUtils';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AuthService from '../services/AuthService';
@@ -30,6 +31,7 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
 
@@ -82,16 +84,24 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
           />
 
           <Text style={[styles.label, {color: colors.text}]}>Passwort</Text>
-          <TextInput
-            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-            placeholder="Dein Passwort"
-            placeholderTextColor={colors.subtext}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-            autoComplete="current-password"
-          />
+          <View style={[styles.passwordRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+            <TextInput
+              style={[styles.passwordInput, {color: colors.text}]}
+              placeholder="Dein Passwort"
+              placeholderTextColor={colors.subtext}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              editable={!loading}
+              autoComplete="current-password"
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword((v) => !v)}
+              style={styles.eyeButton}
+              accessibilityLabel={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}>
+              <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={[styles.button, {backgroundColor: colors.brand}, loading && styles.buttonDisabled]}
@@ -119,15 +129,23 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
           />
 
           <Text style={[styles.label, {color: colors.text}]}>Passwort</Text>
-          <TextInput
-            style={[styles.input, {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text}]}
-            placeholder="Dein Passwort"
-            placeholderTextColor={colors.subtext}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
+          <View style={[styles.passwordRow, {backgroundColor: colors.surface, borderColor: colors.border}]}>
+            <TextInput
+              style={[styles.passwordInput, {color: colors.text}]}
+              placeholder="Dein Passwort"
+              placeholderTextColor={colors.subtext}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              editable={!loading}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword((v) => !v)}
+              style={styles.eyeButton}
+              accessibilityLabel={showPassword ? 'Passwort verbergen' : 'Passwort anzeigen'}>
+              <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.subtext} />
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={[styles.button, {backgroundColor: colors.brand}, loading && styles.buttonDisabled]}
@@ -279,6 +297,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingRight: 8,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    paddingRight: 8,
+    fontSize: 16,
+  },
+  eyeButton: {
+    padding: 8,
   },
   button: {
     width: '100%',

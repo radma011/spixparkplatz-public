@@ -31,6 +31,8 @@ Die fertige APK liegt danach hier:
 android/app/build/outputs/apk/release/app-release.apk
 ```
 
+Sie wird automatisch als **SpixParkplatz.apk** in den Ordner `download-page/` kopiert (für die Download-Seite).
+
 ## APK auf deinen Server legen
 
 1. **APK umbenennen** (optional, z. B. mit Versionsnummer):
