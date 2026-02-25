@@ -31,7 +31,7 @@ class ParkingRequestService {
     initialComment?: string,
   ): Promise<ParkingRequest> {
     // Only log in development mode
-    if (process.env.NODE_ENV !== 'production') {
+    if (__DEV__) {
       console.log('[Auto-Matching] Creating request:', {
         facilityCode,
         from: from.toISOString(),
@@ -43,7 +43,7 @@ class ParkingRequestService {
     const request = await FirestoreService.createRequest(userId, username, phone, facilityCode, from, until, initialComment);
 
     // Only log in development mode
-    if (process.env.NODE_ENV !== 'production') {
+    if (__DEV__) {
       console.log('[Auto-Matching] Request created:', {
         requestId: request.id,
         facilityCode,
@@ -260,16 +260,19 @@ class ParkingRequestService {
 
   // Eigene Anfrage löschen
   // Wenn die Anfrage bereits ein Angebot hat, wird sie archiviert statt gelöscht
-  async deleteRequest(requestId: string): Promise<void> {
+  async deleteRequest(requestId: string, requesterUsername?: string): Promise<void> {
     const result = await FirestoreService.deleteRequest(requestId);
     
     // Wenn die Anfrage ein Angebot hatte, benachrichtige den Anbieter
     if (result.hadOffer && result.offeredBy) {
       try {
+        const body = requesterUsername
+          ? `Die Parkplatz-Anfrage wurde von ${requesterUsername} zurückgezogen`
+          : 'Die Parkplatz-Anfrage wurde vom Suchenden zurückgezogen';
         await PushNotificationService.sendPushToUser(
           result.offeredBy,
           'Anfrage zurückgezogen',
-          'Die Parkplatz-Anfrage wurde vom Suchenden zurückgezogen',
+          body,
           {
             type: 'request_withdrawn',
             requestId,

@@ -7,7 +7,7 @@ require Pod::Executable.execute_command('node', ['-p',
 
 require 'fileutils'
 
-platform :ios, '18.0'
+platform :ios, '16.0'
 prepare_react_native_project!
 
 # Required for Firebase Swift pods when building Pods as static libraries.
@@ -43,8 +43,8 @@ post_install do |installer|
   )
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
-      # Set minimum deployment target to 18.0 for all pods
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '18.0'
+      # Set minimum deployment target to 16.0 for all pods (supports iOS 16 devices)
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
       # Allow non-modular includes in framework modules
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
       

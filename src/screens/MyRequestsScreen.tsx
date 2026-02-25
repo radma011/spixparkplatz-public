@@ -41,12 +41,13 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
   const offerUnsubsRef = useRef<Record<string, () => void>>({});
 
   const handleDeleteRequest = (requestId: string) => {
+    const requesterUsername = publicUsers[currentUserId]?.username;
     confirmAlert(
       'Anfrage löschen',
       'Möchtest du diese Anfrage wirklich löschen?',
       async () => {
         try {
-          await ParkingRequestService.deleteRequest(requestId);
+          await ParkingRequestService.deleteRequest(requestId, requesterUsername);
         } catch (e) {
           console.error('Fehler beim Löschen:', e);
           showAlert('Fehler', 'Anfrage konnte nicht gelöscht werden');
@@ -85,6 +86,7 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
 
   useEffect(() => {
     const ids = new Set<string>();
+    ids.add(currentUserId); // current user is always the requester on this screen
     requests.forEach((r) => {
       if (r.offeredBy) ids.add(r.offeredBy);
     });
@@ -108,7 +110,7 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
         });
       }
     });
-  }, [requests]);
+  }, [requests, currentUserId]);
 
   // Watch offers for requests with offers or open requests (to show coverage)
   useEffect(() => {

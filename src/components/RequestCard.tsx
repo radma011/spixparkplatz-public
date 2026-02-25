@@ -519,21 +519,55 @@ const RequestCard: React.FC<Props> = ({
           if (request.offeredSpotId && (!hasAcceptedOffers || !request.offeredBy)) {
             // Angebot wurde storniert, keine Info-Zeile anzeigen - zeige normale Zeit-Zeile
             return (
-              <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
-                {formatDateRange(displayFrom, displayUntil)}
-              </Text>
+              <View>
+                <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
+                  {formatDateRange(displayFrom, displayUntil)}
+                </Text>
+                {onOpenComments && (
+                  <TouchableOpacity
+                    onPress={() => onOpenComments(request.id)}
+                    style={chipStyles.commentChipRow}
+                    activeOpacity={0.7}>
+                    <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                        {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                      </Text>
+                    </View>
+                    <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
+                      <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </View>
             );
           }
           // Wenn es angenommene Angebote gibt und offeredBy noch vorhanden ist, zeige die Info
           if (hasAcceptedOffers && request.offeredSpotId && request.offeredBy) {
             return (
-              <View style={styles.timeRow}>
-                <Text style={[styles.dateText, {color: colors.text}]} numberOfLines={1}>
-                  {formatDateRange(displayFrom, displayUntil)}
-                </Text>
-                <Text style={styles.spotText} numberOfLines={1}>
-                  P {request.offeredSpotId}
-                </Text>
+              <View>
+                <View style={styles.timeRow}>
+                  <Text style={[styles.dateText, {color: colors.text}]} numberOfLines={1}>
+                    {formatDateRange(displayFrom, displayUntil)}
+                  </Text>
+                  <Text style={styles.spotText} numberOfLines={1}>
+                    P {request.offeredSpotId}
+                  </Text>
+                </View>
+                {onOpenComments && (
+                  <TouchableOpacity
+                    onPress={() => onOpenComments(request.id)}
+                    style={chipStyles.commentChipRow}
+                    activeOpacity={0.7}>
+                    <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                        {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                      </Text>
+                    </View>
+                    <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
+                      <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                    </View>
+                  </TouchableOpacity>
+                )}
               </View>
             );
           }
@@ -541,9 +575,26 @@ const RequestCard: React.FC<Props> = ({
         
         // Normale Zeit-Zeile anzeigen, wenn keine Parkplatz-Info-Zeile angezeigt wird
         return (
-          <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
-            {formatDateRange(displayFrom, displayUntil)}
-          </Text>
+          <View>
+            <Text style={[styles.timeRangeText, {color: colors.text}]} numberOfLines={1}>
+              {formatDateRange(displayFrom, displayUntil)}
+            </Text>
+            {onOpenComments && (
+              <TouchableOpacity
+                onPress={() => onOpenComments(request.id)}
+                style={chipStyles.commentChipRow}
+                activeOpacity={0.7}>
+                <View style={[chipStyles.commentChip, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                  <Text style={[chipStyles.commentChipText, {color: colors.subtext}]} numberOfLines={1}>
+                    {commentPreview || 'Noch keine Nachrichten zu dieser Anfrage...'}
+                  </Text>
+                </View>
+                <View style={[chipStyles.commentIconBtn, {backgroundColor: colors.brand, borderColor: colors.border}]}>
+                  <MaterialCommunityIcons name="message-text-outline" size={16} color="#fff" />
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
         );
       })()}
 

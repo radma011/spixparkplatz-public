@@ -236,10 +236,11 @@ const ProfileScreen: React.FC<Props> = ({
     console.log('[ProfileScreen] handleLogout called');
     
     // Use window.confirm for web, Alert.alert for native
-    const isWeb = typeof window !== 'undefined' && window.confirm;
+    const win = typeof globalThis !== 'undefined' ? (globalThis as any).window : undefined;
+    const isWeb = Platform.OS === 'web' && win?.confirm;
     
-    if (isWeb) {
-      const confirmed = window.confirm('Möchtest du dich wirklich abmelden?');
+    if (isWeb && win) {
+      const confirmed = win.confirm('Möchtest du dich wirklich abmelden?');
       console.log('[ProfileScreen] User confirmed logout:', confirmed);
       if (!confirmed) {
         console.log('[ProfileScreen] User cancelled logout');
@@ -276,13 +277,14 @@ const ProfileScreen: React.FC<Props> = ({
       console.log('[ProfileScreen] Logout successful - waiting for auth state change');
       // Logout successful - Auth state listener will handle UI update
       // Force a small delay to ensure auth state updates
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
       console.log('[ProfileScreen] After delay - checking if user is still logged in');
     } catch (e: any) {
       console.error('[ProfileScreen] Logout-Fehler:', e);
       const errorMessage = e?.message || e?.code || 'Abmeldung fehlgeschlagen';
-      if (typeof window !== 'undefined' && window.alert) {
-        window.alert(`Abmeldung fehlgeschlagen: ${errorMessage}`);
+      const win = typeof globalThis !== 'undefined' ? (globalThis as any).window : undefined;
+      if (win?.alert) {
+        win.alert(`Abmeldung fehlgeschlagen: ${errorMessage}`);
       } else {
         Alert.alert('Fehler', `Abmeldung fehlgeschlagen: ${errorMessage}`);
       }

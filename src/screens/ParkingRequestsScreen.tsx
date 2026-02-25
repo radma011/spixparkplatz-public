@@ -506,7 +506,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       'Möchtest du deine Anfrage wirklich zurückziehen?',
       async () => {
         try {
-          await ParkingRequestService.deleteRequest(request.id);
+          await ParkingRequestService.deleteRequest(request.id, currentUserData.username);
           showAlert('Erfolg', 'Anfrage wurde zurückgezogen');
         } catch (e) {
           console.error('Fehler beim Zurückziehen:', e);

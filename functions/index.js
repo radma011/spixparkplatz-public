@@ -531,19 +531,20 @@ exports.onRequestCreatedV2 = onDocumentCreated(
           
           console.log(`[onRequestCreated] Offer created: ${offerRef.id} for spot ${bestMatch.spotId}`);
           
-          // Notify requester about automatic match
+          const isPartial =
+            offerWindow.from.getTime() !== requestFrom.toDate().getTime() ||
+            offerWindow.until.getTime() !== requestUntil.toDate().getTime();
+          let requesterUsername = 'einem Nutzer';
           try {
-            const isPartial = 
-              offerWindow.from.getTime() !== requestFrom.toDate().getTime() || 
-              offerWindow.until.getTime() !== requestUntil.toDate().getTime();
-            
-            // Get requester username for notification
             const requesterPublicDoc = await admin.firestore()
               .collection('users_public')
               .doc(requestedBy)
               .get();
-            const requesterUsername = requesterPublicDoc.data()?.username || 'einem Nutzer';
-            
+            requesterUsername = requesterPublicDoc.data()?.username || requesterUsername;
+          } catch (_) {}
+          
+          // Notify requester about automatic match
+          try {
             await sendPushToUserByUid(
               admin,
               requestedBy,
@@ -560,6 +561,37 @@ exports.onRequestCreatedV2 = onDocumentCreated(
             );
           } catch (e) {
             console.log('Push send (auto_match) failed:', e);
+          }
+
+          // Notify offerer that their spot was automatically assigned
+          try {
+            const fromDate = requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom);
+            const untilDate = requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil);
+            const fmt = (d) =>
+              new Intl.DateTimeFormat('de-DE', {
+                timeZone: 'Europe/Berlin',
+                day: '2-digit',
+                month: '2-digit',
+                year: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+              }).format(d);
+            const timeRangeStr = `${fmt(fromDate)} – ${fmt(untilDate)}`;
+            await sendPushToUserByUid(
+              admin,
+              bestMatch.userId,
+              'Parkplatz automatisch vergeben',
+              `Parkplatz ${bestMatch.spotId}, ${timeRangeStr}: an ${requesterUsername} vergeben`,
+              {
+                type: 'auto_match_offerer',
+                requestId,
+                spotId: bestMatch.spotId,
+                requestedBy,
+              },
+            );
+          } catch (e) {
+            console.log('Push send (auto_match_offerer) failed:', e);
           }
         } else {
           console.log(`[onRequestCreated] autoOffer is disabled, notifying availability owner`);
