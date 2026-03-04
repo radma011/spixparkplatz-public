@@ -30,6 +30,7 @@ interface Props {
   onOpenComments?: (requestId: string) => void;
   highlight?: boolean;
   isOffering?: boolean;
+  contextTab?: 'active' | 'fulfilled' | 'available';
 }
 
 const RequestCard: React.FC<Props> = ({
@@ -48,6 +49,7 @@ const RequestCard: React.FC<Props> = ({
   onOpenComments,
   highlight,
   isOffering = false,
+  contextTab,
 }) => {
   const colors = getColors(useColorScheme());
   const isMyRequest = request.requestedBy === currentUserId;
@@ -70,6 +72,8 @@ const RequestCard: React.FC<Props> = ({
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const isFulfilled = request.isFulfilled;
   const isArchived = !!request.isArchived;
+  const hasAcceptedOffers = offers.some((o) => o.status === 'accepted');
+  const isPartiallyFulfilled = !isFulfilled && hasAcceptedOffers;
 
   const hasOfferOrFulfilled = hasOffer || isFulfilled;
   const showOffersList = request.requestedBy === currentUserId && !isFulfilled && !hasOfferOrFulfilled;
@@ -149,7 +153,7 @@ const RequestCard: React.FC<Props> = ({
     const minT = request.from.getTime();
     const maxT = request.until.getTime();
     const total = Math.max(0, maxT - minT);
-    if (!total) return {percent: 0, gaps: [{start: minT, end: maxT}]};
+    if (!total) return {percent: 0, gaps: [{start: minT, end: maxT}], intervals: [] as Array<{start: number; end: number}>};
 
     const intervals = offersToUse
       .map((o) => ({
@@ -183,8 +187,55 @@ const RequestCard: React.FC<Props> = ({
     }
     if (cursor < maxT) gaps.push({start: cursor, end: maxT});
 
-    return {percent, gaps};
+    return {percent, gaps, intervals: merged};
   }, [offers, request.from, request.until, shouldShowCoverage]);
+
+  const renderCoverageDetails = () => {
+    if (!shouldShowCoverage || !coverage || isArchived) return null;
+
+    const percent = coverage.percent;
+    const gaps = coverage.gaps || [];
+    const intervals = (coverage as any).intervals || [];
+
+    // Vollständige Bereits erfüllt: einfache Ein-Zeilen-Anzeige
+    if (gaps.length === 0) {
+      return (
+        <Text style={[styles.coverageText, {color: colors.subtext}]}>
+          Bereits erfüllt: {percent}% (vollständig)
+        </Text>
+      );
+    }
+
+    return (
+      <View style={styles.coverageContainer}>
+        <Text style={[styles.coverageText, styles.coverageHeading, {color: colors.subtext}]}>
+          Bereits erfüllt: {percent}%
+        </Text>
+        {intervals.map((m: {start: number; end: number}, idx: number) => (
+          <Text
+            key={`covered-${idx}`}
+            style={[styles.coverageText, styles.coverageLine, {color: colors.subtext}]}>
+            {formatDateRange(new Date(m.start), new Date(m.end))}
+          </Text>
+        ))}
+        <Text
+          style={[
+            styles.coverageText,
+            styles.coverageHeading,
+            {color: colors.subtext},
+          ]}>
+          Noch offen:
+        </Text>
+        {gaps.map((g: {start: number; end: number}, idx: number) => (
+          <Text
+            key={`gap-${idx}`}
+            style={[styles.coverageText, styles.coverageLine, {color: colors.subtext}]}>
+            {formatDateRange(new Date(g.start), new Date(g.end))}
+          </Text>
+        ))}
+      </View>
+    );
+  };
   const showOtherUserAsTitle = hasOfferOrFulfilled;
   // When an offer exists (or the request is fulfilled), show the OTHER involved user:
   // - requester sees offerer
@@ -234,6 +285,14 @@ const RequestCard: React.FC<Props> = ({
     !isArchived &&
     !isMyRequest &&
     (!!myAcceptedOffer || request.offeredBy === currentUserId);
+
+  // Für Anbieter: Zeige "Storno"-Button auch bei teilweise erfüllten Anfragen,
+  // wenn eines meiner Angebote bereits angenommen wurde (aber die Anfrage insgesamt noch offen ist)
+  const canOffererCancelPartialAccepted =
+    !isFulfilled &&
+    !isArchived &&
+    !isMyRequest &&
+    !!myAcceptedOffer;
   const canContactRequesterOnOpen = !isMyRequest && !hasOfferOrFulfilled;
 
   const contactPhone = hasOfferOrFulfilled
@@ -297,6 +356,8 @@ const RequestCard: React.FC<Props> = ({
             <StatusChip type="archived" label="Aufgehoben" />
           ) : isFulfilled ? (
             <StatusChip type="fulfilled" label="Erfüllt" />
+          ) : isPartiallyFulfilled && contextTab === 'fulfilled' ? (
+            <StatusChip type="partial" label="Teilweise erfüllt" />
           ) : isMyRequest ? (
             <StatusChip type="myRequest" label="Meine Anfrage" />
           ) : hasOffer ? (
@@ -335,17 +396,7 @@ const RequestCard: React.FC<Props> = ({
                     </View>
                   </TouchableOpacity>
                 )}
-                  {shouldShowCoverage && coverage && !isArchived && (
-                  <Text style={[styles.coverageText, {color: colors.subtext}]}>
-                    Abdeckung: {coverage.percent}%{' '}
-                    {coverage.gaps.length === 0
-                      ? '(vollständig)'
-                      : `· Rest: ${coverage.gaps
-                          .slice(0, 2)
-                          .map((g) => formatDateRange(new Date(g.start), new Date(g.end)))
-                          .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
-                  </Text>
-                )}
+                {renderCoverageDetails()}
                 <View style={styles.offersBox}>
                   <Text style={[styles.offersTitle, {color: colors.subtext}]}>Mein Angebot</Text>
                   <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
@@ -409,17 +460,7 @@ const RequestCard: React.FC<Props> = ({
                     </View>
                   </TouchableOpacity>
                 )}
-                  {shouldShowCoverage && coverage && !isArchived && (
-                    <Text style={[styles.coverageText, {color: colors.subtext}]}>
-                      Abdeckung: {coverage.percent}%{' '}
-                      {coverage.gaps.length === 0
-                        ? '(vollständig)'
-                        : `· Rest: ${coverage.gaps
-                            .slice(0, 2)
-                            .map((g) => formatDateRange(new Date(g.start), new Date(g.end)))
-                            .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
-                    </Text>
-                  )}
+                {renderCoverageDetails()}
                   <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border, marginTop: 8, marginBottom: 8}]}>
                     <Text style={[styles.offerLabel, {color: colors.subtext}]}>
                       {isFullOffer ? 'Vollständig' : 'Teilweise'}
@@ -456,17 +497,7 @@ const RequestCard: React.FC<Props> = ({
                     </View>
                   </TouchableOpacity>
                 )}
-                  {shouldShowCoverage && coverage && !isArchived && (
-                  <Text style={[styles.coverageText, {color: colors.subtext}]}>
-                    Abdeckung: {coverage.percent}%{' '}
-                    {coverage.gaps.length === 0
-                      ? '(vollständig)'
-                      : `· Rest: ${coverage.gaps
-                          .slice(0, 2)
-                          .map((g) => formatDateRange(new Date(g.start), new Date(g.end)))
-                          .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
-                  </Text>
-                )}
+                {renderCoverageDetails()}
                 <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border, marginTop: 8, marginBottom: 8}]}>
                   <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angebot</Text>
                   <Text style={[styles.offerDetails, {color: colors.text}]}>
@@ -497,17 +528,7 @@ const RequestCard: React.FC<Props> = ({
                     </View>
                   </TouchableOpacity>
                 )}
-                  {shouldShowCoverage && coverage && !isArchived && (
-                <Text style={[styles.coverageText, {color: colors.subtext}]}>
-                  Abdeckung: {coverage.percent}%{' '}
-                  {coverage.gaps.length === 0
-                    ? '(vollständig)'
-                    : `· Rest: ${coverage.gaps
-                        .slice(0, 2)
-                        .map((g) => formatDateRange(new Date(g.start), new Date(g.end)))
-                        .join(' · ')}${coverage.gaps.length > 2 ? ' · …' : ''}`}
-                </Text>
-              )}
+                {renderCoverageDetails()}
             </View>
           );
         }
@@ -758,8 +779,8 @@ const RequestCard: React.FC<Props> = ({
           />
         )}
 
-        {/* Storno-Button für Anbieter bei erfüllten Anfragen */}
-        {canOffererCancelFulfilled && onCancelOffer && (
+        {/* Storno-Button für Anbieter bei erfüllten oder teilweise erfüllten Anfragen */}
+        {(canOffererCancelFulfilled || canOffererCancelPartialAccepted) && onCancelOffer && (
           <ActionButton
             onPress={() => onCancelOffer(request)}
             label="Storno"
@@ -833,6 +854,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 8,
     marginBottom: 0,
+  },
+  coverageContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  coverageHeading: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  coverageLine: {
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 10,
+    fontWeight: '500',
   },
   offerRowContainer: {
     marginBottom: 8,

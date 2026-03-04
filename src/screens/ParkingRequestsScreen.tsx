@@ -42,6 +42,38 @@ interface Props {
 
 type RequestSection = {title: string; data: ParkingRequest[]};
 
+// Abgeschlossene Ereignisse (nach Ende der Buchung) nur noch begrenzt anzeigen
+const HIDE_OPEN_AFTER_END_MS = 3 * 60 * 60 * 1000; // 3h – Offen-Tab (align mit Backend-Archivierung)
+const HIDE_FULFILLED_AFTER_END_MS = 24 * 60 * 60 * 1000; // 24h – Erfüllt-Tab
+const HIDE_AVAILABILITY_AFTER_END_MS = 24 * 60 * 60 * 1000; // 24h – Frei-Tab (align mit Backend-Archivierung)
+
+const isStillVisibleOpen = (r: ParkingRequest) =>
+  r.until.getTime() > Date.now() - HIDE_OPEN_AFTER_END_MS;
+const isStillVisibleFulfilled = (r: ParkingRequest) =>
+  r.until.getTime() > Date.now() - HIDE_FULFILLED_AFTER_END_MS;
+
+/** Effektives Ende einer Verfügbarkeit (letzte Buchung); null = wiederkehrend ohne endDate (läuft weiter). */
+function getAvailabilityEnd(av: ParkingAvailability): Date | null {
+  if (av.recurrence?.endDate) {
+    const end = new Date(av.recurrence.endDate);
+    end.setHours(
+      av.until.getHours(),
+      av.until.getMinutes(),
+      av.until.getSeconds(),
+      av.until.getMilliseconds(),
+    );
+    return end;
+  }
+  if (!av.recurrence) return av.until;
+  return null; // wiederkehrend ohne endDate = nicht ausblenden
+}
+
+const isStillVisibleAvailability = (av: ParkingAvailability): boolean => {
+  const end = getAvailabilityEnd(av);
+  if (!end) return true;
+  return end.getTime() > Date.now() - HIDE_AVAILABILITY_AFTER_END_MS;
+};
+
 const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, externalFocus}) => {
   const insets = useSafeAreaInsets();
   const colors = getColors(useColorScheme());
@@ -435,6 +467,33 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   ) => {
     try {
       await ParkingAvailabilityService.updateAvailability(availabilityId, updates);
+      const existing = availabilities.find((a) => a.id === availabilityId)!;
+      const merged: ParkingAvailability = {
+        ...existing,
+        ...updates,
+        from: updates.from ?? existing.from,
+        until: updates.until ?? existing.until,
+        recurrence: updates.recurrence === null ? undefined : (updates.recurrence ?? existing.recurrence),
+      };
+      const allAfter = availabilities.map((a) => (a.id === availabilityId ? merged : a));
+      await ParkingRequestService.recheckOffersAfterAvailabilityChange(
+        currentUserId,
+        currentUserData.facilityCode,
+        merged.spotId,
+        allAfter,
+        currentUserData.username,
+        currentUserData.phone ?? '',
+      );
+      if (updates.spotId !== undefined && existing.spotId !== updates.spotId) {
+        await ParkingRequestService.recheckOffersAfterAvailabilityChange(
+          currentUserId,
+          currentUserData.facilityCode,
+          existing.spotId,
+          allAfter,
+          currentUserData.username,
+          currentUserData.phone ?? '',
+        );
+      }
       showAlert('Erfolg', 'Verfügbarkeit aktualisiert!');
     } catch (error: any) {
       console.error('Fehler beim Aktualisieren der Verfügbarkeit:', error);
@@ -449,6 +508,15 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       async () => {
         try {
           await ParkingAvailabilityService.deleteAvailability(availability.id);
+          const allAfter = availabilities.filter((a) => a.id !== availability.id);
+          await ParkingRequestService.recheckOffersAfterAvailabilityChange(
+            currentUserId,
+            currentUserData.facilityCode,
+            availability.spotId,
+            allAfter,
+            currentUserData.username,
+            currentUserData.phone ?? '',
+          );
           showAlert('Erfolg', 'Verfügbarkeit gelöscht!');
         } catch (error: any) {
           console.error('Fehler beim Löschen der Verfügbarkeit:', error);
@@ -581,8 +649,14 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                 const timeSinceCreation = now.getTime() - createdAt.getTime();
                 const isLikelyAutoMatch = timeSinceCreation < 10000; // 10 seconds
                 
-                // Only log in development mode
-                if (__DEV__) {
+                // Only log in development mode (native & web)
+                const isDev =
+                  (typeof __DEV__ !== 'undefined' && __DEV__) ||
+                  (typeof globalThis !== 'undefined' &&
+                    (globalThis as any).process &&
+                    (globalThis as any).process.env &&
+                    (globalThis as any).process.env.NODE_ENV !== 'production');
+                if (isDev) {
                   console.log('[Auto-Matching] New offer detected:', {
                     offerId: d.id,
                     requestId,
@@ -639,7 +713,13 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
   const activeSections = useMemo(() => {
     const myRequests = displayRequests
-      .filter((r) => r.requestedBy === currentUserId && !r.isFulfilled && !r.isArchived)
+      .filter(
+        (r) =>
+          r.requestedBy === currentUserId &&
+          !r.isFulfilled &&
+          !r.isArchived &&
+          isStillVisibleOpen(r),
+      )
       .sort(sortByStartAsc);
 
     // IMPORTANT: use displayRequests here too, otherwise usernames/phones may briefly show as UID.
@@ -647,10 +727,9 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       .filter(
         (r) => {
           if (r.isFulfilled || r.isArchived || r.requestedBy === currentUserId) return false;
-          
+          if (!isStillVisibleOpen(r)) return false;
           // Include if I have a full offer (offeredBy matches)
           if (r.offeredBy === currentUserId) return true;
-          
           // Include if I have an active or standby offer in the subcollection
           const myOffersForRequest = offersByRequestId[r.id] || [];
           const hasMyOffer = myOffersForRequest.some(
@@ -669,6 +748,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     const openRequests = displayRequests
       .filter((r) => {
         if (!isOpen(r) || r.requestedBy === currentUserId || r.isArchived) return false;
+        if (!isStillVisibleOpen(r)) return false;
         // Exclude if I already have an offer for this request
         if (requestIdsWithMyOffers.has(r.id)) return false;
         return true;
@@ -688,25 +768,47 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     const sortByUntilDesc = (a: ParkingRequest, b: ParkingRequest) =>
       b.until.getTime() - a.until.getTime();
 
+    const hasAcceptedOffers = (request: ParkingRequest) => {
+      const offers = offersByRequestId[request.id] ?? [];
+      return offers.some((o) => o.status === 'accepted');
+    };
+
+    const hasAcceptedOfferByMe = (request: ParkingRequest) => {
+      const offers = offersByRequestId[request.id] ?? [];
+      return offers.some((o) => o.status === 'accepted' && o.offererId === currentUserId);
+    };
+
     const myFulfilledRequests = displayRequests
-      .filter((r) => r.isFulfilled && !r.isArchived && r.requestedBy === currentUserId)
+      .filter(
+        (r) =>
+          !r.isArchived &&
+          isStillVisibleFulfilled(r) &&
+          r.requestedBy === currentUserId &&
+          (r.isFulfilled || (!r.isFulfilled && hasAcceptedOffers(r))),
+      )
       .sort(sortByUntilDesc);
 
     const myFulfilledOffers = displayRequests
-      .filter(
-        (r) =>
+      .filter((r) => {
+        if (r.isArchived || r.requestedBy === currentUserId || !isStillVisibleFulfilled(r))
+          return false;
+
+        const isFullyFulfilledAndMine =
           r.isFulfilled &&
-          !r.isArchived &&
-          r.requestedBy !== currentUserId &&
           (r.offeredBy === currentUserId ||
-            (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId))),
-      )
+            (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId)));
+
+        const isPartiallyFulfilledAndMine = !r.isFulfilled && hasAcceptedOfferByMe(r);
+
+        return isFullyFulfilledAndMine || isPartiallyFulfilledAndMine;
+      })
       .sort(sortByUntilDesc);
 
     const myArchived = displayRequests
       .filter(
         (r) =>
           r.isArchived &&
+          isStillVisibleFulfilled(r) &&
           (r.requestedBy === currentUserId ||
             r.offeredBy === currentUserId ||
             (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId))),
@@ -718,7 +820,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     sections.push({title: 'MEINE ANGEBOTE', data: myFulfilledOffers});
     if (myArchived.length > 0) sections.push({title: 'AUFGEHOBEN', data: myArchived});
     return sections;
-  }, [displayRequests, currentUserId]);
+  }, [displayRequests, currentUserId, offersByRequestId]);
+
+  const displayAvailabilities = useMemo(
+    () => availabilities.filter(isStillVisibleAvailability),
+    [availabilities],
+  );
 
   useEffect(() => {
     if (!focusRequestId) return;
@@ -886,7 +993,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         <ScrollView
           contentContainerStyle={[
             styles.list,
-            availabilities.length === 0 && styles.listEmpty,
+            displayAvailabilities.length === 0 && styles.listEmpty,
           ]}
           refreshControl={
             <RefreshControl
@@ -902,7 +1009,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               }}
             />
           }>
-          {availabilities.length === 0 ? (
+          {displayAvailabilities.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>📅</Text>
               <Text style={styles.emptyTitle}>Keine Verfügbarkeiten</Text>
@@ -913,7 +1020,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           ) : (
             <>
               <Text style={[styles.sectionHeader, {color: colors.subtext}]}>MEINE VERFÜGBARKEITEN</Text>
-              {availabilities.map((availability) => (
+              {displayAvailabilities.map((availability) => (
                 <AvailabilityCard
                   key={availability.id}
                   availability={availability}
@@ -956,6 +1063,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               publicUsers={publicUsers}
               focusOfferId={focusOfferId}
               isOffering={offeringRequestId === item.id}
+              contextTab={activeTab}
               onAcceptOffer={async (offer) => {
                 try {
                   await ParkingRequestService.acceptOffer(item.id, offer);

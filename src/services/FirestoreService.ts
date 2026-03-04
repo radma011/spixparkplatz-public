@@ -373,6 +373,20 @@ class FirestoreService {
     });
   }
 
+  /** Angebot-Zeitfenster aktualisieren (z. B. nach Verfügbarkeits-Erweiterung), ohne Storno. */
+  async updateOffer(
+    requestId: string,
+    offerId: string,
+    from: Date,
+    until: Date,
+  ): Promise<void> {
+    await updateDoc(doc(this.offersCollection(requestId), offerId), {
+      from: Timestamp.fromDate(from),
+      until: Timestamp.fromDate(until),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+
   /**
    * Check if a parking spot is already booked/offered for a given time range.
    * Returns the overlapping request if found, or null if no conflict.
@@ -503,7 +517,8 @@ class FirestoreService {
 
   // Angebot stornieren (offered* Felder entfernen und Request wieder auf "offen" setzen)
   // WICHTIG: Diese Funktion wird vom Anbieter aufgerufen, der sein Angebot storniert
-  async cancelOffer(requestId: string, offeringUserId: string): Promise<void> {
+  // Gibt requestedBy zurück, damit der Aufrufer den Suchenden benachrichtigen kann.
+  async cancelOffer(requestId: string, offeringUserId: string): Promise<{requestedBy: string} | null> {
     // Sicherheitsprüfung: Stelle sicher, dass der Benutzer tatsächlich ein aktives Angebot hat
     const q = query(this.offersCollection(requestId), where('offererId', '==', offeringUserId));
     const snap = await getDocs(q);
@@ -511,39 +526,81 @@ class FirestoreService {
       const status = d.data()?.status ?? 'active';
       return status === 'active' || status === 'accepted' || status === 'standby';
     });
-    
-    // Prüfe auch, ob offeredBy auf dem Request gesetzt ist (für vollständige Angebote)
+
     const requestRef = doc(this.requestsCollection, requestId);
     const requestSnap = await getDoc(requestRef);
     const requestData = requestSnap.data();
     const hasFullOffer = requestData?.offeredBy === offeringUserId;
-    
+    const requestedBy = (requestData?.requestedBy as string) || null;
+
     if (!hasActiveOffer && !hasFullOffer) {
       throw new Error('Kein aktives Angebot zum Stornieren gefunden');
     }
-    
+
     // Zuerst: Alle aktiven Angebote des Anbieters in der Subcollection auf 'withdrawn' setzen
     await this.withdrawMyOffersForRequest(requestId, offeringUserId);
-    
+
     // Dann: Request-Dokument aktualisieren (offered* Felder entfernen)
     await updateDoc(doc(this.requestsCollection, requestId), {
       offeredSpotId: FieldValue.delete(),
       offeredBy: FieldValue.delete(),
       offeredAt: FieldValue.delete(),
       fullOfferId: FieldValue.delete(),
-      // Wenn das Angebot storniert wird, muss der Request wieder "offen" werden
-      // damit andere wieder anbieten können
       isFulfilled: false,
-      isArchived: false, // Request wieder öffentlich machen
-      // Entferne auch fulfilled-Felder, falls vorhanden
+      isArchived: false,
       fulfilledAt: FieldValue.delete(),
       fulfilledSpotIds: FieldValue.delete(),
       fulfilledByUserIds: FieldValue.delete(),
       fulfilledOfferIds: FieldValue.delete(),
-      // Entferne Archivierungs-Felder
       archivedBy: FieldValue.delete(),
       archivedAt: FieldValue.delete(),
     });
+
+    return requestedBy ? {requestedBy} : null;
+  }
+
+  /** Anfragen, bei denen der User ein Angebot für den angegebenen Spot hat (für Re-Check nach Verfügbarkeitsänderung). */
+  async getRequestsWithMyOfferForSpot(
+    userId: string,
+    facilityCode: string,
+    spotId: string,
+  ): Promise<ParkingRequest[]> {
+    const q = query(this.requestsCollection, where('offeredBy', '==', userId));
+    const snap = await getDocs(q);
+    const list: ParkingRequest[] = [];
+    for (const d of snap.docs) {
+      const data = d.data();
+      if ((data.facilityCode as string) !== facilityCode || (data.offeredSpotId as string) !== spotId) {
+        continue;
+      }
+      list.push(this.parkingRequestFromDocSnap(d));
+    }
+    return list;
+  }
+
+  /** Mein aktives (oder standby/accepted) Angebot für eine Anfrage. */
+  async getMyActiveOfferForRequest(requestId: string, offererId: string): Promise<RequestOffer | null> {
+    const q = query(this.offersCollection(requestId), where('offererId', '==', offererId));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const data = d.data();
+      const status = (data.status as string) ?? 'active';
+      if (status !== 'active' && status !== 'accepted' && status !== 'standby') continue;
+      const from = data.from?.toDate ? data.from.toDate() : null;
+      const until = data.until?.toDate ? data.until.toDate() : null;
+      if (!from || !until) continue;
+      return {
+        id: d.id,
+        requestId,
+        offererId: data.offererId as string,
+        spotId: data.spotId as string,
+        from,
+        until,
+        status: status as RequestOffer['status'],
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : undefined,
+      } as RequestOffer;
+    }
+    return null;
   }
 
   // Anfrage als erfüllt markieren

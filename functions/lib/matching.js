@@ -4,6 +4,21 @@
  */
 
 /**
+ * Convert Firestore timestamp (Timestamp, { _seconds, _nanoseconds }, or Date) to Date.
+ * Handles Admin SDK and serialized formats.
+ */
+function toDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (typeof value._seconds === 'number') {
+    return new Date(value._seconds * 1000 + (value._nanoseconds || 0) / 1e6);
+  }
+  if (typeof value === 'string' || typeof value === 'number') return new Date(value);
+  return null;
+}
+
+/**
  * Calculate next occurrences for recurring availabilities.
  * When requestFromTime/requestUntilTime are provided, includes occurrences that OVERLAP
  * the request window (so same-day windows that already started are still included).
@@ -156,27 +171,36 @@ function calculateNextOccurrences(startDate, startTime, endTime, recurrence, cou
  * Expand recurring availability into time windows
  */
 function expandRecurringAvailability(availability, requestFrom, requestUntil) {
+  const avFrom = toDate(availability.from);
+  const avUntil = toDate(availability.until);
+  if (!avFrom || !avUntil) {
+    console.log('[expandRecurringAvailability] Missing or invalid from/until', { id: availability.id, hasFrom: !!availability.from, hasUntil: !!availability.until });
+    return [];
+  }
+
   if (!availability.recurrence) {
     return [{
       availabilityId: availability.id,
       userId: availability.userId,
       spotId: availability.spotId,
-      from: availability.from.toDate(),
-      until: availability.until.toDate(),
+      from: avFrom,
+      until: avUntil,
       autoOffer: availability.autoOffer !== false, // default true
       username: availability.username,
       phone: availability.phone,
     }];
   }
   
-  const startDate = new Date(availability.from.toDate());
+  const startDate = new Date(avFrom);
   startDate.setHours(0, 0, 0, 0);
   
-  const startTime = availability.from.toDate();
-  const endTime = availability.until.toDate();
+  const startTime = avFrom;
+  const endTime = avUntil;
   
-  const reqFromTime = requestFrom.toDate ? requestFrom.toDate().getTime() : requestFrom.getTime();
-  const reqUntilTime = requestUntil.toDate ? requestUntil.toDate().getTime() : requestUntil.getTime();
+  const reqFromDate = toDate(requestFrom) || (requestFrom && requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom));
+  const reqUntilDate = toDate(requestUntil) || (requestUntil && requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil));
+  const reqFromTime = reqFromDate.getTime();
+  const reqUntilTime = reqUntilDate.getTime();
 
   const occurrences = calculateNextOccurrences(
     startDate,
@@ -451,7 +475,7 @@ async function findBestMatchingAvailability(admin, db, request, availabilities) 
   console.log(`[findBestMatchingAvailability] Checking ${availabilities.length} availabilities`);
   
   for (const availability of availabilities) {
-    if (!availability.isActive || availability.isMatched) {
+    if (availability.isActive === false || availability.isMatched === true) {
       console.log(`[findBestMatchingAvailability] Skipping availability ${availability.id}: isActive=${availability.isActive}, isMatched=${availability.isMatched}`);
       continue;
     }

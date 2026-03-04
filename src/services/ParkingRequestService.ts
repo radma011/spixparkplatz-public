@@ -3,6 +3,11 @@ import PushNotificationService from './PushNotificationService';
 import {ParkingRequest} from '../models/ParkingRequest';
 import {formatDateTime, formatDateRange} from '../utils/dateUtils';
 import {RequestOffer} from '../models/RequestOffer';
+import type {ParkingAvailability} from '../models/ParkingAvailability';
+import {
+  findBestMatchingAvailability,
+  calculateOfferTimeWindow,
+} from '../utils/availabilityMatching';
 
 class ParkingRequestService {
   // Stream aller offenen Anfragen
@@ -30,8 +35,14 @@ class ParkingRequestService {
     until: Date,
     initialComment?: string,
   ): Promise<ParkingRequest> {
-    // Only log in development mode
-    if (__DEV__) {
+    // Only log in development mode (works on native & web)
+    const isDev =
+      (typeof __DEV__ !== 'undefined' && __DEV__) ||
+      (typeof globalThis !== 'undefined' &&
+        (globalThis as any).process &&
+        (globalThis as any).process.env &&
+        (globalThis as any).process.env.NODE_ENV !== 'production');
+    if (isDev) {
       console.log('[Auto-Matching] Creating request:', {
         facilityCode,
         from: from.toISOString(),
@@ -40,10 +51,17 @@ class ParkingRequestService {
       });
     }
 
-    const request = await FirestoreService.createRequest(userId, username, phone, facilityCode, from, until, initialComment);
+    const request = await FirestoreService.createRequest(
+      userId,
+      username,
+      phone,
+      facilityCode,
+      from,
+      until,
+      initialComment,
+    );
 
-    // Only log in development mode
-    if (__DEV__) {
+    if (isDev) {
       console.log('[Auto-Matching] Request created:', {
         requestId: request.id,
         facilityCode,
@@ -53,8 +71,12 @@ class ParkingRequestService {
 
       // Note: Automatic matching is now handled server-side by the onRequestCreated Cloud Function
       // This ensures reliability, prevents race conditions, and works even when the client is offline
-      console.log('[Auto-Matching] Server-side matching will be triggered automatically by Cloud Function');
-      console.log('[Auto-Matching] Waiting for server-side matching to complete (check offers collection for auto-created offers)');
+      console.log(
+        '[Auto-Matching] Server-side matching will be triggered automatically by Cloud Function',
+      );
+      console.log(
+        '[Auto-Matching] Waiting for server-side matching to complete (check offers collection for auto-created offers)',
+      );
     }
 
     // Push-Benachrichtigung an alle User derselben Facility senden
@@ -102,6 +124,8 @@ class ParkingRequestService {
   }
 
   // Parkplatz für Anfrage anbieten
+  // skipRequesterNotification: true z. B. beim Re-Check nach Verfügbarkeitsänderung (Angebot wird nur aktualisiert).
+  // requestOverride: wenn gesetzt (z. B. nach Storno im Recheck), wird nicht getOpenRequests genutzt – vermeidet Cache/Zeitproblem.
   async offerParkingSpot(
     requestId: string,
     offeringUserId: string,
@@ -111,6 +135,8 @@ class ParkingRequestService {
     spotIdOverride?: string,
     fromOverride?: Date,
     untilOverride?: Date,
+    skipRequesterNotification?: boolean,
+    requestOverride?: ParkingRequest,
   ): Promise<boolean> {
     const spotId =
       spotIdOverride ?? (await FirestoreService.getUserParkingSpot(offeringUserId));
@@ -118,11 +144,18 @@ class ParkingRequestService {
       return false;
     }
 
-    const requests = await FirestoreService.getOpenRequests(facilityCode);
-    const request = requests.find((r) => r.id === requestId);
+    let request: ParkingRequest | undefined;
+    if (requestOverride && requestOverride.id === requestId) {
+      request = requestOverride;
+    } else {
+      const requests = await FirestoreService.getOpenRequests(facilityCode);
+      request = requests.find((r) => r.id === requestId);
+    }
     // The request stays "open" as long as there is no FULL offer written onto the request doc.
-    // Partial offers are stored in a subcollection and do not block further offers.
-    if (!request || request.offeredSpotId) {
+    if (!request) {
+      return false;
+    }
+    if (!requestOverride && request.offeredSpotId) {
       return false;
     }
 
@@ -136,27 +169,28 @@ class ParkingRequestService {
       return false;
     }
 
-    // Push-Benachrichtigung an den Anfragenden
-    try {
-      const isPartial =
-        offerFrom.getTime() !== request.from.getTime() || offerUntil.getTime() !== request.until.getTime();
-      await PushNotificationService.sendPushToUser(
-        request.requestedBy,
-        isPartial ? 'Teilangebot verfügbar' : 'Parkplatz verfügbar!',
-        isPartial
-          ? `Parkplatz ${spotId} ist teilweise verfügbar (${formatDateTime(offerFrom)}–${formatDateTime(
-              offerUntil,
-            )}, von ${offeringUsername})`
-          : `Parkplatz ${spotId} steht für dich zur Verfügung (von ${offeringUsername})`,
-        {
-          type: isPartial ? 'spot_partial' : 'spot_available',
-          requestId,
-          spotId,
-          offeredBy: offeringUserId,
-        },
-      );
-    } catch (e) {
-      console.log('Push send (offer) failed:', e);
+    if (!skipRequesterNotification) {
+      try {
+        const isPartial =
+          offerFrom.getTime() !== request.from.getTime() || offerUntil.getTime() !== request.until.getTime();
+        await PushNotificationService.sendPushToUser(
+          request.requestedBy,
+          isPartial ? 'Teilangebot verfügbar' : 'Parkplatz verfügbar!',
+          isPartial
+            ? `Parkplatz ${spotId} ist teilweise verfügbar (${formatDateTime(offerFrom)}–${formatDateTime(
+                offerUntil,
+              )}, von ${offeringUsername})`
+            : `Parkplatz ${spotId} steht für dich zur Verfügung (von ${offeringUsername})`,
+          {
+            type: isPartial ? 'spot_partial' : 'spot_available',
+            requestId,
+            spotId,
+            offeredBy: offeringUserId,
+          },
+        );
+      } catch (e) {
+        console.log('Push send (offer) failed:', e);
+      }
     }
 
     return true;
@@ -248,9 +282,108 @@ class ParkingRequestService {
     );
   }
 
-  // Eigenes Angebot stornieren
+  // Eigenes Angebot stornieren. Benachrichtigung an den Suchenden sendet nur die Cloud Function (onOfferUpdatedV2), damit nicht doppelt gepusht wird.
   async cancelOffer(requestId: string, offeringUserId: string): Promise<void> {
     await FirestoreService.cancelOffer(requestId, offeringUserId);
+  }
+
+  /**
+   * Nach Bearbeitung oder Löschen einer Verfügbarkeit: Angebote für den betroffenen Spot
+   * neu prüfen – bei Erweiterung Angebot aktualisieren, bei Verkürzung/Löschung stornieren und benachrichtigen.
+   * Berücksichtigt Voll- und Teilangebote (bei Teilangeboten steht offeredBy nicht auf dem Request).
+   */
+  async recheckOffersAfterAvailabilityChange(
+    currentUserId: string,
+    facilityCode: string,
+    spotId: string,
+    allAvailabilitiesAfterChange: ParkingAvailability[],
+    username: string,
+    phone: string,
+  ): Promise<void> {
+    // Vollangebote: Request hat offeredBy/offeredSpotId
+    const fullOfferRequests = await FirestoreService.getRequestsWithMyOfferForSpot(
+      currentUserId,
+      facilityCode,
+      spotId,
+    );
+    // Teilangebote: Request hat kein offeredBy; Angebot liegt nur in der Subcollection
+    const openRequests = await FirestoreService.getOpenRequests(facilityCode);
+    const partialOfferRequests: ParkingRequest[] = [];
+    for (const r of openRequests) {
+      const myOffer = await FirestoreService.getMyActiveOfferForRequest(r.id, currentUserId);
+      if (myOffer && myOffer.spotId === spotId) partialOfferRequests.push(r);
+    }
+    const seenIds = new Set<string>();
+    const requestsWithMyOffer: ParkingRequest[] = [];
+    for (const r of fullOfferRequests) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        requestsWithMyOffer.push(r);
+      }
+    }
+    for (const r of partialOfferRequests) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        requestsWithMyOffer.push(r);
+      }
+    }
+
+    for (const request of requestsWithMyOffer) {
+      const myOffer = await FirestoreService.getMyActiveOfferForRequest(request.id, currentUserId);
+      if (!myOffer) continue;
+
+      // Beim Recheck die eigene Anfrage von der Blockierungsprüfung ausnehmen, sonst wird das
+      // bestehende Angebot als „belegt“ gewertet und bei Verkürzung fälschlich storniert.
+      const checkSpotAvailabilityFn = (
+        sid: string,
+        fc: string,
+        from: Date,
+        until: Date,
+      ) => this.checkSpotAvailability(sid, fc, from, until, request.id);
+
+      const match = await findBestMatchingAvailability(
+        request,
+        allAvailabilitiesAfterChange,
+        checkSpotAvailabilityFn,
+      );
+
+      if (!match || match.spotId !== spotId) {
+        await this.cancelOffer(request.id, currentUserId);
+        continue;
+      }
+
+      const newWindow = calculateOfferTimeWindow(
+        request.from,
+        request.until,
+        match.from,
+        match.until,
+      );
+      const sameWindow =
+        Math.abs(newWindow.from.getTime() - myOffer.from.getTime()) < 60 * 1000 &&
+        Math.abs(newWindow.until.getTime() - myOffer.until.getTime()) < 60 * 1000;
+      if (sameWindow) continue;
+
+      await FirestoreService.updateOffer(request.id, myOffer.id, newWindow.from, newWindow.until);
+      try {
+        const isPartial =
+          newWindow.from.getTime() !== request.from.getTime() || newWindow.until.getTime() !== request.until.getTime();
+        await PushNotificationService.sendPushToUser(
+          request.requestedBy,
+          'Angebot wurde aktualisiert',
+          isPartial
+            ? `Dein Parkplatzangebot für Spot ${spotId} wurde angepasst: ${formatDateTime(newWindow.from)} – ${formatDateTime(newWindow.until)}`
+            : `Dein Parkplatzangebot für Spot ${spotId} deckt jetzt den gesamten Zeitraum ab.`,
+          {
+            type: 'offer_updated',
+            requestId: request.id,
+            spotId,
+            offeredBy: currentUserId,
+          },
+        );
+      } catch (e) {
+        console.log('Push send (offer_updated) failed:', e);
+      }
+    }
   }
 
   // Anfrage als erfüllt markieren

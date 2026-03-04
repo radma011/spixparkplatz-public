@@ -2,7 +2,7 @@ import React from 'react';
 import {View, Text, ViewStyle, TextStyle} from 'react-native';
 import {chipStyles} from '../../styles/chips';
 
-type StatusChipType = 'myRequest' | 'offer' | 'open' | 'fulfilled' | 'archived';
+type StatusChipType = 'myRequest' | 'offer' | 'open' | 'partial' | 'fulfilled' | 'archived';
 
 interface StatusChipProps {
   type: StatusChipType;
@@ -20,6 +20,8 @@ const StatusChip: React.FC<StatusChipProps> = ({type, label, style, textStyle}) 
         return chipStyles.offerChip;
       case 'open':
         return chipStyles.openChip;
+      case 'partial':
+        return chipStyles.partialChip;
       case 'fulfilled':
         return chipStyles.fulfilledChip;
       case 'archived':

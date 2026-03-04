@@ -170,7 +170,7 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
                 </Text>
                 {shouldShowCoverage && coverage && (
                   <Text style={[styles.coverageText, {color: colors.subtext}]}>
-                    Abdeckung: {coverage.percent}%{' '}
+                    Bereits erfüllt: {coverage.percent}%{' '}
                     {coverage.gaps.length === 0
                       ? '(vollständig)'
                       : `· Rest: ${coverage.gaps
@@ -202,7 +202,7 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
               </Text>
               {shouldShowCoverage && coverage && (
                 <Text style={[styles.coverageText, {color: colors.subtext}]}>
-                  Abdeckung: {coverage.percent}%{' '}
+                  Bereits erfüllt: {coverage.percent}%{' '}
                   {coverage.gaps.length === 0
                     ? '(vollständig)'
                     : `· Rest: ${coverage.gaps

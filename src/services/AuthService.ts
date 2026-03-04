@@ -11,6 +11,7 @@ import {
   verifyBeforeUpdateEmail,
 } from '@react-native-firebase/auth';
 import FirestoreService from './FirestoreService';
+import PushNotificationService from './PushNotificationService';
 
 export interface UserData {
   uid: string;
@@ -204,9 +205,15 @@ class AuthService {
         console.error('[AuthService] Auth instance not available');
         throw new Error('Auth instance not available');
       }
-      
-      console.log('[AuthService] Current user before logout:', this.auth.currentUser?.uid || 'null');
-      
+
+      const uid = this.auth.currentUser?.uid;
+      console.log('[AuthService] Current user before logout:', uid || 'null');
+
+      // FCM-Token dieses Geräts entfernen, damit nach Logout keine Push-Nachrichten mehr ankommen
+      if (uid) {
+        await PushNotificationService.removeTokenForLogout(uid);
+      }
+
       // Sign out
       console.log('[AuthService] Calling signOut...');
       await signOut(this.auth);

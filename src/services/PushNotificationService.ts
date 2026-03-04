@@ -178,6 +178,22 @@ class PushNotificationService {
     }
   }
 
+  /**
+   * Beim Logout den FCM-Token dieses Geräts für den User in Firestore löschen,
+   * damit das Gerät keine Push-Nachrichten mehr erhält.
+   */
+  async removeTokenForLogout(userId: string): Promise<void> {
+    try {
+      if (this.lastToken) {
+        await FirestoreService.deleteFCMToken(userId, this.lastToken);
+        console.log('FCM Token beim Logout entfernt');
+      }
+      this.lastToken = null;
+    } catch (e: any) {
+      console.warn('FCM Token konnte beim Logout nicht entfernt werden:', e?.message ?? e);
+    }
+  }
+
   // Push-Benachrichtigung an alle User senden
   async sendPushToAll(
     title: string,

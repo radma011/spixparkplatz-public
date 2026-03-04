@@ -28,6 +28,9 @@ export const chipStyles = StyleSheet.create({
   openChip: {
     backgroundColor: '#FF9800', // Orange
   },
+  partialChip: {
+    backgroundColor: '#FB8C00', // Slightly softer orange for partial
+  },
   fulfilledChip: {
     backgroundColor: '#2196F3', // Blue
   },

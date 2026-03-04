@@ -33,6 +33,16 @@ const NewRequestModal: React.FC<Props> = ({
   onClose,
   onSubmit,
 }) => {
+  const toWebDateString = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+
+  const toWebTimeString = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
   const colors = getColors(useColorScheme());
   const defaultRange = () => {
     const base = new Date(Date.now() + 4 * 60 * 60 * 1000); // now + 4h
@@ -112,6 +122,15 @@ const NewRequestModal: React.FC<Props> = ({
   };
 
   const handleSubmit = async () => {
+    // Basic date validation
+    if (!(fromDateTime instanceof Date) || isNaN(fromDateTime.getTime())) {
+      showAlert('Fehler', 'Ungültiges Start-Datum/Zeit. Bitte erneut auswählen.');
+      return;
+    }
+    if (!(untilDateTime instanceof Date) || isNaN(untilDateTime.getTime())) {
+      showAlert('Fehler', 'Ungültiges End-Datum/Zeit. Bitte erneut auswählen.');
+      return;
+    }
     if (untilDateTime <= fromDateTime) {
       showAlert('Fehler', 'Bis muss nach Von liegen');
       return;
@@ -126,8 +145,14 @@ const NewRequestModal: React.FC<Props> = ({
       setUntilDateTime(resetUntil);
       setComment('');
       onClose();
-    } catch (error) {
-      showAlert('Fehler', 'Anfrage konnte nicht erstellt werden');
+    } catch (error: any) {
+      // Log für Debugging (z.B. in der Web-Konsole)
+      console.error('Fehler beim Erstellen der Anfrage:', error);
+      const msg =
+        error?.message && typeof error.message === 'string'
+          ? error.message
+          : 'Anfrage konnte nicht erstellt werden';
+      showAlert('Fehler', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -248,6 +273,29 @@ const NewRequestModal: React.FC<Props> = ({
                       minimumDate={new Date()}
                       onChange={handleFromDateSelected}
                     />
+                  ) : Platform.OS === 'web' ? (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      {/* @ts-ignore web-only input */}
+                      <input
+                        type="date"
+                        value={toWebDateString(fromDateTime)}
+                        min={toWebDateString(new Date())}
+                        onChange={(e: any) => {
+                          const value = e.target.value as string;
+                          if (!value) return;
+                          const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                          if (!year || !month || !day) return;
+                          const next = new Date(fromDateTime);
+                          next.setFullYear(year, month - 1, day);
+                          handleFromDateSelected({}, next);
+                        }}
+                        style={{width: '100%', padding: 8, fontSize: 14}}
+                      />
+                    </View>
                   ) : (
                     <View
                       style={[
@@ -274,6 +322,29 @@ const NewRequestModal: React.FC<Props> = ({
                       minuteInterval={15}
                       onChange={handleFromTimeSelected}
                     />
+                  ) : Platform.OS === 'web' ? (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      {/* @ts-ignore web-only input */}
+                      <input
+                        type="time"
+                        step={900}
+                        value={toWebTimeString(fromDateTime)}
+                        onChange={(e: any) => {
+                          const value = e.target.value as string;
+                          if (!value) return;
+                          const [hours, minutes] = value.split(':').map((v) => parseInt(v, 10));
+                          if (hours == null || minutes == null) return;
+                          const next = new Date(fromDateTime);
+                          next.setHours(hours, minutes, 0, 0);
+                          handleFromTimeSelected({}, next);
+                        }}
+                        style={{width: '100%', padding: 8, fontSize: 14}}
+                      />
+                    </View>
                   ) : (
                     <View
                       style={[
@@ -366,6 +437,29 @@ const NewRequestModal: React.FC<Props> = ({
                       minimumDate={new Date()}
                       onChange={handleUntilDateSelected}
                     />
+                  ) : Platform.OS === 'web' ? (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      {/* @ts-ignore web-only input */}
+                      <input
+                        type="date"
+                        value={toWebDateString(untilDateTime)}
+                        min={toWebDateString(new Date())}
+                        onChange={(e: any) => {
+                          const value = e.target.value as string;
+                          if (!value) return;
+                          const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                          if (!year || !month || !day) return;
+                          const next = new Date(untilDateTime);
+                          next.setFullYear(year, month - 1, day);
+                          handleUntilDateSelected({}, next);
+                        }}
+                        style={{width: '100%', padding: 8, fontSize: 14}}
+                      />
+                    </View>
                   ) : (
                     <View
                       style={[
@@ -392,6 +486,29 @@ const NewRequestModal: React.FC<Props> = ({
                       minuteInterval={15}
                       onChange={handleUntilTimeSelected}
                     />
+                  ) : Platform.OS === 'web' ? (
+                    <View
+                      style={[
+                        inputStyles.pickerContainer,
+                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                      ]}>
+                      {/* @ts-ignore web-only input */}
+                      <input
+                        type="time"
+                        step={900}
+                        value={toWebTimeString(untilDateTime)}
+                        onChange={(e: any) => {
+                          const value = e.target.value as string;
+                          if (!value) return;
+                          const [hours, minutes] = value.split(':').map((v) => parseInt(v, 10));
+                          if (hours == null || minutes == null) return;
+                          const next = new Date(untilDateTime);
+                          next.setHours(hours, minutes, 0, 0);
+                          handleUntilTimeSelected({}, next);
+                        }}
+                        style={{width: '100%', padding: 8, fontSize: 14}}
+                      />
+                    </View>
                   ) : (
                     <View
                       style={[

@@ -628,6 +628,298 @@ exports.onRequestCreatedV2 = onDocumentCreated(
   },
 );
 
+/** Cutoff: requests ending more than this ago are ignored (align with client KEEP_VISIBLE_AFTER_END_MS). */
+const REQUEST_CUTOFF_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * When a new availability is created (or activated): match it against open requests and create
+ * auto-offers where this availability is the best match (full or partial).
+ */
+exports.onAvailabilityCreatedV2 = onDocumentCreated(
+  firestoreOpt('parking_availabilities/{availabilityId}'),
+  async (event) => {
+    const availabilityId = event.params.availabilityId;
+    const data = (event.data && event.data.data()) || {};
+    console.log('[onAvailabilityCreated] Triggered', { availabilityId, facilityCode: data.facilityCode, isActive: data.isActive });
+    if (data.isArchived === true) return;
+    if (data.isActive === false) return;
+
+    const facilityCode = String(data.facilityCode || '').trim().toUpperCase();
+    if (!facilityCode) return;
+
+    const availability = { id: availabilityId, ...data };
+    const db = admin.firestore();
+
+    try {
+      const allAvailabilitiesSnap = await db.collection('parking_availabilities').get();
+      const allAvailabilities = allAvailabilitiesSnap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((av) => {
+          const avCode = String(av.facilityCode || '').trim().toUpperCase();
+          return (
+            avCode === facilityCode &&
+            av.isArchived !== true &&
+            (av.isActive === true || av.isActive === undefined)
+          );
+        });
+      console.log('[onAvailabilityCreated] Availabilities in facility', allAvailabilities.length);
+
+      // Query by until only (no composite index); filter isFulfilled/offeredSpotId in code
+      const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - REQUEST_CUTOFF_MS);
+      const requestsSnap = await db
+        .collection('parking_requests')
+        .where('until', '>', cutoff)
+        .orderBy('until', 'asc')
+        .limit(150)
+        .get();
+
+      const openRequests = requestsSnap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((r) => {
+          if (r.isFulfilled === true || r.isArchived === true || r.offeredSpotId) return false;
+          const rCode = String(r.facilityCode || '').trim().toUpperCase();
+          if (rCode !== facilityCode || !r.requestedBy || r.requestedBy === availability.userId) return false;
+          return true;
+        });
+      console.log('[onAvailabilityCreated] Open requests in facility', openRequests.length, 'of', requestsSnap.docs.length);
+
+      for (const reqData of openRequests) {
+        const request = {
+          id: reqData.id,
+          requestedBy: reqData.requestedBy,
+          facilityCode,
+          from: reqData.from,
+          until: reqData.until,
+        };
+        const bestMatch = await findBestMatchingAvailability(admin, db, request, allAvailabilities);
+        if (!bestMatch) {
+          console.log('[onAvailabilityCreated] No match for request', reqData.id);
+          continue;
+        }
+        if (bestMatch.availabilityId !== availabilityId) {
+          console.log('[onAvailabilityCreated] Best match for request', reqData.id, 'is other availability', bestMatch.availabilityId);
+          continue;
+        }
+        console.log('[onAvailabilityCreated] Creating offer for request', reqData.id, 'spot', bestMatch.spotId);
+
+        const requestFrom = reqData.from;
+        const requestUntil = reqData.until;
+        const offerWindow = calculateOfferTimeWindow(
+          requestFrom,
+          requestUntil,
+          bestMatch.from,
+          bestMatch.until,
+        );
+
+        if (bestMatch.autoOffer === false) {
+          try {
+            await sendPushToUserByUid(
+              admin,
+              bestMatch.userId,
+              'Potenzielle Übereinstimmung',
+              `Eine Anfrage passt zu deiner neuen Verfügbarkeit (Parkplatz ${bestMatch.spotId})`,
+              { type: 'potential_match', requestId: reqData.id, spotId: bestMatch.spotId, requestedBy: reqData.requestedBy },
+            );
+          } catch (e) {
+            console.log('Push send (potential_match) failed:', e);
+          }
+          continue;
+        }
+
+        const offersCol = db.collection('parking_requests').doc(reqData.id).collection('offers');
+        await offersCol.add({
+          offererId: bestMatch.userId,
+          spotId: bestMatch.spotId,
+          from: admin.firestore.Timestamp.fromDate(offerWindow.from),
+          until: admin.firestore.Timestamp.fromDate(offerWindow.until),
+          status: 'active',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        const requestFromDate = requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom);
+        const requestUntilDate = requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil);
+        const isPartial =
+          offerWindow.from.getTime() !== requestFromDate.getTime() ||
+          offerWindow.until.getTime() !== requestUntilDate.getTime();
+
+        try {
+          await sendPushToUserByUid(
+            admin,
+            reqData.requestedBy,
+            isPartial ? 'Teilweise automatisch gefunden' : 'Parkplatz automatisch gefunden!',
+            isPartial
+              ? `Ein passender Parkplatz ${bestMatch.spotId} wurde automatisch gefunden`
+              : `Ein passender Parkplatz ${bestMatch.spotId} wurde automatisch für dich gefunden!`,
+            { type: 'auto_match', requestId: reqData.id, spotId: bestMatch.spotId, offeredBy: bestMatch.userId },
+          );
+        } catch (e) {
+          console.log('Push send (auto_match) failed:', e);
+        }
+
+        try {
+          let requesterUsername = 'einem Nutzer';
+          const requesterPublicDoc = await db.collection('users_public').doc(reqData.requestedBy).get();
+          if (requesterPublicDoc.exists) requesterUsername = requesterPublicDoc.data()?.username || requesterUsername;
+          const fmt = (d) =>
+            new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+          const timeRangeStr = `${fmt(requestFromDate)} – ${fmt(requestUntilDate)}`;
+          await sendPushToUserByUid(
+            admin,
+            bestMatch.userId,
+            'Parkplatz automatisch vergeben',
+            `Parkplatz ${bestMatch.spotId}, ${timeRangeStr}: an ${requesterUsername} vergeben`,
+            { type: 'auto_match_offerer', requestId: reqData.id, spotId: bestMatch.spotId, requestedBy: reqData.requestedBy },
+          );
+        } catch (e) {
+          console.log('Push send (auto_match_offerer) failed:', e);
+        }
+      }
+    } catch (e) {
+      console.error('[onAvailabilityCreated] Matching failed:', e);
+    }
+  },
+);
+
+/**
+ * When an availability is updated and becomes active (isActive: false -> true), run the same
+ * matching as on create so open requests get an auto-offer from this availability.
+ */
+exports.onAvailabilityUpdatedV2 = onDocumentUpdated(
+  firestoreOpt('parking_availabilities/{availabilityId}'),
+  async (event) => {
+    const before = (event.data && event.data.before && event.data.before.data()) || {};
+    const after = (event.data && event.data.after && event.data.after.data()) || {};
+    if (before.isActive === after.isActive) return;
+    if (after.isActive !== true) return;
+
+    const availabilityId = event.params.availabilityId;
+    const data = after;
+    if (data.isArchived === true) return;
+
+    const facilityCode = String(data.facilityCode || '').trim().toUpperCase();
+    if (!facilityCode) return;
+
+    const availability = { id: availabilityId, ...data };
+    const db = admin.firestore();
+
+    try {
+      const allAvailabilitiesSnap = await db.collection('parking_availabilities').get();
+      const allAvailabilities = allAvailabilitiesSnap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((av) => {
+          const avCode = String(av.facilityCode || '').trim().toUpperCase();
+          return (
+            avCode === facilityCode &&
+            av.isArchived !== true &&
+            (av.isActive === true || av.isActive === undefined)
+          );
+        });
+
+      const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - REQUEST_CUTOFF_MS);
+      const requestsSnap = await db
+        .collection('parking_requests')
+        .where('until', '>', cutoff)
+        .orderBy('until', 'asc')
+        .limit(150)
+        .get();
+
+      const openRequests = requestsSnap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((r) => {
+          if (r.isFulfilled === true || r.isArchived === true || r.offeredSpotId) return false;
+          const rCode = String(r.facilityCode || '').trim().toUpperCase();
+          return rCode === facilityCode && r.requestedBy && r.requestedBy !== availability.userId;
+        });
+
+      for (const reqData of openRequests) {
+        const request = {
+          id: reqData.id,
+          requestedBy: reqData.requestedBy,
+          facilityCode,
+          from: reqData.from,
+          until: reqData.until,
+        };
+        const bestMatch = await findBestMatchingAvailability(admin, db, request, allAvailabilities);
+        if (!bestMatch || bestMatch.availabilityId !== availabilityId) continue;
+
+        const requestFrom = reqData.from;
+        const requestUntil = reqData.until;
+        const offerWindow = calculateOfferTimeWindow(
+          requestFrom,
+          requestUntil,
+          bestMatch.from,
+          bestMatch.until,
+        );
+
+        if (bestMatch.autoOffer === false) {
+          try {
+            await sendPushToUserByUid(
+              admin,
+              bestMatch.userId,
+              'Potenzielle Übereinstimmung',
+              `Eine Anfrage passt zu deiner aktivierten Verfügbarkeit (Parkplatz ${bestMatch.spotId})`,
+              { type: 'potential_match', requestId: reqData.id, spotId: bestMatch.spotId, requestedBy: reqData.requestedBy },
+            );
+          } catch (e) {
+            console.log('Push send (potential_match) failed:', e);
+          }
+          continue;
+        }
+
+        const offersCol = db.collection('parking_requests').doc(reqData.id).collection('offers');
+        await offersCol.add({
+          offererId: bestMatch.userId,
+          spotId: bestMatch.spotId,
+          from: admin.firestore.Timestamp.fromDate(offerWindow.from),
+          until: admin.firestore.Timestamp.fromDate(offerWindow.until),
+          status: 'active',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        const requestFromDate = requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom);
+        const requestUntilDate = requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil);
+        const isPartial =
+          offerWindow.from.getTime() !== requestFromDate.getTime() ||
+          offerWindow.until.getTime() !== requestUntilDate.getTime();
+
+        try {
+          await sendPushToUserByUid(
+            admin,
+            reqData.requestedBy,
+            isPartial ? 'Teilweise automatisch gefunden' : 'Parkplatz automatisch gefunden!',
+            isPartial
+              ? `Ein passender Parkplatz ${bestMatch.spotId} wurde automatisch gefunden`
+              : `Ein passender Parkplatz ${bestMatch.spotId} wurde automatisch für dich gefunden!`,
+            { type: 'auto_match', requestId: reqData.id, spotId: bestMatch.spotId, offeredBy: bestMatch.userId },
+          );
+        } catch (e) {
+          console.log('Push send (auto_match) failed:', e);
+        }
+
+        try {
+          let requesterUsername = 'einem Nutzer';
+          const requesterPublicDoc = await db.collection('users_public').doc(reqData.requestedBy).get();
+          if (requesterPublicDoc.exists) requesterUsername = requesterPublicDoc.data()?.username || requesterUsername;
+          const fmt = (d) =>
+            new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+          const timeRangeStr = `${fmt(requestFromDate)} – ${fmt(requestUntilDate)}`;
+          await sendPushToUserByUid(
+            admin,
+            bestMatch.userId,
+            'Parkplatz automatisch vergeben',
+            `Parkplatz ${bestMatch.spotId}, ${timeRangeStr}: an ${requesterUsername} vergeben`,
+            { type: 'auto_match_offerer', requestId: reqData.id, spotId: bestMatch.spotId, requestedBy: reqData.requestedBy },
+          );
+        } catch (e) {
+          console.log('Push send (auto_match_offerer) failed:', e);
+        }
+      }
+    } catch (e) {
+      console.error('[onAvailabilityUpdated] Matching failed:', e);
+    }
+  },
+);
+
 /**
  * Recompute coverage whenever an offer gets accepted/withdrawn.
  * A request becomes fulfilled ONLY when accepted offers cover the full [from, until] window without gaps.
@@ -700,6 +992,37 @@ exports.onOfferUpdatedV2 = onDocumentUpdated(
           }
         });
         await batch.commit();
+      }
+    }
+
+    // If offer was updated (from/until changed) and is still active, check if it became a full offer
+    const afterFrom = after.from?.toDate ? after.from.toDate() : null;
+    const afterUntil = after.until?.toDate ? after.until.toDate() : null;
+    if (afterStatus === 'active' && afterFrom && afterUntil) {
+      const isFull = afterFrom.getTime() <= reqFrom.getTime() && afterUntil.getTime() >= reqUntil.getTime();
+      if (isFull && (!reqData.offeredSpotId || reqData.fullOfferId === offerId)) {
+        await reqRef.set(
+          {
+            offeredBy: after.offererId,
+            offeredSpotId: after.spotId,
+            offeredAt: admin.firestore.FieldValue.serverTimestamp(),
+            fullOfferId: offerId,
+          },
+          {merge: true},
+        );
+        const offersCol = reqRef.collection('offers');
+        const offersSnapStandby = await offersCol.get();
+        const batchStandby = admin.firestore().batch();
+        offersSnapStandby.docs.forEach((d) => {
+          if (d.id === offerId) return;
+          const st = d.get('status') || 'active';
+          if (st !== 'active') return;
+          batchStandby.update(d.ref, {
+            status: 'standby',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+        await batchStandby.commit();
       }
     }
 

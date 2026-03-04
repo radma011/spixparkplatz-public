@@ -208,27 +208,32 @@ service cloud.firestore {
         && request.resource.data.until is timestamp;
 
       // Offer updates:
-      // - offerer can withdraw their own offer (only status/updatedAt)
+      // - offerer can withdraw their own offer (only status/updatedAt/withdrawnBy/withdrawnReason)
+      // - offerer can update time window (only from/until/updatedAt) when availability was extended
       // - requester can accept an offer (only status/updatedAt)
       allow update: if isAuthenticated()
         && (
           (
             resource.data.offererId == request.auth.uid
-            && request.resource.data.status == 'withdrawn'
+            && (
+              (request.resource.data.status == 'withdrawn'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'status', 'updatedAt', 'withdrawnBy', 'withdrawnReason'
+                ]))
+              ||
+              (request.resource.data.from is timestamp
+                && request.resource.data.until is timestamp
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['from', 'until', 'updatedAt']))
+            )
           )
           ||
           (
             requesterIdForRequest(requestId) == request.auth.uid
             && resource.data.status == 'active'
             && request.resource.data.status == 'accepted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
           )
-        )
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'updatedAt',
-          'withdrawnBy',
-          'withdrawnReason'
-        ]);
+        );
 
       allow delete: if false;
     }
@@ -287,6 +292,7 @@ service cloud.firestore {
           'matchedRequestId',
           'username',
           'phone',
+          'autoOffer',
           'updatedAt'
         ]);
       

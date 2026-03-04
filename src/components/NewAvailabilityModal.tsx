@@ -403,7 +403,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
                 </TouchableOpacity>
               </View>
             </View>
-            {/* iOS Date Pickers - render inline spinner (no extra field) */}
+            {/* iOS & Web Date Pickers - render inline (spinner on iOS, native input on Web) */}
             {Platform.OS === 'ios' && showStartDatePicker && (
               <View style={[
                 inputStyles.pickerContainer,
@@ -435,6 +435,49 @@ const NewAvailabilityModal: React.FC<Props> = ({
                 />
               </View>
             )}
+            {Platform.OS === 'web' && showStartDatePicker && (
+              <View
+                style={[
+                  inputStyles.pickerContainer,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.border,
+                    marginTop: 8,
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                  },
+                ]}>
+                {/* @ts-ignore web-only input */}
+                <input
+                  type="date"
+                  value={(() => {
+                    const d = startDate;
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                  })()}
+                  min={(() => {
+                    const d = new Date();
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                  })()}
+                  onChange={(e: any) => {
+                    const value = e.target.value as string;
+                    if (!value) return;
+                    const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                    if (!year || !month || !day) return;
+                    const next = new Date(startDate);
+                    next.setFullYear(year, month - 1, day);
+                    setStartDate(next);
+                    if (endDate) {
+                      const adjusted = adjustDateOnEndChange(next, endDate, 0);
+                      setEndDate(adjusted);
+                    }
+                  }}
+                  style={{width: '100%', padding: 8, fontSize: 14}}
+                />
+              </View>
+            )}
             {Platform.OS === 'ios' && showEndDatePicker && (
               <View style={[
                 inputStyles.pickerContainer,
@@ -463,6 +506,49 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     }
                   }}
                   style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {Platform.OS === 'web' && showEndDatePicker && (
+              <View
+                style={[
+                  inputStyles.pickerContainer,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.border,
+                    marginTop: 8,
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                  },
+                ]}>
+                {/* @ts-ignore web-only input */}
+                <input
+                  type="date"
+                  value={(() => {
+                    const d = endDate || startDate;
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                  })()}
+                  min={(() => {
+                    const d = startDate;
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                  })()}
+                  onChange={(e: any) => {
+                    const value = e.target.value as string;
+                    if (!value) return;
+                    const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                    if (!year || !month || !day) return;
+                    const picked = new Date(startDate);
+                    picked.setFullYear(year, month - 1, day);
+                    if (picked < startDate) {
+                      setEndDate(startDate);
+                    } else {
+                      setEndDate(picked);
+                    }
+                  }}
+                  style={{width: '100%', padding: 8, fontSize: 14}}
                 />
               </View>
             )}
@@ -561,7 +647,7 @@ const NewAvailabilityModal: React.FC<Props> = ({
                 </TouchableOpacity>
               </View>
             </View>
-            {/* iOS Time Pickers - render inline spinner (no extra field) */}
+            {/* iOS & Web Time Pickers - render inline (spinner on iOS, native input on Web) */}
             {Platform.OS === 'ios' && showStartTimePicker && (
               <View style={[
                 inputStyles.pickerContainer,
@@ -595,6 +681,50 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     }
                   }}
                   style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {Platform.OS === 'web' && showStartTimePicker && (
+              <View
+                style={[
+                  inputStyles.pickerContainer,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.border,
+                    marginTop: 8,
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                  },
+                ]}>
+                {/* @ts-ignore web-only input */}
+                <input
+                  type="time"
+                  step={900}
+                  value={(() => {
+                    const d = startTime;
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                  })()}
+                  onChange={(e: any) => {
+                    const value = e.target.value as string;
+                    if (!value) return;
+                    const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                    if (h == null || m == null) return;
+                    const time = new Date(startTime);
+                    time.setHours(h, m, 0, 0);
+                    setStartTime(time);
+                    const startTimeOnly = new Date(startDate);
+                    startTimeOnly.setHours(time.getHours(), time.getMinutes(), 0, 0);
+                    const endTimeOnly = new Date(startDate);
+                    endTimeOnly.setHours(endTime.getHours(), endTime.getMinutes(), 0, 0);
+                    if (endTimeOnly <= startTimeOnly) {
+                      const adjustedEndTime = new Date(startTimeOnly);
+                      adjustedEndTime.setHours(time.getHours() + 1, time.getMinutes(), 0, 0);
+                      setEndTime(adjustedEndTime);
+                    }
+                  }}
+                  style={{width: '100%', padding: 8, fontSize: 14}}
                 />
               </View>
             )}
@@ -633,6 +763,51 @@ const NewAvailabilityModal: React.FC<Props> = ({
                     }
                   }}
                   style={[inputStyles.picker, {width: '100%', maxWidth: '100%'}]}
+                />
+              </View>
+            )}
+            {Platform.OS === 'web' && showEndTimePicker && (
+              <View
+                style={[
+                  inputStyles.pickerContainer,
+                  {
+                    backgroundColor: colors.surface2,
+                    borderColor: colors.border,
+                    marginTop: 8,
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                  },
+                ]}>
+                {/* @ts-ignore web-only input */}
+                <input
+                  type="time"
+                  step={900}
+                  value={(() => {
+                    const d = endTime;
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                  })()}
+                  onChange={(e: any) => {
+                    const value = e.target.value as string;
+                    if (!value) return;
+                    const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                    if (h == null || m == null) return;
+                    const picked = new Date(endTime);
+                    picked.setHours(h, m, 0, 0);
+                    const startTimeOnly = new Date(startDate);
+                    startTimeOnly.setHours(startTime.getHours(), startTime.getMinutes(), 0, 0);
+                    const endTimeOnly = new Date(startDate);
+                    endTimeOnly.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+                    if (endTimeOnly <= startTimeOnly) {
+                      const adjustedEndTime = new Date(startTimeOnly);
+                      adjustedEndTime.setHours(startTime.getHours() + 1, startTime.getMinutes(), 0, 0);
+                      setEndTime(adjustedEndTime);
+                    } else {
+                      setEndTime(picked);
+                    }
+                  }}
+                  style={{width: '100%', padding: 8, fontSize: 14}}
                 />
               </View>
             )}
@@ -836,6 +1011,39 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             }
                           }}
                         />
+                      ) : Platform.OS === 'web' ? (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          {/* @ts-ignore web-only input */}
+                          <input
+                            type="date"
+                            value={(() => {
+                              const d = fromDateTime;
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                            })()}
+                            min={(() => {
+                              const d = new Date();
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                            })()}
+                            onChange={(e: any) => {
+                              const value = e.target.value as string;
+                              if (!value) return;
+                              const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                              if (!year || !month || !day) return;
+                              const picked = new Date(fromDateTime);
+                              picked.setFullYear(year, month - 1, day);
+                              const result = adjustDateKeepingTime(picked, fromDateTime, untilDateTime, 1);
+                              setFromDateTime(result.adjusted);
+                              setUntilDateTime(result.other);
+                            }}
+                            style={{width: '100%', padding: 8, fontSize: 14}}
+                          />
+                        </View>
                       ) : (
                         <View
                           style={[
@@ -876,6 +1084,35 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             }
                           }}
                         />
+                      ) : Platform.OS === 'web' ? (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          {/* @ts-ignore web-only input */}
+                          <input
+                            type="time"
+                            step={900}
+                            value={(() => {
+                              const d = fromDateTime;
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                            })()}
+                            onChange={(e: any) => {
+                              const value = e.target.value as string;
+                              if (!value) return;
+                              const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                              if (h == null || m == null) return;
+                              const picked = new Date(fromDateTime);
+                              picked.setHours(h, m, 0, 0);
+                              const result = adjustTimeKeepingDate(fromDateTime, picked, untilDateTime, 1);
+                              setFromDateTime(result.adjusted);
+                              setUntilDateTime(result.other);
+                            }}
+                            style={{width: '100%', padding: 8, fontSize: 14}}
+                          />
+                        </View>
                       ) : (
                         <View
                           style={[
@@ -980,6 +1217,40 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             }
                           }}
                         />
+                      ) : Platform.OS === 'web' ? (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          {/* @ts-ignore web-only input */}
+                          <input
+                            type="date"
+                            value={(() => {
+                              const d = untilDateTime;
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                            })()}
+                            min={(() => {
+                              const d = fromDateTime;
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                            })()}
+                            onChange={(e: any) => {
+                              const value = e.target.value as string;
+                              if (!value) return;
+                              const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                              if (!year || !month || !day) return;
+                              const picked = new Date(untilDateTime);
+                              picked.setFullYear(year, month - 1, day);
+                              const next = new Date(picked);
+                              next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
+                              const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                              setUntilDateTime(adjusted);
+                            }}
+                            style={{width: '100%', padding: 8, fontSize: 14}}
+                          />
+                        </View>
                       ) : (
                         <View
                           style={[
@@ -1022,6 +1293,35 @@ const NewAvailabilityModal: React.FC<Props> = ({
                             }
                           }}
                         />
+                      ) : Platform.OS === 'web' ? (
+                        <View
+                          style={[
+                            inputStyles.pickerContainer,
+                            {backgroundColor: colors.surface2, borderColor: colors.border},
+                          ]}>
+                          {/* @ts-ignore web-only input */}
+                          <input
+                            type="time"
+                            step={900}
+                            value={(() => {
+                              const d = untilDateTime;
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                            })()}
+                            onChange={(e: any) => {
+                              const value = e.target.value as string;
+                              if (!value) return;
+                              const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                              if (h == null || m == null) return;
+                              const picked = new Date(untilDateTime);
+                              picked.setHours(h, m, 0, 0);
+                              const next = new Date(picked);
+                              const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                              setUntilDateTime(adjusted);
+                            }}
+                            style={{width: '100%', padding: 8, fontSize: 14}}
+                          />
+                        </View>
                       ) : (
                         <View
                           style={[
