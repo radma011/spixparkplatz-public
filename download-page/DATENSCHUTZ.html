@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Datenschutzerklärung für die spixparkplatz App">
+    <title>Datenschutzerklärung – SpixParkplatz</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --text: #fafafa;
+            --muted: #a1a1aa;
+            --accent: #3b82f6;
+            --radius: 12px;
+            --border: rgba(255, 255, 255, 0.08);
+            --surface2: rgba(255, 255, 255, 0.06);
+        }
+
+        body.light-mode {
+            --bg: #f5f5f5;
+            --surface: #ffffff;
+            --text: #111827;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --surface2: #f3f4f6;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        header .logo {
+            width: 88px;
+            height: 88px;
+            border-radius: 18px;
+            margin-bottom: 1.5rem;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            object-fit: contain;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        header .subtitle {
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+
+        header .back-link {
+            display: inline-block;
+            margin-top: 0.75rem;
+            font-size: 0.8125rem;
+            color: var(--muted);
+            text-decoration: none;
+            transition: color 0.15s ease;
+        }
+
+        header .back-link:hover {
+            color: var(--text);
+        }
+
+        .content {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+        }
+
+        h2 {
+            color: var(--accent);
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 2rem;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h2:first-child {
+            margin-top: 0;
+        }
+
+        h3 {
+            color: var(--text);
+            font-size: 1.0625rem;
+            font-weight: 600;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+
+        ul, ol {
+            margin-left: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        strong {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .highlight-box {
+            background: var(--surface2);
+            border-left: 4px solid var(--accent);
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+        }
+
+        .contact-info {
+            background: var(--surface2);
+            padding: 1.25rem;
+            border-radius: var(--radius);
+            margin-top: 2rem;
+            border: 1px solid var(--border);
+        }
+
+        .contact-info p {
+            margin-bottom: 0.5rem;
+        }
+
+        .contact-info strong {
+            display: inline-block;
+            min-width: 120px;
+            color: var(--accent);
+        }
+
+        .last-updated {
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .toggle-theme {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            transition: transform 0.2s ease, opacity 0.15s ease;
+            z-index: 1000;
+        }
+
+        .toggle-theme:hover {
+            transform: scale(1.05);
+            opacity: 0.95;
+        }
+
+        .toggle-theme:active {
+            transform: scale(0.98);
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .content {
+                padding: 1.25rem;
+            }
+
+            header h1 {
+                font-size: 1.25rem;
+            }
+
+            h2 {
+                font-size: 1.125rem;
+            }
+
+            .toggle-theme {
+                width: 48px;
+                height: 48px;
+                font-size: 20px;
+                bottom: 15px;
+                right: 15px;
+            }
+        }
+
+        @media print {
+            .toggle-theme {
+                display: none;
+            }
+
+            .content {
+                box-shadow: none;
+            }
+        }
+
+        /* Data Management Styles */
+        #dataManagementSection input {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        #dataManagementSection button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #dataManagementSection pre {
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            background: var(--surface2);
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+        }
+
+        #dataManagementSection h4 {
+            margin-bottom: 0.5rem;
+            color: var(--accent);
+            font-size: 1rem;
+        }
+
+        .login-config-missing {
+            background: var(--surface2);
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <button class="toggle-theme" onclick="toggleTheme()" aria-label="Theme wechseln">🌓</button>
+
+    <header>
+        <img src="logo.png" alt="SpixParkplatz" class="logo" width="88" height="88">
+        <h1>SpixParkplatz</h1>
+        <p class="subtitle">Datenschutzerklärung</p>
+        <a href="index.html" class="back-link">← App herunterladen</a>
+    </header>
+
+    <div class="container">
+        <div class="content">
+            <p class="last-updated"><strong>Stand:</strong> Januar 2025</p>
+
+            <h2>1. Verantwortlicher</h2>
+            <p>Verantwortlicher für die Datenverarbeitung im Sinne der Datenschutz-Grundverordnung (DSGVO) ist:</p>
+            <div class="highlight-box">
+                <p><strong>Manos Radisoglou</strong></p>
+                <p>Spixstr. 27, 81539 München</p>
+                <p>E-Mail: info@aviationsapps.com</p>
+                
+            </div>
+
+            <h2>2. Allgemeine Informationen zur Datenverarbeitung</h2>
+            <p>Diese Datenschutzerklärung informiert Sie über die Art, den Umfang und den Zweck der Verarbeitung von personenbezogenen Daten in der mobilen Anwendung "spixparkplatz" (nachfolgend "App" genannt).</p>
+
+            <h2>3. Erhobene Daten</h2>
+            
+            <h3>3.1 Registrierungs- und Kontodaten</h3>
+            <p>Bei der Registrierung und Nutzung der App werden folgende personenbezogene Daten erfasst:</p>
+            <ul>
+                <li><strong>E-Mail-Adresse</strong>: Erforderlich für die Registrierung und Anmeldung</li>
+                <li><strong>Passwort</strong>: Wird verschlüsselt in Firebase Authentication gespeichert</li>
+                <li><strong>Benutzername</strong>: Wird öffentlich angezeigt, um Sie in der App zu identifizieren</li>
+                <li><strong>Telefonnummer</strong>: Optional, kann bei der Registrierung angegeben werden</li>
+                <li><strong>Parkplatz-Nummern</strong>: Bis zu 3 Parkplatz-Nummern, die Sie besitzen</li>
+                <li><strong>Parkanlagen-Code (Facility Code)</strong>: Code der Parkanlage, der Ihrem Konto zugeordnet ist</li>
+            </ul>
+
+            <h3>3.2 Nutzungsdaten</h3>
+            <p>Während der Nutzung der App werden folgende Daten erfasst:</p>
+            <ul>
+                <li><strong>Parkplatz-Anfragen</strong>: Von Ihnen erstellte Anfragen nach Parkplätzen (Zeitraum, Kommentare)</li>
+                <li><strong>Parkplatz-Angebote</strong>: Von Ihnen erstellte Angebote für Parkplätze</li>
+                <li><strong>Kommentare</strong>: Kommentare zu Parkplatz-Anfragen</li>
+                <li><strong>FCM-Token</strong>: Token für Push-Benachrichtigungen (Firebase Cloud Messaging)</li>
+                <li><strong>Geräteinformationen</strong>: Automatisch erfasste Informationen über Ihr Gerät für Push-Benachrichtigungen</li>
+            </ul>
+
+            <h3>3.3 Technische Daten</h3>
+            <ul>
+                <li><strong>Geräte-ID</strong>: Zur Identifikation Ihres Geräts für Push-Benachrichtigungen</li>
+                <li><strong>Betriebssystem</strong>: iOS oder Android</li>
+                <li><strong>App-Version</strong>: Version der installierten App</li>
+            </ul>
+
+            <h2>4. Zweck der Datenverarbeitung</h2>
+            <p>Die erfassten Daten werden für folgende Zwecke verarbeitet:</p>
+
+            <h3>4.1 Bereitstellung der App-Funktionalität</h3>
+            <ul>
+                <li>Authentifizierung und Verwaltung Ihres Benutzerkontos</li>
+                <li>Erstellung und Verwaltung von Parkplatz-Anfragen und -Angeboten</li>
+                <li>Kommunikation zwischen Benutzern innerhalb der App</li>
+                <li>Zuordnung zu einer bestimmten Parkanlage (Multi-Tenant-System)</li>
+            </ul>
+
+            <h3>4.2 Push-Benachrichtigungen</h3>
+            <ul>
+                <li>Benachrichtigungen über neue Parkplatz-Angebote für Ihre Anfragen</li>
+                <li>Benachrichtigungen über neue Anfragen, die zu Ihren Parkplätzen passen</li>
+                <li>Erinnerungen vor Ablauf von Parkplatz-Zeiträumen</li>
+                <li>Benachrichtigungen über Statusänderungen (Annahme, Stornierung, etc.)</li>
+            </ul>
+
+            <h3>4.3 Verbesserung der App</h3>
+            <ul>
+                <li>Analyse der App-Nutzung zur Verbesserung der Funktionalität</li>
+                <li>Fehlerbehebung und technische Wartung</li>
+            </ul>
+
+            <h2>5. Rechtsgrundlage der Datenverarbeitung</h2>
+            <p>Die Verarbeitung Ihrer personenbezogenen Daten erfolgt auf Grundlage von:</p>
+            <ul>
+                <li><strong>Art. 6 Abs. 1 lit. a DSGVO (Einwilligung)</strong>: Durch die Nutzung der App und die Registrierung geben Sie Ihre Einwilligung zur Datenverarbeitung</li>
+                <li><strong>Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung)</strong>: Zur Erfüllung der Nutzungsbedingungen und Bereitstellung der App-Funktionalität</li>
+                <li><strong>Art. 6 Abs. 1 lit. f DSGVO (Berechtigtes Interesse)</strong>: Zur Gewährleistung der Sicherheit und Funktionalität der App</li>
+            </ul>
+
+            <h2>6. Datenweitergabe</h2>
+
+            <h3>6.1 Firebase Services (Google)</h3>
+            <p>Die App nutzt folgende Firebase-Services von Google Ireland Limited (Gordon House, Barrow Street, Dublin 4, Irland):</p>
+            <ul>
+                <li><strong>Firebase Authentication</strong>: Zur Authentifizierung und Verwaltung von Benutzerkonten</li>
+                <li><strong>Cloud Firestore</strong>: Zur Speicherung Ihrer Daten in einer Datenbank</li>
+                <li><strong>Firebase Cloud Functions</strong>: Zur Verarbeitung von Backend-Logik und Push-Benachrichtigungen</li>
+                <li><strong>Firebase Cloud Messaging (FCM)</strong>: Zur Übermittlung von Push-Benachrichtigungen</li>
+            </ul>
+            <p>Die Daten werden auf Servern in der Europäischen Union (EU) gespeichert. Google verarbeitet die Daten als Auftragsverarbeiter gemäß Art. 28 DSGVO.</p>
+            <p>Weitere Informationen zur Datenverarbeitung durch Google finden Sie in der <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Datenschutzerklärung von Google</a>.</p>
+
+            <h3>6.2 Weitergabe an andere Benutzer</h3>
+            <p>Folgende Daten werden anderen Benutzern innerhalb derselben Parkanlage (gleicher Facility Code) angezeigt:</p>
+            <ul>
+                <li><strong>Benutzername</strong>: Wird bei Parkplatz-Anfragen, Angeboten und Kommentaren angezeigt</li>
+                <li><strong>Telefonnummer</strong>: Nur wenn Sie diese in Ihrem Profil freigegeben haben</li>
+                <li><strong>Parkplatz-Nummern</strong>: Werden bei Angeboten angezeigt</li>
+                <li><strong>Parkplatz-Anfragen und Angebote</strong>: Inklusive Zeiträume und Kommentare</li>
+            </ul>
+
+            <h3>6.3 Keine Weitergabe an Dritte</h3>
+            <p>Ihre Daten werden nicht an Dritte verkauft oder für Marketingzwecke verwendet. Eine Weitergabe erfolgt nur:</p>
+            <ul>
+                <li>An andere Benutzer innerhalb derselben Parkanlage (wie oben beschrieben)</li>
+                <li>An Google als Dienstleister (Firebase Services)</li>
+                <li>Wenn gesetzlich vorgeschrieben oder zur Durchsetzung unserer Rechte</li>
+            </ul>
+
+            <h2>7. Datenspeicherung und -löschung</h2>
+
+            <h3>7.1 Speicherdauer</h3>
+            <ul>
+                <li><strong>Aktive Konten</strong>: Ihre Daten werden gespeichert, solange Ihr Konto aktiv ist</li>
+                <li><strong>Gelöschte Konten</strong>: Nach Löschung Ihres Kontos werden Ihre personenbezogenen Daten innerhalb von 30 Tagen gelöscht</li>
+                <li><strong>Archivierte Anfragen</strong>: Erfüllte Parkplatz-Anfragen werden nach 3 Stunden automatisch archiviert und nach 14 Tagen gelöscht</li>
+            </ul>
+
+            <h3>7.2 Löschung Ihrer Daten</h3>
+            <p>Sie können Ihr Konto und alle damit verbundenen Daten jederzeit löschen:</p>
+            <ol>
+                <li>Öffnen Sie die App</li>
+                <li>Gehen Sie zu Ihrem Profil</li>
+                <li>Wählen Sie "Konto löschen"</li>
+                <li>Bestätigen Sie die Löschung</li>
+            </ol>
+            <p>Nach der Löschung werden alle Ihre personenbezogenen Daten gelöscht, sofern keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</p>
+
+            <h2>8. Ihre Rechte</h2>
+            <p>Gemäß der DSGVO haben Sie folgende Rechte:</p>
+
+            <h3>8.1 Auskunftsrecht (Art. 15 DSGVO)</h3>
+            <p>Sie haben das Recht, Auskunft über die von uns gespeicherten personenbezogenen Daten zu erhalten.</p>
+
+            <h3>8.2 Recht auf Berichtigung (Art. 16 DSGVO)</h3>
+            <p>Sie haben das Recht, die Berichtigung unrichtiger oder die Vervollständigung unvollständiger Daten zu verlangen.</p>
+
+            <h3>8.3 Recht auf Löschung (Art. 17 DSGVO)</h3>
+            <p>Sie haben das Recht, die Löschung Ihrer personenbezogenen Daten zu verlangen, sofern keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</p>
+
+            <h3>8.4 Recht auf Einschränkung der Verarbeitung (Art. 18 DSGVO)</h3>
+            <p>Sie haben das Recht, die Einschränkung der Verarbeitung Ihrer personenbezogenen Daten zu verlangen.</p>
+
+            <h3>8.5 Recht auf Datenübertragbarkeit (Art. 20 DSGVO)</h3>
+            <p>Sie haben das Recht, Ihre personenbezogenen Daten in einem strukturierten, gängigen und maschinenlesbaren Format zu erhalten.</p>
+
+            <h3>8.6 Widerspruchsrecht (Art. 21 DSGVO)</h3>
+            <p>Sie haben das Recht, der Verarbeitung Ihrer personenbezogenen Daten zu widersprechen.</p>
+
+            <h3>8.7 Widerruf der Einwilligung</h3>
+            <p>Sie haben das Recht, Ihre erteilte Einwilligung zur Datenverarbeitung jederzeit zu widerrufen. Die Rechtmäßigkeit der bis zum Widerruf erfolgten Datenverarbeitung bleibt davon unberührt.</p>
+
+            <h3>8.8 Beschwerderecht</h3>
+            <p>Sie haben das Recht, sich bei einer Aufsichtsbehörde über die Verarbeitung Ihrer personenbezogenen Daten zu beschweren. Die zuständige Aufsichtsbehörde ist die des Bundeslandes, in dem Sie wohnen oder arbeiten.</p>
+
+            <h2>9. Datensicherheit</h2>
+            <p>Wir setzen technische und organisatorische Maßnahmen ein, um Ihre Daten vor unbefugtem Zugriff, Verlust, Zerstörung oder Änderung zu schützen:</p>
+            <ul>
+                <li><strong>Verschlüsselung</strong>: Passwörter werden verschlüsselt gespeichert</li>
+                <li><strong>Firebase Security Rules</strong>: Zugriffskontrollen auf Datenbankebene</li>
+                <li><strong>HTTPS</strong>: Alle Datenübertragungen erfolgen verschlüsselt</li>
+                <li><strong>Regelmäßige Updates</strong>: Sicherheitsupdates werden regelmäßig eingespielt</li>
+            </ul>
+
+            <h2>10. Lokale Datenspeicherung</h2>
+            <p>Die App speichert folgende Daten lokal auf Ihrem Gerät:</p>
+            <ul>
+                <li><strong>Benutzer-ID</strong>: Zur Identifikation des angemeldeten Benutzers</li>
+                <li><strong>FCM-Token</strong>: Zur Übermittlung von Push-Benachrichtigungen</li>
+            </ul>
+            <p>Diese Daten werden in der App gespeichert und nicht an Dritte weitergegeben.</p>
+
+            <h2>11. Cookies und Tracking</h2>
+            <p>Die App verwendet keine Cookies oder Tracking-Technologien von Drittanbietern.</p>
+
+            <h2>12. Minderjährige</h2>
+            <p>Die App ist nicht für Personen unter 16 Jahren bestimmt. Wir erfassen wissentlich keine personenbezogenen Daten von Minderjährigen.</p>
+
+            <h2>13. Änderungen der Datenschutzerklärung</h2>
+            <p>Wir behalten uns vor, diese Datenschutzerklärung anzupassen, um sie an geänderte Rechtslagen oder bei Änderungen der App sowie der Datenverarbeitung anzupassen. Die aktuelle Version ist jederzeit in der App abrufbar.</p>
+
+            <h2>14. Ihre Daten verwalten</h2>
+            <div class="highlight-box" id="dataManagementSection">
+                <p><strong>DSGVO-Rechte ausüben:</strong></p>
+                <p>Sie können sich hier einloggen, um alle Ihre gespeicherten Daten einzusehen und zu löschen.</p>
+                
+                <div id="loginConfigMissing" class="login-config-missing" style="margin-top: 20px; display: none; padding: 16px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                    <p style="margin: 0;"><strong>Hinweis:</strong> Die Anmeldung ist auf dieser Seite nicht konfiguriert. Bitte legen Sie <code>firebase-config.js</code> im gleichen Ordner an (Kopie von <code>firebase-config.example.js</code> mit Ihren Firebase-Daten aus der Firebase Console).</p>
+                </div>
+                <div id="loginSection" style="margin-top: 20px;">
+                    <h3 style="margin-top: 0;">Anmelden</h3>
+                    <form onsubmit="event.preventDefault(); handleLogin();" style="display: flex; flex-direction: column; gap: 10px; max-width: 400px;">
+                        <input type="email" id="loginEmail" placeholder="E-Mail-Adresse" autocomplete="email" required style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px;">
+                        <input type="password" id="loginPassword" placeholder="Passwort" autocomplete="current-password" required style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px;">
+                        <button type="submit" id="loginButton" style="padding: 12px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">Anmelden</button>
+                    </form>
+                    <p id="loginError" style="color: #dc2626; margin-top: 10px; display: none;"></p>
+                </div>
+
+                <div id="userDataSection" style="display: none; margin-top: 30px;">
+                    <h3>Ihre gespeicherten Daten</h3>
+                    <div id="userDataContent"></div>
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
+                        <button onclick="handleDeleteAccount()" id="deleteButton" style="padding: 12px 24px; background: #dc2626; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">Alle Daten löschen</button>
+                        <button onclick="handleLogout()" style="padding: 12px 24px; background: var(--muted); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-left: 10px;">Abmelden</button>
+                    </div>
+                    <p id="deleteError" style="color: #dc2626; margin-top: 10px; display: none;"></p>
+                </div>
+            </div>
+
+            <h2>15. Kontakt</h2>
+            <div class="contact-info">
+                <p>Bei Fragen zum Datenschutz oder zur Ausübung Ihrer Rechte können Sie uns kontaktieren:</p>
+                <p><strong>E-Mail:</strong> info@aviationsapps.com</p>
+                <p><strong>Adresse:</strong> Spixstr. 27, 81539 München</p>
+            </div>
+
+            <!-- <div class="highlight-box" style="margin-top: 30px;">
+                <p><strong>Hinweis:</strong> Diese Datenschutzerklärung wurde mit größter Sorgfalt erstellt. Bitte passen Sie die Platzhalter ([Ihr Name/Unternehmen], [Ihre Adresse], etc.) entsprechend an und lassen Sie die Datenschutzerklärung gegebenenfalls von einem Rechtsanwalt prüfen, bevor Sie sie veröffentlichen.</p>
+            </div> -->
+        </div>
+    </div>
+
+    <!-- Firebase Configuration (loaded from external file) -->
+    <script src="firebase-config.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        if (!window.firebaseConfig) {
+            window.firebaseAuth = null;
+            document.addEventListener('DOMContentLoaded', function () {
+                var el = document.getElementById('loginConfigMissing');
+                var section = document.getElementById('loginSection');
+                if (el) el.style.display = 'block';
+                if (section) section.style.display = 'none';
+            });
+            throw new Error('Firebase config missing. Create firebase-config.js from firebase-config.example.js.');
+        }
+
+        const app = initializeApp(window.firebaseConfig);
+        const auth = getAuth(app);
+        window.firebaseAuth = auth;
+        window.dispatchEvent(new Event('firebase-auth-ready'));
+    </script>
+
+    <script>
+        // Load from external config file (already set in firebase-config.js)
+        // Use window properties directly or provide fallbacks
+        const PROJECT_ID = window.PROJECT_ID || 'parkplatz-38fe3';
+        const REGION = window.REGION || 'europe-west3';
+
+        // Theme Toggle
+        function toggleTheme() {
+            document.body.classList.toggle('light-mode');
+            localStorage.setItem('theme', document.body.classList.contains('light-mode') ? 'light' : 'dark');
+        }
+
+        // Load saved theme (default: dark, wie index.html)
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.classList.add('light-mode');
+        }
+
+        // Sobald Firebase Auth bereit ist: Auth-State prüfen (z. B. bereits eingeloggt)
+        function subscribeAuth() {
+            if (!window.firebaseAuth) return;
+            window.firebaseAuth.onAuthStateChanged(function (user) {
+                if (user && typeof loadUserData === 'function') {
+                    loadUserData(user);
+                }
+            });
+        }
+        if (window.firebaseAuth) subscribeAuth();
+        window.addEventListener('firebase-auth-ready', subscribeAuth);
+
+        // Login Handler
+        async function handleLogin() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('loginError');
+            const loginButton = document.getElementById('loginButton');
+
+            if (!window.firebaseAuth) {
+                errorEl.textContent = 'Firebase ist nicht konfiguriert. Bitte firebase-config.js anlegen (siehe Hinweis oben).';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            if (!email || !password) {
+                errorEl.textContent = 'Bitte geben Sie E-Mail und Passwort ein.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            loginButton.disabled = true;
+            loginButton.textContent = 'Wird angemeldet...';
+            errorEl.style.display = 'none';
+
+            try {
+                const { signInWithEmailAndPassword } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
+                const userCredential = await signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                await loadUserData(userCredential.user);
+            } catch (error) {
+                errorEl.textContent = error.message || 'Anmeldung fehlgeschlagen. Bitte überprüfen Sie Ihre Anmeldedaten.';
+                errorEl.style.display = 'block';
+                loginButton.disabled = false;
+                loginButton.textContent = 'Anmelden';
+            }
+        }
+
+        // Load User Data
+        async function loadUserData(user) {
+            const loginSection = document.getElementById('loginSection');
+            const userDataSection = document.getElementById('userDataSection');
+            const userDataContent = document.getElementById('userDataContent');
+
+            loginSection.style.display = 'none';
+            userDataSection.style.display = 'block';
+
+            try {
+                const token = await user.getIdToken();
+                const response = await fetch(`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/getUserDataHttp`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayUserData(data);
+                } else {
+                    userDataContent.innerHTML = `<p style="color: #dc2626;">Fehler beim Laden der Daten: ${data.error?.message || 'Unbekannter Fehler'}</p>`;
+                }
+            } catch (error) {
+                userDataContent.innerHTML = `<p style="color: #dc2626;">Fehler beim Laden der Daten: ${error.message}</p>`;
+            }
+        }
+
+        // Display User Data
+        function displayUserData(data) {
+            const userDataContent = document.getElementById('userDataContent');
+            let html = '<div style="display: flex; flex-direction: column; gap: 20px;">';
+
+            // User Info
+            if (data.user) {
+                html += '<div><h4>Kontoinformationen</h4><pre style="background: var(--surface2); padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px;">' + JSON.stringify(data.user, null, 2) + '</pre></div>';
+            }
+
+            // Requests
+            if (data.requests && data.requests.length > 0) {
+                html += `<div><h4>Parkplatz-Anfragen (${data.requests.length})</h4><pre style="background: var(--surface2); padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px;">` + JSON.stringify(data.requests, null, 2) + '</pre></div>';
+            }
+
+            // Offers
+            if (data.offers && data.offers.length > 0) {
+                html += `<div><h4>Parkplatz-Angebote (${data.offers.length})</h4><pre style="background: var(--surface2); padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px;">` + JSON.stringify(data.offers, null, 2) + '</pre></div>';
+            }
+
+            // Comments
+            if (data.comments && data.comments.length > 0) {
+                html += `<div><h4>Kommentare (${data.comments.length})</h4><pre style="background: var(--surface2); padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px;">` + JSON.stringify(data.comments, null, 2) + '</pre></div>';
+            }
+
+            html += '</div>';
+            userDataContent.innerHTML = html;
+        }
+
+        // Delete Account
+        async function handleDeleteAccount() {
+            if (!confirm('Möchten Sie wirklich alle Ihre Daten unwiderruflich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) {
+                return;
+            }
+
+            if (!confirm('Sind Sie sicher? Alle Ihre Daten werden dauerhaft gelöscht.')) {
+                return;
+            }
+
+            const deleteButton = document.getElementById('deleteButton');
+            const errorEl = document.getElementById('deleteError');
+
+            deleteButton.disabled = true;
+            deleteButton.textContent = 'Wird gelöscht...';
+            errorEl.style.display = 'none';
+
+            try {
+                const user = window.firebaseAuth.currentUser;
+                if (!user) {
+                    throw new Error('Nicht angemeldet');
+                }
+
+                const token = await user.getIdToken();
+                const response = await fetch(`https://${REGION}-${PROJECT_ID}.cloudfunctions.net/deleteUserDataHttp`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('Alle Ihre Daten wurden erfolgreich gelöscht.');
+                    handleLogout();
+                } else {
+                    throw new Error(result.error?.message || 'Fehler beim Löschen');
+                }
+            } catch (error) {
+                errorEl.textContent = error.message || 'Fehler beim Löschen der Daten';
+                errorEl.style.display = 'block';
+                deleteButton.disabled = false;
+                deleteButton.textContent = 'Alle Daten löschen';
+            }
+        }
+
+        // Logout
+        async function handleLogout() {
+            try {
+                const { signOut } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
+                await signOut(window.firebaseAuth);
+                document.getElementById('loginSection').style.display = 'block';
+                document.getElementById('userDataSection').style.display = 'none';
+                document.getElementById('loginEmail').value = '';
+                document.getElementById('loginPassword').value = '';
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+
+        // Allow Enter key to submit login
+        document.addEventListener('DOMContentLoaded', () => {
+            const emailInput = document.getElementById('loginEmail');
+            const passwordInput = document.getElementById('loginPassword');
+            
+            if (emailInput && passwordInput) {
+                [emailInput, passwordInput].forEach(input => {
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            handleLogin();
+                        }
+                    });
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+

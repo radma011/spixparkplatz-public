@@ -101,4 +101,12 @@ export const buttonStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  // Kleine Icon-Buttons (z.B. Info-Icon neben Labels)
+  iconButtonSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

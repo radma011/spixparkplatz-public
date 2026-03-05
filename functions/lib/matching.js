@@ -470,6 +470,7 @@ async function isTimeWindowBlocked(admin, db, spotId, facilityCode, from, until,
 async function findBestMatchingAvailability(admin, db, request, availabilities) {
   const requestFrom = request.from;
   const requestUntil = request.until;
+  const allowPartialOffers = request.allowPartialOffers !== false;
   const allWindows = [];
   
   console.log(`[findBestMatchingAvailability] Checking ${availabilities.length} availabilities`);
@@ -497,6 +498,21 @@ async function findBestMatchingAvailability(admin, db, request, availabilities) 
       if (!overlaps(requestFrom, requestUntil, window.from, window.until)) {
         console.log(`[findBestMatchingAvailability] Window doesn't overlap`);
         continue;
+      }
+
+      // Wenn Teilangebote nicht erlaubt sind, nur Fenster zulassen,
+      // die den kompletten Request-Zeitraum abdecken.
+      if (!allowPartialOffers) {
+        const reqFromDate = requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom);
+        const reqUntilDate = requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil);
+        const winFromTime = window.from.getTime ? window.from.getTime() : new Date(window.from).getTime();
+        const winUntilTime = window.until.getTime ? window.until.getTime() : new Date(window.until).getTime();
+        const reqFromTime = reqFromDate.getTime();
+        const reqUntilTime = reqUntilDate.getTime();
+        if (winFromTime > reqFromTime || winUntilTime < reqUntilTime) {
+          console.log('[findBestMatchingAvailability] Skipping window because partial offers are disabled');
+          continue;
+        }
       }
       
       // Check if the REQUEST window (not the availability window) is blocked

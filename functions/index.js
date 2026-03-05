@@ -491,6 +491,7 @@ exports.onRequestCreatedV2 = onDocumentCreated(
         facilityCode: normalizedFacilityCode,
         from: requestFrom,
         until: requestUntil,
+        allowPartialOffers: data.allowPartialOffers !== false,
       };
       
       const bestMatch = await findBestMatchingAvailability(
@@ -690,6 +691,7 @@ exports.onAvailabilityCreatedV2 = onDocumentCreated(
           facilityCode,
           from: reqData.from,
           until: reqData.until,
+          allowPartialOffers: reqData.allowPartialOffers !== false,
         };
         const bestMatch = await findBestMatchingAvailability(admin, db, request, allAvailabilities);
         if (!bestMatch) {

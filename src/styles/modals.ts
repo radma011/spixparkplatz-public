@@ -35,8 +35,10 @@ export const modalStyles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   modalHeaderContent: {
+    flex: 1,
     marginTop: 10,
     marginBottom: 10,
+    paddingRight: 32, // Platz für das Schließen-Icon rechts, damit der Titel nicht „unter“ das X läuft
   },
   modalTitle: {
     fontSize: 22,
@@ -55,6 +57,10 @@ export const modalStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 20,
+  },
+  modalText: {
+    fontSize: 15,
+    lineHeight: 22,
   },
   modalFooter: {
     flexDirection: 'row',

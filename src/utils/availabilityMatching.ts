@@ -193,6 +193,7 @@ export async function findBestMatchingAvailability(
 ): Promise<AvailabilityTimeWindow | null> {
   const requestFrom = request.from;
   const requestUntil = request.until;
+  const allowPartialOffers = request.allowPartialOffers !== false;
   
   // Expand all availabilities into time windows
   const allWindows: AvailabilityTimeWindow[] = [];
@@ -219,6 +220,12 @@ export async function findBestMatchingAvailability(
     for (const window of windows) {
       if (!overlaps(requestFrom, requestUntil, window.from, window.until)) {
         continue;
+      }
+      // Wenn Teilangebote nicht erlaubt sind, nur Fenster zulassen,
+      // die den kompletten Request-Zeitraum abdecken.
+      if (!allowPartialOffers) {
+        if (window.from.getTime() > requestFrom.getTime()) continue;
+        if (window.until.getTime() < requestUntil.getTime()) continue;
       }
       
       // Check if this time window is already blocked

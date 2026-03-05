@@ -22,6 +22,7 @@ import Button from './common/Button';
 import {inputStyles} from '../styles/inputs';
 import {buttonStyles} from '../styles/buttons';
 import {modalStyles} from '../styles/modals';
+import PartialOffersNotAllowedModal from './PartialOffersNotAllowedModal';
 
 interface Props {
   visible: boolean;
@@ -51,6 +52,9 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSpotPicker, setShowSpotPicker] = useState(false);
   const [comment, setComment] = useState('');
+  const [showPartialNotAllowedInfo, setShowPartialNotAllowedInfo] = useState(false);
+
+  const selectedSpot = mySpots[spotIdx] ?? mySpots[0];
 
   // Reset when opening a different request
   React.useEffect(() => {
@@ -67,17 +71,12 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
     setIsSubmitting(false);
     setShowSpotPicker(false);
     setComment('');
+    setShowPartialNotAllowedInfo(false);
   }, [request?.id, visible]);
-
-  React.useEffect(() => {
-    console.log('[OfferModal] spotIdx changed to:', spotIdx);
-    console.log('[OfferModal] selectedSpot:', selectedSpot);
-  }, [spotIdx, selectedSpot]);
-
-  const selectedSpot = mySpots[spotIdx] ?? mySpots[0];
 
   const requestMin = request?.from ?? new Date(0);
   const requestMax = request?.until ?? new Date(0);
+  const partialOffersAllowed = request?.allowPartialOffers !== false;
 
   const clampToRequest = (d: Date) => {
     if (!request) return d;
@@ -337,11 +336,21 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setIsFull(false)}
+                onPress={() => {
+                  if (!partialOffersAllowed) {
+                    setShowPartialNotAllowedInfo(true);
+                    return;
+                  }
+                  setIsFull(false);
+                }}
                 style={[
                   styles.pill,
                   {backgroundColor: colors.surface2, borderColor: colors.border},
-                  !isFull && {backgroundColor: colors.brand, borderColor: colors.brand},
+                  !isFull && partialOffersAllowed && {
+                    backgroundColor: colors.brand,
+                    borderColor: colors.brand,
+                  },
+                  !partialOffersAllowed && {opacity: 0.5},
                 ]}>
                 <Text style={[inputStyles.pillText, {color: !isFull ? '#fff' : colors.text}]}>
                   Teilweise
@@ -622,6 +631,10 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
               style={{backgroundColor: colors.brand}}
             />
           </View>
+          <PartialOffersNotAllowedModal
+            visible={showPartialNotAllowedInfo}
+            onClose={() => setShowPartialNotAllowedInfo(false)}
+          />
           </View>
         </KeyboardAvoidingView>
       </View>

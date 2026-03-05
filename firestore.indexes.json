@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "offererId", "order": "ASCENDING" },
+        { "fieldPath": "spotId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

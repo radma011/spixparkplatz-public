@@ -6,6 +6,9 @@ export interface ParkingRequest {
   facilityCode: string; // Code der Parkanlage
   from: Date;
   until: Date;
+  // Ob der Suchende Teilangebote (gestückelte Angebote) akzeptiert.
+  // Wenn false, sollen nur vollständige Angebote erstellt werden.
+  allowPartialOffers?: boolean;
   offeredSpotId?: string;
   offeredBy?: string; // User ID
   offeredByUsername?: string; // Username für Anzeige

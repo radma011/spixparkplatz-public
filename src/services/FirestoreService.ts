@@ -3,6 +3,7 @@ import {getAuth, getIdToken} from '@react-native-firebase/auth';
 import {
   getFirestore,
   collection,
+  collectionGroup,
   query,
   where,
   orderBy,
@@ -12,6 +13,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  onSnapshot,
   Timestamp,
   FieldValue,
   FieldPath,
@@ -22,6 +24,16 @@ import {RequestOffer} from '../models/RequestOffer';
 import {RequestComment} from '../models/RequestComment';
 
 const db = getFirestore();
+
+/** Offer made from a specific availability (offererId + spotId), with request context for display. */
+export interface OfferFromAvailability {
+  offer: RequestOffer;
+  requestId: string;
+  requestedBy?: string;
+  requestFrom?: Date;
+  requestUntil?: Date;
+  isFulfilled?: boolean;
+}
 
 class FirestoreService {
   private requestsCollection = collection(db, 'parking_requests');
@@ -212,6 +224,7 @@ class FirestoreService {
     facilityCode: string,
     from: Date,
     until: Date,
+    allowPartialOffers: boolean,
     initialComment?: string,
   ): Promise<ParkingRequest> {
     // Use Firestore's auto-generated ID to allow multiple identical requests
@@ -271,6 +284,7 @@ class FirestoreService {
       from,
       until,
       isFulfilled: false,
+      allowPartialOffers,
     };
 
     const trimmed = String(initialComment ?? '').trim();
@@ -284,6 +298,7 @@ class FirestoreService {
       createdAt: FieldValue.serverTimestamp(),
       participantIds: [userId],
       commentCount: 0,
+      allowPartialOffers,
       ...(trimmed.length > 0 ? {initialCommentText: trimmed, lastCommentText: trimmed} : {}),
     });
 
@@ -342,6 +357,83 @@ class FirestoreService {
     // Keep this index-free: no filters, order by createdAt only.
     // We filter status client-side.
     return query(this.offersCollection(requestId), orderBy('createdAt', 'desc'));
+  }
+
+  /**
+   * Watch all offers made by a given offerer for a given spot (e.g. from one availability).
+   * Used on the "Frei" tab to show "Bereits angeboten" in each availability card.
+   * Requires a composite index: collection group "offers", fields offererId (Asc), spotId (Asc).
+   */
+  watchOffersByOffererAndSpot(
+    offererId: string,
+    spotId: string,
+    callback: (items: OfferFromAvailability[]) => void,
+  ): () => void {
+    const q = query(
+      collectionGroup(db, 'offers'),
+      where('offererId', '==', offererId),
+      where('spotId', '==', spotId),
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      async (snap: FirebaseFirestoreTypes.QuerySnapshot) => {
+        const items: Array<{offer: RequestOffer; requestId: string}> = [];
+        const requestIds = new Set<string>();
+        for (const d of snap.docs) {
+          const data = d.data();
+          const requestDocRef = (d.ref as any).parent?.parent;
+          const requestId = requestDocRef?.id ?? null;
+          if (!requestId) continue;
+          requestIds.add(requestId);
+          const status = (data?.status ?? 'active') as RequestOffer['status'];
+          items.push({
+            requestId,
+            offer: {
+              id: d.id,
+              requestId,
+              offererId: data?.offererId ?? '',
+              spotId: data?.spotId ?? '',
+              from: (data?.from as any)?.toDate?.() ?? new Date(0),
+              until: (data?.until as any)?.toDate?.() ?? new Date(0),
+              status,
+              createdAt: (data?.createdAt as any)?.toDate?.() ?? undefined,
+            },
+          });
+        }
+        if (requestIds.size === 0) {
+          callback([]);
+          return;
+        }
+        const ids = Array.from(requestIds);
+        const requestSnaps = await Promise.all(
+          ids.map((id) => getDoc(doc(this.requestsCollection, id))),
+        );
+        const requestById: Record<string, {requestedBy?: string; requestFrom?: Date; requestUntil?: Date; isFulfilled?: boolean}> = {};
+        requestSnaps.forEach((s, i) => {
+          const id = ids[i];
+          if (!id || !s.exists()) return;
+          const d = s.data();
+          requestById[id] = {
+            requestedBy: d?.requestedBy,
+            requestFrom: (d?.from as any)?.toDate?.() ?? undefined,
+            requestUntil: (d?.until as any)?.toDate?.() ?? undefined,
+            isFulfilled: d?.isFulfilled === true,
+          };
+        });
+        const result: OfferFromAvailability[] = items.map(({offer, requestId}) => ({
+          offer,
+          requestId,
+          ...requestById[requestId],
+        }));
+        callback(result);
+      },
+      (err: any) => {
+        if (String(err?.code ?? '').includes('permission-denied')) return;
+        console.error('[FirestoreService] watchOffersByOffererAndSpot error:', err);
+        callback([]);
+      },
+    );
+    return unsubscribe;
   }
 
   async withdrawMyOffersForRequest(requestId: string, offeringUserId: string): Promise<void> {
@@ -868,6 +960,7 @@ class FirestoreService {
       archivedBy: data.archivedBy as string | undefined,
       archivedAt: data.archivedAt ? (data.archivedAt as Timestamp).toDate() : undefined,
       isFulfilled: (data.isFulfilled as boolean) || false,
+      allowPartialOffers: data.allowPartialOffers !== false,
     };
   }
 

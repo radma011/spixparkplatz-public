@@ -17,7 +17,7 @@ import {getAuth, getIdToken, onAuthStateChanged} from '@react-native-firebase/au
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ParkingRequestService from '../services/ParkingRequestService';
-import FirestoreService from '../services/FirestoreService';
+import FirestoreService, {OfferFromAvailability} from '../services/FirestoreService';
 import {UserData} from '../services/AuthService';
 import {ParkingRequest, isOpen} from '../models/ParkingRequest';
 import ProfileScreen from './ProfileScreen';
@@ -96,6 +96,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const publicUserUnsubsRef = useRef<Record<string, () => void>>({});
   const [offersByRequestId, setOffersByRequestId] = useState<Record<string, RequestOffer[]>>({});
   const offerUnsubsRef = useRef<Record<string, () => void>>({});
+  const [offersByAvailabilityId, setOffersByAvailabilityId] = useState<
+    Record<string, OfferFromAvailability[]>
+  >({});
+  const availabilityOfferUnsubsRef = useRef<Record<string, () => void>>({});
   const listRef = useRef<SectionList<ParkingRequest, RequestSection> | null>(null);
   const [offerModalRequest, setOfferModalRequest] = useState<ParkingRequest | null>(null);
   const [showOfferModal, setShowOfferModal] = useState(false);
@@ -269,7 +273,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     }
   }, [externalFocus?.requestId, externalFocus?.tab, externalFocus?.offerId]);
 
-  // Keep a live cache of public profiles for all userIds visible in requests + offers.
+  // Keep a live cache of public profiles for all userIds visible in requests + offers + "Bereits angeboten".
   useEffect(() => {
     const ids = new Set<string>();
     requests.forEach((r) => {
@@ -282,6 +286,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     Object.values(offersByRequestId).forEach((offers) => {
       offers.forEach((o) => {
         if (o.offererId) ids.add(o.offererId);
+      });
+    });
+    // Requesters from "Bereits angeboten" (Frei-Tab), damit "Anfrage von {username}" korrekt angezeigt wird
+    Object.values(offersByAvailabilityId).forEach((items) => {
+      items.forEach((item) => {
+        if (item.requestedBy) ids.add(item.requestedBy);
       });
     });
 
@@ -311,7 +321,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         });
       }
     });
-  }, [requests, offersByRequestId]);
+  }, [requests, offersByRequestId, offersByAvailabilityId]);
 
   useEffect(() => {
     return () => {
@@ -396,7 +406,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
   // Logout moved to ProfileScreen
 
-  const handleCreateRequest = async (from: Date, until: Date, comment?: string) => {
+  const handleCreateRequest = async (
+    from: Date,
+    until: Date,
+    allowPartialOffers: boolean,
+    comment?: string,
+  ) => {
     await ParkingRequestService.createRequest(
       currentUserId,
       currentUserData.username,
@@ -404,6 +419,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       currentUserData.facilityCode,
       from,
       until,
+      allowPartialOffers,
       comment,
     );
     showAlert('Erfolg', 'Anfrage erstellt!');
@@ -827,6 +843,62 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     [availabilities],
   );
 
+  // Subscribe to "offers from this availability" when on Frei tab (for "Bereits angeboten" in each card).
+  useEffect(() => {
+    if (activeTab !== 'available') {
+      Object.values(availabilityOfferUnsubsRef.current).forEach((unsub) => {
+        try {
+          unsub();
+        } catch (_) {}
+      });
+      availabilityOfferUnsubsRef.current = {};
+      setOffersByAvailabilityId({});
+      return;
+    }
+    const list = displayAvailabilities;
+    list.forEach((av) => {
+      if (availabilityOfferUnsubsRef.current[av.id]) return;
+      const unsub = FirestoreService.watchOffersByOffererAndSpot(
+        av.userId,
+        av.spotId,
+        (items) => {
+          // Nur Angebote anzeigen, deren Angebots-Zeitfenster in diese konkrete
+          // Verfügbarkeit fällt (keine historischen Angebote anderer Verfügbarkeiten).
+          const avFrom = av.from;
+          const avUntil = av.until;
+          const filtered = items.filter(({offer}) => {
+            const from = offer.from;
+            const until = offer.until;
+            return from.getTime() < avUntil.getTime() && until.getTime() > avFrom.getTime();
+          });
+          setOffersByAvailabilityId((prev) => ({...prev, [av.id]: filtered}));
+        },
+      );
+      availabilityOfferUnsubsRef.current[av.id] = unsub;
+    });
+    const currentIds = new Set(list.map((a) => a.id));
+    Object.keys(availabilityOfferUnsubsRef.current).forEach((id) => {
+      if (currentIds.has(id)) return;
+      try {
+        availabilityOfferUnsubsRef.current[id]?.();
+      } catch (_) {}
+      delete availabilityOfferUnsubsRef.current[id];
+      setOffersByAvailabilityId((prev) => {
+        const next = {...prev};
+        delete next[id];
+        return next;
+      });
+    });
+    return () => {
+      list.forEach((av) => {
+        try {
+          availabilityOfferUnsubsRef.current[av.id]?.();
+        } catch (_) {}
+        delete availabilityOfferUnsubsRef.current[av.id];
+      });
+    };
+  }, [activeTab, displayAvailabilities]);
+
   useEffect(() => {
     if (!focusRequestId) return;
     const sections = activeTab === 'active' ? activeSections : fulfilledSections;
@@ -1037,6 +1109,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                     await handleUpdateAvailability(av.id, {isActive: true});
                   }}
                   publicUsers={publicUsers}
+                  offersFromAvailability={offersByAvailabilityId[availability.id] ?? []}
                 />
               ))}
             </>

@@ -33,6 +33,7 @@ class ParkingRequestService {
     facilityCode: string,
     from: Date,
     until: Date,
+    allowPartialOffers: boolean,
     initialComment?: string,
   ): Promise<ParkingRequest> {
     // Only log in development mode (works on native & web)
@@ -58,6 +59,7 @@ class ParkingRequestService {
       facilityCode,
       from,
       until,
+      allowPartialOffers,
       initialComment,
     );
 

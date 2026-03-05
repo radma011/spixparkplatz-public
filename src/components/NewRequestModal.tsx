@@ -13,19 +13,20 @@ import {
 import {showAlert} from '../utils/alertUtils';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {formatDateLabel, formatDateRange, formatTime} from '../utils/dateUtils';
+import {formatDateLabel, formatTime} from '../utils/dateUtils';
 import {getColors} from '../theme/colors';
 import BaseModal from './common/Modal';
 import Button from './common/Button';
 import {modalStyles} from '../styles/modals';
 import {inputStyles} from '../styles/inputs';
 import {buttonStyles} from '../styles/buttons';
+import PartialOffersInfoModal from './PartialOffersInfoModal';
 import {adjustDateKeepingTime, adjustTimeKeepingDate, ensureEndAfterStart} from '../utils/dateTimeValidation';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (from: Date, until: Date, comment?: string) => Promise<void>;
+  onSubmit: (from: Date, until: Date, allowPartialOffers: boolean, comment?: string) => Promise<void>;
 }
 
 const NewRequestModal: React.FC<Props> = ({
@@ -61,6 +62,8 @@ const NewRequestModal: React.FC<Props> = ({
   const [showUntilTimePicker, setShowUntilTimePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [comment, setComment] = useState('');
+  const [allowPartialOffers, setAllowPartialOffers] = useState(true);
+  const [showPartialInfo, setShowPartialInfo] = useState(false);
 
   // Import centralized validation utility
   const {adjustDateKeepingTime, adjustTimeKeepingDate} = require('../utils/dateTimeValidation');
@@ -138,12 +141,18 @@ const NewRequestModal: React.FC<Props> = ({
 
     setIsSubmitting(true);
     try {
-      await onSubmit(fromDateTime, untilDateTime, comment.trim() ? comment.trim() : undefined);
+      await onSubmit(
+        fromDateTime,
+        untilDateTime,
+        allowPartialOffers,
+        comment.trim() ? comment.trim() : undefined,
+      );
       // Reset to default values
       const {from: resetFrom, until: resetUntil} = defaultRange();
       setFromDateTime(resetFrom);
       setUntilDateTime(resetUntil);
       setComment('');
+      setAllowPartialOffers(true);
       onClose();
     } catch (error: any) {
       // Log für Debugging (z.B. in der Web-Konsole)
@@ -168,6 +177,8 @@ const NewRequestModal: React.FC<Props> = ({
     setShowFromTimePicker(false);
     setShowUntilDatePicker(false);
     setShowUntilTimePicker(false);
+    setAllowPartialOffers(true);
+    setShowPartialInfo(false);
     onClose();
   };
 
@@ -175,6 +186,7 @@ const NewRequestModal: React.FC<Props> = ({
     <BaseModal
       visible={visible}
       onClose={handleClose}
+      maxHeight="100%"
       title="Neue Parkplatz-Anfrage"
       footer={
         <>
@@ -540,10 +552,60 @@ const NewRequestModal: React.FC<Props> = ({
             ]}>
             <Text style={[styles.summaryLabel, {color: colors.brand}]}>Zusammenfassung:</Text>
             <Text style={[styles.summaryText, {color: colors.brand}]}>
-              {formatDateRange(fromDateTime, untilDateTime)}
+              {formatDateLabel(fromDateTime)} ({formatTime(fromDateTime)}) bis{'\n'}
+              {formatDateLabel(untilDateTime)} ({formatTime(untilDateTime)})
             </Text>
           </View>
         )}
+
+        {/* Option: Gestückelte Angebote akzeptieren */}
+        <View style={inputStyles.inputGroup}>
+          <View style={inputStyles.inputLabelRow}>
+            <Text style={[inputStyles.inputLabel, {color: colors.text}]}>
+              Gestückelte Angebote akzeptieren
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowPartialInfo(true)}
+              style={{
+                paddingHorizontal: 6,
+                paddingVertical: 4,
+                borderRadius: 999,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+              <MaterialCommunityIcons
+                name="information-outline"
+                size={18}
+                color={colors.subtext}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.partialToggleRow,
+              {backgroundColor: colors.surface2, borderColor: colors.border},
+            ]}
+            onPress={() => setAllowPartialOffers((prev) => !prev)}>
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: allowPartialOffers ? colors.brand : 'transparent',
+                },
+              ]}>
+              {allowPartialOffers && (
+                <MaterialCommunityIcons name="check" size={14} color="#fff" />
+              )}
+            </View>
+            <Text style={[styles.partialToggleText, {color: colors.text}]}>
+              {allowPartialOffers
+                ? 'Ja, auch Teilangebote sind in Ordnung (ggf. umparken).'
+                : 'Nein, nur vollständige Angebote für den gesamten Zeitraum.'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Kommentar */}
         <View style={inputStyles.inputGroup}>
@@ -564,6 +626,10 @@ const NewRequestModal: React.FC<Props> = ({
           </View>
         </View>
       </ScrollView>
+      <PartialOffersInfoModal
+        visible={showPartialInfo}
+        onClose={() => setShowPartialInfo(false)}
+      />
     </BaseModal>
   );
 };
@@ -596,6 +662,28 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     gap: 12,
+  },
+  partialToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    gap: 10,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partialToggleText: {
+    flex: 1,
+    fontSize: 14,
   },
   // Button and comment styles moved to src/styles/buttons.ts and src/styles/inputs.ts
 });

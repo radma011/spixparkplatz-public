@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, useColorScheme, Modal, ScrollView, Platform} from 'react-native';
 import {ParkingAvailability, isAvailabilityActive, isRecurring} from '../models/ParkingAvailability';
 import {formatDateRange} from '../utils/dateUtils';
+import type {OfferFromAvailability} from '../services/FirestoreService';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {getColors} from '../theme/colors';
 import {calculateNextOccurrences, formatOccurrence} from '../utils/recurrenceUtils';
@@ -20,6 +21,8 @@ interface Props {
   onActivate?: (availability: ParkingAvailability) => void;
   publicUsers?: Record<string, {username?: string; phone?: string}>;
   highlight?: boolean;
+  /** Offers already made from this availability (for "Bereits angeboten" on Frei tab). */
+  offersFromAvailability?: OfferFromAvailability[];
 }
 
 const AvailabilityCard: React.FC<Props> = ({
@@ -31,6 +34,7 @@ const AvailabilityCard: React.FC<Props> = ({
   onActivate,
   publicUsers,
   highlight,
+  offersFromAvailability = [],
 }) => {
   const colors = getColors(useColorScheme());
   const isMyAvailability = availability.userId === currentUserId;
@@ -136,6 +140,49 @@ const AvailabilityCard: React.FC<Props> = ({
           {formatDateRange(availability.from, availability.until)}
         </Text>
       </View>
+
+      {/* Bereits angeboten (wie Angebote im Offen-Screen) */}
+      {offersFromAvailability.length > 0 && (() => {
+        const active = offersFromAvailability.filter(
+          (x) => x.offer.status !== 'withdrawn' && x.offer.status !== 'standby',
+        );
+        const seenOfferIds = new Set<string>();
+        const toShow = active.filter((x) => {
+          const key = `${x.requestId}:${x.offer.id}`;
+          if (seenOfferIds.has(key)) return false;
+          seenOfferIds.add(key);
+          return true;
+        });
+        if (toShow.length === 0) return null;
+        return (
+          <View style={styles.offersBox}>
+            <Text style={[styles.offersTitle, {color: colors.subtext}]}>Bereits angeboten</Text>
+            {toShow.map((item) => {
+              const full =
+                item.requestFrom &&
+                item.requestUntil &&
+                item.offer.from.getTime() <= item.requestFrom.getTime() &&
+                item.offer.until.getTime() >= item.requestUntil.getTime();
+              const requesterName =
+                (item.requestedBy && publicUsers?.[item.requestedBy]?.username) || 'Unbekannt';
+              return (
+                <View
+                  key={`${item.requestId}-${item.offer.id}`}
+                  style={[styles.offerRowContainer, {borderColor: colors.border}]}>
+                  <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                    <Text style={[styles.offerLabel, {color: colors.subtext}]}>
+                      {item.offer.status === 'accepted' ? 'Angenommen' : full ? 'Vollständig' : 'Teilweise'}
+                    </Text>
+                    <Text style={[styles.offerDetails, {color: colors.text}]}>
+                      Anfrage von {requesterName} · {formatDateRange(item.offer.from, item.offer.until)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })()}
 
       {/* Status */}
       {!isActive && (
@@ -307,6 +354,35 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  offersBox: {
+    marginTop: 8,
+    paddingTop: 6,
+  },
+  offersTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  offerRowContainer: {
+    marginBottom: 8,
+    gap: 8,
+  },
+  offerBox: {
+    marginTop: 4,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  offerLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  offerDetails: {
+    fontSize: 12,
+    fontWeight: '700',
+    flexWrap: 'wrap',
   },
   statusRow: {
     marginTop: 8,
