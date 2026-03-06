@@ -1,0 +1,15 @@
+console.js:662 Running "spixparkplatz" with {"rootTag":11,"initialProps":{},"fabric":true}
+AuthService.ts:273 [AuthService] Setting up auth state listener
+AuthService.ts:275 [AuthService] Auth state changed: User: y9lP3xULRBTEeCPCAcOjikxcC8z2
+AuthService.ts:293 [AuthService] Calling callback with userData: User: y9lP3xULRBTEeCPCAcOjikxcC8z2
+App.tsx:27 [App] Auth state changed callback: User: y9lP3xULRBTEeCPCAcOjikxcC8z2
+PushNotificationService.ts:125 FCM Token gespeichert: eNU-QyLSHU2viby3uEKEUB:APA91bG5A1tnhDSBLXn7vPcVnPr68tSbltn1bnlGWf3Wo0zQYewCXvDaOHjLdI4d_GwFHqz97Ys0Vhmp7J_SiTGKW-VYydjBnZtQAbC0uvsbMXRTYHtI8Bg
+ParkingAvailabilityService.ts:88 [Auto-Matching] Creating availability: {facilityCode: 'SPIX!DEVTEST', spotId: '2069', from: '2026-03-05T19:00:00.000Z', until: '2026-03-06T01:00:00.000Z', isRecurring: false, recurrencePattern: undefined, autoOffer: true}
+ParkingAvailabilityService.ts:134 [Auto-Matching] Availability created: {availabilityId: '5bg0rvQBkFj88lr3l2hs', facilityCode: 'SPIX!DEVTEST', spotId: '2069', autoOffer: true, willAutoMatch: 'Yes - will automatically create offers for matching requests'}
+AvailabilityCard.tsx:153 [AvailabilityCard] Angebote für Parkplatz 2069 {gesamt: 1, angezeigt: 1, storniert: 0, standby: 0, alle: Array(1)}
+AvailabilityCard.tsx:153 [AvailabilityCard] Angebote für Parkplatz 2069 {gesamt: 1, angezeigt: 1, storniert: 0, standby: 0, alle: Array(1)}
+ParkingRequestsScreen.tsx:676 [Auto-Matching] New offer detected: {offerId: 'gMOb2eyNU69mP0fNUo3T', requestId: 'TkWw97LXkC4mR9aZIK0h', spotId: '2069', offererId: 'y9lP3xULRBTEeCPCAcOjikxcC8z2', from: '2026-03-05T23:00:00.000Z', until: '2026-03-06T01:00:00.000Z', createdAt: '2026-03-05T19:05:17.260Z', timeSinceCreation: '0s', likelyAutoMatch: true}
+AvailabilityCard.tsx:153 [AvailabilityCard] Angebote für Parkplatz 2069 {gesamt: 1, angezeigt: 1, storniert: 0, standby: 0, alle: Array(1)}
+AvailabilityCard.tsx:153 [AvailabilityCard] Angebote für Parkplatz 2069 {gesamt: 1, angezeigt: 1, storniert: 0, standby: 0, alle: Array(1)}
+AvailabilityCard.tsx:153 [AvailabilityCard] Angebote für Parkplatz 2069 {gesamt: 1, angezeigt: 1, storniert: 0, standby: 0, alle: Array(1)}
+AvailabilityCard.tsx:153 [AvailabilityCard] Angebote für Parkplatz 2069 {gesamt: 2, angezeigt: 2, storniert: 0, standby: 0, alle: Array(2)}

@@ -31,6 +31,7 @@ import CommentsModal from '../components/CommentsModal';
 import WatermarkBackground from '../components/WatermarkBackground';
 import ParkingAvailabilityService from '../services/ParkingAvailabilityService';
 import {ParkingAvailability, RecurrenceRule} from '../models/ParkingAvailability';
+import {getNextOccurrenceWindows} from '../utils/recurrenceUtils';
 import AvailabilityCard from '../components/AvailabilityCard';
 import NewAvailabilityModal from '../components/NewAvailabilityModal';
 
@@ -452,9 +453,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     autoOffer?: boolean,
   ) => {
     try {
-      await ParkingAvailabilityService.createAvailability(
+      const facilityCode = (currentUserData.facilityCode ?? '').trim().toUpperCase();
+      const availabilityId = await ParkingAvailabilityService.createAvailability(
         currentUserId,
-        currentUserData.facilityCode,
+        facilityCode,
         spotId,
         from,
         until,
@@ -462,6 +464,27 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         currentUserData.username,
         currentUserData.phone,
         autoOffer,
+      );
+      const now = new Date();
+      const optimistic: ParkingAvailability = {
+        id: availabilityId,
+        userId: currentUserId,
+        facilityCode,
+        spotId,
+        from,
+        until,
+        recurrence: recurrence ?? undefined,
+        isActive: true,
+        isMatched: false,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: currentUserId,
+        username: currentUserData.username,
+        phone: currentUserData.phone,
+        autoOffer: autoOffer !== false,
+      };
+      setAvailabilities((prev) =>
+        prev.some((a) => a.id === availabilityId) ? prev : [...prev, optimistic],
       );
       showAlert('Erfolg', 'Verfügbarkeit erstellt!');
     } catch (error: any) {
@@ -862,17 +885,24 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         av.userId,
         av.spotId,
         (items) => {
-          // Nur Angebote anzeigen, deren Angebots-Zeitfenster in diese konkrete
-          // Verfügbarkeit fällt (keine historischen Angebote anderer Verfügbarkeiten).
-          const avFrom = av.from;
-          const avUntil = av.until;
+          // Nur Angebote anzeigen, deren Angebots-Zeitfenster in diese Verfügbarkeit fällt.
+          // Bei wiederkehrenden: tatsächlich aktuelle Perioden (nächste Vorkommen ab jetzt) nutzen.
+          // Stornierte (withdrawn) und standby nicht anzeigen.
           const filtered = items.filter(({offer}) => {
-            const from = offer.from;
-            const until = offer.until;
-            return from.getTime() < avUntil.getTime() && until.getTime() > avFrom.getTime();
+            if (offer.status === 'withdrawn' || offer.status === 'standby') return false;
+            const from = offer.from.getTime();
+            const until = offer.until.getTime();
+            if (av.recurrence) {
+              const windows = getNextOccurrenceWindows(av.from, av.until, av.recurrence, 20);
+              return windows.some(
+                (w) => from < w.until.getTime() && until > w.from.getTime(),
+              );
+            }
+            return from < av.until.getTime() && until > av.from.getTime();
           });
           setOffersByAvailabilityId((prev) => ({...prev, [av.id]: filtered}));
         },
+        currentUserData.facilityCode,
       );
       availabilityOfferUnsubsRef.current[av.id] = unsub;
     });
@@ -897,7 +927,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         delete availabilityOfferUnsubsRef.current[av.id];
       });
     };
-  }, [activeTab, displayAvailabilities]);
+  }, [activeTab, displayAvailabilities, currentUserData.facilityCode]);
 
   useEffect(() => {
     if (!focusRequestId) return;

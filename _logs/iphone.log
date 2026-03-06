@@ -1,0 +1,11 @@
+console.js:662 Running "spixparkplatz" with {"rootTag":11,"initialProps":{},"fabric":true}
+AuthService.ts:273 [AuthService] Setting up auth state listener
+AuthService.ts:275 [AuthService] Auth state changed: User: MfHFQzllGWdYTW439wkRV2mR9ir1
+AuthService.ts:293 [AuthService] Calling callback with userData: User: MfHFQzllGWdYTW439wkRV2mR9ir1
+App.tsx:27 [App] Auth state changed callback: User: MfHFQzllGWdYTW439wkRV2mR9ir1
+PushNotificationService.ts:125 FCM Token gespeichert: flUJRT1v3k0HnTFR5_zinE:APA91bFg5XRadGEaDgrVfezEa3RzSF__nLEszPb7S1pn1VGZH-WgUq0j29X-zUaGqjghzkK-WfXjHidegFeF6-gfdy6HZ2jpYThLpAmlhvFzNRn24-XGgNU
+ParkingRequestService.ts:47 [Auto-Matching] Creating request: {facilityCode: 'SPIX!DEVTEST', from: '2026-03-05T23:00:00.000Z', until: '2026-03-06T03:00:00.000Z', hasComment: false}
+ParkingRequestService.ts:67 [Auto-Matching] Request created: {requestId: 'TkWw97LXkC4mR9aZIK0h', facilityCode: 'SPIX!DEVTEST', from: '2026-03-05T23:00:00.000Z', until: '2026-03-06T03:00:00.000Z'}
+ParkingRequestService.ts:76 [Auto-Matching] Server-side matching will be triggered automatically by Cloud Function
+ParkingRequestService.ts:79 [Auto-Matching] Waiting for server-side matching to complete (check offers collection for auto-created offers)
+ParkingRequestsScreen.tsx:676 [Auto-Matching] New offer detected: {offerId: 'gMOb2eyNU69mP0fNUo3T', requestId: 'TkWw97LXkC4mR9aZIK0h', spotId: '2069', offererId: 'y9lP3xULRBTEeCPCAcOjikxcC8z2', from: '2026-03-05T23:00:00.000Z', until: '2026-03-06T01:00:00.000Z', createdAt: '2026-03-05T19:05:17.260Z', timeSinceCreation: '0s', likelyAutoMatch: true}

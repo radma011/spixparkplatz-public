@@ -312,6 +312,70 @@ const RequestCard: React.FC<Props> = ({
 
 
   const isStandby = myActiveOffer?.status === 'standby' && hasOffer;
+
+  const statusStripSegments = React.useMemo(() => {
+    const minT = request.from.getTime();
+    const maxT = request.until.getTime();
+    const total = maxT - minT;
+    if (total <= 0) return [];
+    const accepted = offers.filter((o) => o.status === 'accepted');
+    const activeOrStandby = offers.filter((o) => o.status === 'active' || o.status === 'standby');
+    const merge = (list: Array<{ from: Date; until: Date }>) => {
+      const intervals = list
+        .map((o) => ({ start: Math.max(o.from.getTime(), minT), end: Math.min(o.until.getTime(), maxT) }))
+        .filter((i) => i.end > i.start)
+        .sort((a, b) => a.start - b.start);
+      const merged: Array<{ start: number; end: number }> = [];
+      for (const it of intervals) {
+        const last = merged[merged.length - 1];
+        if (!last || it.start > last.end) merged.push({ start: it.start, end: it.end });
+        else last.end = Math.max(last.end, it.end);
+      }
+      return merged;
+    };
+    const acceptedMerged = merge(accepted.map((o) => ({ from: o.from, until: o.until })));
+    const activeMerged = merge(activeOrStandby.map((o) => ({ from: o.from, until: o.until })));
+    const boundaries = new Set<number>([minT, maxT]);
+    [...acceptedMerged, ...activeMerged].forEach((i) => {
+      boundaries.add(i.start);
+      boundaries.add(i.end);
+    });
+    const sorted = Array.from(boundaries).sort((a, b) => a - b);
+    const segs: Array<{ start: number; end: number; type: 'none' | 'offered' | 'accepted' }> = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const start = sorted[i];
+      const end = sorted[i + 1];
+      const mid = (start + end) / 2;
+      const inAccepted = acceptedMerged.some((m) => m.start < mid && m.end > mid);
+      const inActive = activeMerged.some((m) => m.start < mid && m.end > mid);
+      const type: 'none' | 'offered' | 'accepted' = inAccepted ? 'accepted' : inActive ? 'offered' : 'none';
+      segs.push({ start, end, type });
+    }
+    return segs;
+  }, [request.from, request.until, offers]);
+
+  const renderStatusStrip = () => {
+    if (statusStripSegments.length === 0) return null;
+    const minT = request.from.getTime();
+    const maxT = request.until.getTime();
+    const total = maxT - minT;
+    if (total <= 0) return null;
+    const color = (type: 'none' | 'offered' | 'accepted') =>
+      type === 'accepted' ? '#22c55e' : type === 'offered' ? '#eab308' : '#dc2626';
+    return (
+      <View style={styles.statusStrip}>
+        {statusStripSegments.map((seg, idx) => (
+          <View
+            key={`${seg.start}-${seg.end}-${idx}`}
+            style={[
+              styles.statusStripSegment,
+              { flex: (seg.end - seg.start) / total, backgroundColor: color(seg.type) },
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
   
   return (
     <View
@@ -323,6 +387,8 @@ const RequestCard: React.FC<Props> = ({
         isStandby && {opacity: 0.6},
         highlight && cardStyles.cardHighlight,
       ]}>
+      <View style={styles.cardRow}>
+        <View style={styles.cardContent}>
       <View style={cardStyles.cardHeader}>
         <View style={cardStyles.cardTitleContainer}>
           <View style={cardStyles.titleRow}>
@@ -810,11 +876,32 @@ const RequestCard: React.FC<Props> = ({
           </>
         )}
       </View>
+        </View>
+        {renderStatusStrip()}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  cardContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  statusStrip: {
+    width: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginLeft: 8,
+    alignSelf: 'stretch',
+  },
+  statusStripSegment: {
+    minHeight: 2,
+  },
   // Card, chip, and badge styles moved to src/styles/cards.ts and src/styles/chips.ts
   timeRangeText: {
     fontSize: 12,

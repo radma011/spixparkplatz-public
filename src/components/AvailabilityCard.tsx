@@ -5,7 +5,7 @@ import {formatDateRange} from '../utils/dateUtils';
 import type {OfferFromAvailability} from '../services/FirestoreService';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {getColors} from '../theme/colors';
-import {calculateNextOccurrences, formatOccurrence} from '../utils/recurrenceUtils';
+import {calculateNextOccurrences, formatOccurrence, getNextOccurrenceWindows} from '../utils/recurrenceUtils';
 import ActionButton from './common/ActionButton';
 import DayBadge from './common/DayBadge';
 import {cardStyles} from '../styles/cards';
@@ -78,6 +78,92 @@ const AvailabilityCard: React.FC<Props> = ({
       )
     : [];
 
+  const stripWindow = React.useMemo(() => {
+    if (isRecurringAvailability && availability.recurrence) {
+      const windows = getNextOccurrenceWindows(
+        availability.from,
+        availability.until,
+        availability.recurrence,
+        1,
+      );
+      if (windows.length > 0) return windows[0];
+    }
+    return { from: availability.from, until: availability.until };
+  }, [availability.from, availability.until, availability.recurrence, isRecurringAvailability]);
+
+  const statusStripSegments = React.useMemo(() => {
+    const avFrom = stripWindow.from.getTime();
+    const avUntil = stripWindow.until.getTime();
+    const total = avUntil - avFrom;
+    if (total <= 0) return [];
+    const overlapping = offersFromAvailability.filter((o) => {
+      const from = o.offer.from.getTime();
+      const until = o.offer.until.getTime();
+      return from < avUntil && until > avFrom;
+    });
+    const accepted = overlapping.filter((x) => x.offer.status === 'accepted');
+    const offered = overlapping.filter((x) => x.offer.status === 'active' || x.offer.status === 'standby');
+    const merge = (list: typeof offersFromAvailability) => {
+      const intervals = list
+        .map((o) => ({
+          start: Math.max(o.offer.from.getTime(), avFrom),
+          end: Math.min(o.offer.until.getTime(), avUntil),
+        }))
+        .filter((i) => i.end > i.start)
+        .sort((a, b) => a.start - b.start);
+      const merged: Array<{ start: number; end: number }> = [];
+      for (const it of intervals) {
+        const last = merged[merged.length - 1];
+        if (!last || it.start > last.end) merged.push({ start: it.start, end: it.end });
+        else last.end = Math.max(last.end, it.end);
+      }
+      return merged;
+    };
+    const acceptedMerged = merge(accepted);
+    const offeredMerged = merge(offered);
+    if (acceptedMerged.length === 0 && offeredMerged.length === 0) return [{ start: avFrom, end: avUntil, type: 'free' as const }];
+    const boundaries = new Set<number>([avFrom, avUntil]);
+    [...acceptedMerged, ...offeredMerged].forEach((i) => {
+      boundaries.add(i.start);
+      boundaries.add(i.end);
+    });
+    const sorted = Array.from(boundaries).sort((a, b) => a - b);
+    const segs: Array<{ start: number; end: number; type: 'free' | 'offered' | 'accepted' }> = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const start = sorted[i];
+      const end = sorted[i + 1];
+      const mid = (start + end) / 2;
+      const inAccepted = acceptedMerged.some((m) => m.start < mid && m.end > mid);
+      const inOffered = offeredMerged.some((m) => m.start < mid && m.end > mid);
+      const type: 'free' | 'offered' | 'accepted' = inAccepted ? 'accepted' : inOffered ? 'offered' : 'free';
+      segs.push({ start, end, type });
+    }
+    return segs;
+  }, [stripWindow, offersFromAvailability]);
+
+  const renderStatusStrip = () => {
+    if (statusStripSegments.length === 0) return null;
+    const avFrom = stripWindow.from.getTime();
+    const avUntil = stripWindow.until.getTime();
+    const total = avUntil - avFrom;
+    if (total <= 0) return null;
+    const color = (type: 'free' | 'offered' | 'accepted') =>
+      type === 'free' ? '#22c55e' : type === 'offered' ? '#eab308' : '#dc2626';
+    return (
+      <View style={styles.statusStrip}>
+        {statusStripSegments.map((seg, idx) => (
+          <View
+            key={`${seg.start}-${seg.end}-${idx}`}
+            style={[
+              styles.statusStripSegment,
+              { flex: (seg.end - seg.start) / total, backgroundColor: color(seg.type) },
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
+
   return (
     <>
       <TouchableOpacity activeOpacity={1}>
@@ -92,6 +178,8 @@ const AvailabilityCard: React.FC<Props> = ({
             !isActive && cardStyles.cardInactive,
             highlight && {borderWidth: 2, borderColor: colors.brand},
           ]}>
+          <View style={styles.cardRow}>
+            <View style={styles.cardContent}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -141,18 +229,61 @@ const AvailabilityCard: React.FC<Props> = ({
         </Text>
       </View>
 
-      {/* Bereits angeboten (wie Angebote im Offen-Screen) */}
+      {/* Bereits angeboten (wie Angebote im Offen-Screen) – nur active/accepted, keine stornierten (withdrawn) oder standby */}
       {offersFromAvailability.length > 0 && (() => {
         const active = offersFromAvailability.filter(
-          (x) => x.offer.status !== 'withdrawn' && x.offer.status !== 'standby',
+          (x) => x.offer.status === 'active' || x.offer.status === 'accepted',
         );
-        const seenOfferIds = new Set<string>();
-        const toShow = active.filter((x) => {
-          const key = `${x.requestId}:${x.offer.id}`;
-          if (seenOfferIds.has(key)) return false;
-          seenOfferIds.add(key);
-          return true;
-        });
+        if (__DEV__) {
+          const withdrawn = offersFromAvailability.filter((x) => x.offer.status === 'withdrawn');
+          const standby = offersFromAvailability.filter((x) => x.offer.status === 'standby');
+          if (offersFromAvailability.length > 0) {
+            console.log('[AvailabilityCard] Angebote für Parkplatz', availability.spotId, {
+              gesamt: offersFromAvailability.length,
+              angezeigt: active.length,
+              storniert: withdrawn.length,
+              standby: standby.length,
+              alle: offersFromAvailability.map((o) => ({
+                id: o.offer.id,
+                requestId: o.requestId,
+                status: o.offer.status,
+                from: o.offer.from?.toISOString?.(),
+                until: o.offer.until?.toISOString?.(),
+                requestedBy: o.requestedBy ?? null,
+                requestedByUsername: o.requestedByUsername ?? null,
+              })),
+            });
+          }
+        }
+        // Pro Anfrage (requestId) nur ein Eintrag: bestes Angebot wählen (accepted > vollständig > neuestes)
+        const byRequest = new Map<string, typeof active[0]>();
+        for (const item of active) {
+          const existing = byRequest.get(item.requestId);
+          if (!existing) {
+            byRequest.set(item.requestId, item);
+            continue;
+          }
+          const itemFull =
+            item.requestFrom &&
+            item.requestUntil &&
+            item.offer.from.getTime() <= item.requestFrom.getTime() &&
+            item.offer.until.getTime() >= item.requestUntil.getTime();
+          const existingFull =
+            existing.requestFrom &&
+            existing.requestUntil &&
+            existing.offer.from.getTime() <= existing.requestFrom.getTime() &&
+            existing.offer.until.getTime() >= existing.requestUntil.getTime();
+          const itemAccepted = item.offer.status === 'accepted';
+          const existingAccepted = existing.offer.status === 'accepted';
+          const itemNewer =
+            (item.offer.createdAt?.getTime() ?? 0) > (existing.offer.createdAt?.getTime() ?? 0);
+          const replace =
+            (itemAccepted && !existingAccepted) ||
+            (!itemAccepted && !existingAccepted && itemFull && !existingFull) ||
+            (!itemAccepted && !existingAccepted && itemFull === existingFull && itemNewer);
+          if (replace) byRequest.set(item.requestId, item);
+        }
+        const toShow = Array.from(byRequest.values());
         if (toShow.length === 0) return null;
         return (
           <View style={styles.offersBox}>
@@ -164,7 +295,9 @@ const AvailabilityCard: React.FC<Props> = ({
                 item.offer.from.getTime() <= item.requestFrom.getTime() &&
                 item.offer.until.getTime() >= item.requestUntil.getTime();
               const requesterName =
-                (item.requestedBy && publicUsers?.[item.requestedBy]?.username) || 'Unbekannt';
+                item.requestedByUsername ||
+                (item.requestedBy && publicUsers?.[item.requestedBy]?.username) ||
+                (item.requestedBy && !(item.requestedBy in (publicUsers ?? {})) ? '…' : 'Unbekannt');
               return (
                 <View
                   key={`${item.requestId}-${item.offer.id}`}
@@ -243,6 +376,9 @@ const AvailabilityCard: React.FC<Props> = ({
           </TouchableOpacity>
         </View>
       )}
+            </View>
+            {renderStatusStrip()}
+          </View>
     </View>
       </TouchableOpacity>
 
@@ -300,6 +436,24 @@ const AvailabilityCard: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  cardContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  statusStrip: {
+    width: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginLeft: 8,
+    alignSelf: 'stretch',
+  },
+  statusStripSegment: {
+    minHeight: 2,
+  },
   // Card styles moved to src/styles/cards.ts
   header: {
     flexDirection: 'row',

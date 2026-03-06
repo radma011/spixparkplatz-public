@@ -1,7 +1,47 @@
 import {RecurrenceRule} from '../models/ParkingAvailability';
+import {calculateNextOccurrences as calculateNextOccurrencesCore} from '../shared/matching';
+
+/** Fenster einer einzelnen Wiederholung (from/until). */
+export interface OccurrenceWindow {
+  from: Date;
+  until: Date;
+}
 
 /**
- * Calculate the next N occurrences of a recurring availability
+ * Nächste N Zeitfenster einer wiederkehrenden Verfügbarkeit ab jetzt.
+ * Für Filter „Bereits angeboten“ und Status-Streifen, damit die tatsächlich aktuellen Perioden genutzt werden.
+ */
+export function getNextOccurrenceWindows(
+  from: Date,
+  until: Date,
+  recurrence: RecurrenceRule,
+  count: number = 20,
+): OccurrenceWindow[] {
+  const startDate = new Date(from);
+  startDate.setHours(0, 0, 0, 0);
+  const occurrences = calculateNextOccurrencesCore(
+    startDate,
+    from,
+    until,
+    recurrence,
+    count,
+    null,
+    null,
+  );
+  const windows: OccurrenceWindow[] = [];
+  for (const occStart of occurrences) {
+    const occEnd = new Date(occStart);
+    occEnd.setHours(until.getHours(), until.getMinutes(), 0, 0);
+    if (occEnd <= occStart) occEnd.setDate(occEnd.getDate() + 1);
+    windows.push({ from: occStart, until: occEnd });
+  }
+  return windows;
+}
+
+/**
+ * Calculate the next N occurrences of a recurring availability.
+ * When requestFrom/requestUntil are provided, includes occurrences that overlap the request window
+ * (e.g. same-day windows that already started are still included).
  */
 export function calculateNextOccurrences(
   startDate: Date,
@@ -9,151 +49,20 @@ export function calculateNextOccurrences(
   endTime: Date,
   recurrence: RecurrenceRule,
   count: number = 10,
+  requestFrom?: Date | null,
+  requestUntil?: Date | null,
 ): Date[] {
-  const occurrences: Date[] = [];
-  const now = new Date();
-
-  // Extract time components from startTime and endTime
-  const startHours = startTime.getHours();
-  const startMinutes = startTime.getMinutes();
-  const endHours = endTime.getHours();
-  const endMinutes = endTime.getMinutes();
-
-  let currentDate = new Date(startDate);
-  currentDate.setHours(startHours, startMinutes, 0, 0);
-
-  const interval = recurrence.interval || 1;
-  let iterations = 0;
-  const maxIterations = 1000; // Safety limit
-
-  // Helper: Get Monday of the week (Monday-first)
-  const getMondayOfWeek = (date: Date): Date => {
-    const monday = new Date(date);
-    const day = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
-    const daysFromMonday = day === 0 ? 6 : day - 1; // Sunday = 6 days from Monday
-    monday.setDate(date.getDate() - daysFromMonday);
-    monday.setHours(0, 0, 0, 0);
-    return monday;
-  };
-
-  // For weekly with specific days, we need a different approach
-  if (recurrence.pattern === 'weekly' && recurrence.daysOfWeek && recurrence.daysOfWeek.length > 0) {
-    // Start checking from today or startDate, whichever is later
-    let checkDate = new Date(Math.max(now.getTime(), startDate.getTime()));
-    checkDate.setHours(0, 0, 0, 0);
-
-    // Calculate start week (Monday of the week containing startDate)
-    const startWeekStart = getMondayOfWeek(startDate);
-
-    while (occurrences.length < count && iterations < maxIterations) {
-      iterations++;
-
-      // Check each selected day in the current week
-      for (const dayOfWeek of recurrence.daysOfWeek) {
-        const testDate = new Date(checkDate);
-        // Get the Monday of current week
-        const weekStart = getMondayOfWeek(testDate);
-        // Add day offset to get the specific day (dayOfWeek: 0=Sunday, 1=Monday, ..., 6=Saturday)
-        const targetDate = new Date(weekStart);
-        // Convert JS dayOfWeek to days from Monday: 0=So -> +6, 1=Mo -> +0, 2=Di -> +1, etc.
-        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        targetDate.setDate(weekStart.getDate() + daysFromMonday);
-        targetDate.setHours(startHours, startMinutes, 0, 0);
-
-        // Must be on or after startDate
-        if (targetDate < startDate) continue;
-
-        // Check interval (every N weeks from start week)
-        const weeksDiff = Math.floor(
-          (weekStart.getTime() - startWeekStart.getTime()) / (1000 * 60 * 60 * 24 * 7),
-        );
-        if (weeksDiff < 0 || weeksDiff % interval !== 0) continue;
-
-        // Check endDate constraint
-        if (recurrence.endDate) {
-          const endDate = new Date(recurrence.endDate);
-          endDate.setHours(23, 59, 59, 999);
-          if (targetDate > endDate) continue;
-        }
-
-        // Check occurrences limit
-        if (recurrence.occurrences && occurrences.length >= recurrence.occurrences) {
-          break;
-        }
-
-        // Only add if it's in the future or today, and not already added
-        if (targetDate >= now && !occurrences.some((occ) => occ.getTime() === targetDate.getTime())) {
-          occurrences.push(new Date(targetDate));
-          if (occurrences.length >= count) break;
-        }
-      }
-
-      // Move to next week
-      checkDate.setDate(checkDate.getDate() + 7);
-    }
-  } else {
-    // For daily and monthly, or weekly without specific days
-    while (occurrences.length < count && iterations < maxIterations) {
-      iterations++;
-
-      // Check if current date matches the recurrence pattern
-      let matches = false;
-
-      switch (recurrence.pattern) {
-        case 'daily':
-          // Every N days from start date
-          const daysDiff = Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-          matches = daysDiff >= 0 && daysDiff % interval === 0;
-          break;
-
-        case 'weekly':
-          // No specific days selected, use interval
-          const weeksDiff = Math.floor(
-            (currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 7),
-          );
-          matches = weeksDiff >= 0 && weeksDiff % interval === 0;
-          break;
-
-        case 'monthly':
-          // Same day of month, every N months
-          if (currentDate.getDate() === startDate.getDate()) {
-            const monthsDiff =
-              (currentDate.getFullYear() - startDate.getFullYear()) * 12 +
-              (currentDate.getMonth() - startDate.getMonth());
-            matches = monthsDiff >= 0 && monthsDiff % interval === 0;
-          }
-          break;
-      }
-
-      // Check endDate constraint
-      if (matches && recurrence.endDate) {
-        const endDate = new Date(recurrence.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        if (currentDate > endDate) {
-          break; // Past end date
-        }
-      }
-
-      // Check occurrences limit
-      if (matches && recurrence.occurrences) {
-        if (occurrences.length >= recurrence.occurrences) {
-          break; // Reached occurrence limit
-        }
-      }
-
-      // Only add if it's in the future or today
-      if (matches && currentDate >= now) {
-        occurrences.push(new Date(currentDate));
-      }
-
-      // Move to next day
-      currentDate = new Date(currentDate);
-      currentDate.setDate(currentDate.getDate() + 1);
-      currentDate.setHours(startHours, startMinutes, 0, 0);
-    }
-  }
-
-  return occurrences.slice(0, count);
+  const requestFromTime = requestFrom?.getTime() ?? null;
+  const requestUntilTime = requestUntil?.getTime() ?? null;
+  return calculateNextOccurrencesCore(
+    startDate,
+    startTime,
+    endTime,
+    recurrence,
+    count,
+    requestFromTime,
+    requestUntilTime,
+  );
 }
 
 /**
@@ -172,4 +81,3 @@ export function formatOccurrence(date: Date, endTime: Date): string {
   });
   return `${dateStr}, ${startTimeStr} - ${endTimeStr}`;
 }
-

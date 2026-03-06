@@ -30,6 +30,8 @@ export interface OfferFromAvailability {
   offer: RequestOffer;
   requestId: string;
   requestedBy?: string;
+  /** Username from request doc (if set) or to be resolved via users_public. */
+  requestedByUsername?: string;
   requestFrom?: Date;
   requestUntil?: Date;
   isFulfilled?: boolean;
@@ -290,6 +292,8 @@ class FirestoreService {
     const trimmed = String(initialComment ?? '').trim();
     await setDoc(requestRef, {
       requestedBy: userId,
+      ...(username != null && username !== '' ? {requestedByUsername: username} : {}),
+      ...(phone != null && phone !== '' ? {requestedByPhone: phone} : {}),
       facilityCode: normalizedFacilityCode,
       from: fromTs,
       until: untilTs,
@@ -363,11 +367,13 @@ class FirestoreService {
    * Watch all offers made by a given offerer for a given spot (e.g. from one availability).
    * Used on the "Frei" tab to show "Bereits angeboten" in each availability card.
    * Requires a composite index: collection group "offers", fields offererId (Asc), spotId (Asc).
+   * @param facilityCode If set, only offers for requests in this facility are returned.
    */
   watchOffersByOffererAndSpot(
     offererId: string,
     spotId: string,
     callback: (items: OfferFromAvailability[]) => void,
+    facilityCode?: string,
   ): () => void {
     const q = query(
       collectionGroup(db, 'offers'),
@@ -408,23 +414,32 @@ class FirestoreService {
         const requestSnaps = await Promise.all(
           ids.map((id) => getDoc(doc(this.requestsCollection, id))),
         );
-        const requestById: Record<string, {requestedBy?: string; requestFrom?: Date; requestUntil?: Date; isFulfilled?: boolean}> = {};
+        const requestById: Record<string, {facilityCode?: string; requestedBy?: string; requestedByUsername?: string; requestFrom?: Date; requestUntil?: Date; isFulfilled?: boolean}> = {};
         requestSnaps.forEach((s, i) => {
           const id = ids[i];
           if (!id || !s.exists()) return;
           const d = s.data();
           requestById[id] = {
+            facilityCode: d?.facilityCode as string | undefined,
             requestedBy: d?.requestedBy,
+            requestedByUsername: d?.requestedByUsername as string | undefined,
             requestFrom: (d?.from as any)?.toDate?.() ?? undefined,
             requestUntil: (d?.until as any)?.toDate?.() ?? undefined,
             isFulfilled: d?.isFulfilled === true,
           };
         });
-        const result: OfferFromAvailability[] = items.map(({offer, requestId}) => ({
+        let result: OfferFromAvailability[] = items.map(({offer, requestId}) => ({
           offer,
           requestId,
           ...requestById[requestId],
         }));
+        if (facilityCode != null && facilityCode !== '') {
+          const normalized = facilityCode.trim().toUpperCase();
+          result = result.filter((item) => {
+            const reqFacility = (requestById[item.requestId]?.facilityCode ?? '').trim().toUpperCase();
+            return reqFacility === normalized;
+          });
+        }
         callback(result);
       },
       (err: any) => {

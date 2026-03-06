@@ -3,7 +3,8 @@
     "messaging_ios_auto_register_for_remote_messages": false
   },
   "functions": {
-    "source": "functions"
+    "source": "functions",
+    "predeploy": "npm run build:functions-matching"
   },
   "firestore": {
     "rules": "firestore.rules",

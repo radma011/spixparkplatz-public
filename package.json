@@ -22,6 +22,7 @@
     "web:build:root": "npm run favicon && webpack --config webpack.config.js --mode production",
     "favicon": "node scripts/generate-favicon.js",
     "deploy:rules": "firebase deploy --only firestore:rules",
+    "build:functions-matching": "node scripts/build-matching-for-functions.js",
     "test": "jest"
   },
   "dependencies": {
@@ -61,6 +62,7 @@
     "ajv": "^8.18.0",
     "babel-loader": "^10.0.0",
     "copy-webpack-plugin": "^13.0.1",
+    "esbuild": "^0.27.3",
     "eslint": "^8.19.0",
     "html-webpack-plugin": "^5.6.6",
     "jest": "^29.6.3",
