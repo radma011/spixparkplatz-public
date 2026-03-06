@@ -239,6 +239,10 @@ class ParkingRequestService {
     return FirestoreService.watchOffersForRequest(requestId);
   }
 
+  async getOffersForRequest(requestId: string): Promise<RequestOffer[]> {
+    return FirestoreService.getOffersForRequest(requestId);
+  }
+
   async withdrawMyOffersForRequest(requestId: string, offeringUserId: string): Promise<void> {
     await FirestoreService.withdrawMyOffersForRequest(requestId, offeringUserId);
   }

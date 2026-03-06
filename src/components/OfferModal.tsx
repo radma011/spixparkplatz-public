@@ -430,6 +430,49 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         maximumDate={requestMax}
                         onChange={handleFromDateChange}
                       />
+                    ) : Platform.OS === 'web' ? (
+                      <View
+                        style={[
+                          inputStyles.pickerContainer,
+                          {
+                            backgroundColor: colors.surface2,
+                            borderColor: colors.border,
+                            marginTop: 8,
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                          },
+                        ]}>
+                        {/* @ts-ignore web-only input */}
+                        <input
+                          type="date"
+                          value={(() => {
+                            const d = fromDateTime;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          })()}
+                          min={(() => {
+                            const d = requestMin;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          })()}
+                          max={(() => {
+                            const d = requestMax;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          })()}
+                          onChange={(e: any) => {
+                            const value = e.target.value as string;
+                            if (!value) return;
+                            const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                            if (!year || !month || !day) return;
+                            const picked = new Date(fromDateTime);
+                            picked.setFullYear(year, month - 1, day);
+                            setFromClamped(picked);
+                          }}
+                          style={{width: '100%', padding: 8, fontSize: 14}}
+                        />
+                      </View>
                     ) : (
                       <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
@@ -455,6 +498,40 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         maximumDate={requestMax}
                         onChange={handleFromTimeChange}
                       />
+                    ) : Platform.OS === 'web' ? (
+                      <View
+                        style={[
+                          inputStyles.pickerContainer,
+                          {
+                            backgroundColor: colors.surface2,
+                            borderColor: colors.border,
+                            marginTop: 8,
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                          },
+                        ]}>
+                        {/* @ts-ignore web-only input */}
+                        <input
+                          type="time"
+                          step={900}
+                          value={(() => {
+                            const d = fromDateTime;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                          })()}
+                          onChange={(e: any) => {
+                            const value = e.target.value as string;
+                            if (!value) return;
+                            const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                            if (h == null || m == null) return;
+                            const picked = new Date(fromDateTime);
+                            picked.setHours(h, m, 0, 0);
+                            setFromClamped(picked);
+                          }}
+                          style={{width: '100%', padding: 8, fontSize: 14}}
+                        />
+                      </View>
                     ) : (
                       <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
@@ -538,17 +615,60 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         value={untilDateTime}
                         mode="date"
                         display="default"
-                        minimumDate={requestMin}
+                        minimumDate={fromDateTime}
                         maximumDate={requestMax}
                         onChange={handleUntilDateChange}
                       />
+                    ) : Platform.OS === 'web' ? (
+                      <View
+                        style={[
+                          inputStyles.pickerContainer,
+                          {
+                            backgroundColor: colors.surface2,
+                            borderColor: colors.border,
+                            marginTop: 8,
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                          },
+                        ]}>
+                        {/* @ts-ignore web-only input */}
+                        <input
+                          type="date"
+                          value={(() => {
+                            const d = untilDateTime;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          })()}
+                          min={(() => {
+                            const d = fromDateTime;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          })()}
+                          max={(() => {
+                            const d = requestMax;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          })()}
+                          onChange={(e: any) => {
+                            const value = e.target.value as string;
+                            if (!value) return;
+                            const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+                            if (!year || !month || !day) return;
+                            const picked = new Date(untilDateTime);
+                            picked.setFullYear(year, month - 1, day);
+                            setUntilClamped(picked);
+                          }}
+                          style={{width: '100%', padding: 8, fontSize: 14}}
+                        />
+                      </View>
                     ) : (
                       <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
                           value={untilDateTime}
                           mode="date"
                           display="spinner"
-                          minimumDate={requestMin}
+                          minimumDate={fromDateTime}
                           maximumDate={requestMax}
                           onChange={(_, d) => d && setUntilClamped(d)}
                           style={inputStyles.picker}
@@ -563,10 +683,44 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                         mode="time"
                         display="default"
                         minuteInterval={15}
-                        minimumDate={requestMin}
+                        minimumDate={fromDateTime}
                         maximumDate={requestMax}
                         onChange={handleUntilTimeChange}
                       />
+                    ) : Platform.OS === 'web' ? (
+                      <View
+                        style={[
+                          inputStyles.pickerContainer,
+                          {
+                            backgroundColor: colors.surface2,
+                            borderColor: colors.border,
+                            marginTop: 8,
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                          },
+                        ]}>
+                        {/* @ts-ignore web-only input */}
+                        <input
+                          type="time"
+                          step={900}
+                          value={(() => {
+                            const d = untilDateTime;
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                          })()}
+                          onChange={(e: any) => {
+                            const value = e.target.value as string;
+                            if (!value) return;
+                            const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                            if (h == null || m == null) return;
+                            const picked = new Date(untilDateTime);
+                            picked.setHours(h, m, 0, 0);
+                            setUntilClamped(picked);
+                          }}
+                          style={{width: '100%', padding: 8, fontSize: 14}}
+                        />
+                      </View>
                     ) : (
                       <View style={[inputStyles.pickerContainer, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                         <DateTimePicker
@@ -574,7 +728,7 @@ export default function OfferModal({visible, request, mySpots, onClose, onSubmit
                           mode="time"
                           display="spinner"
                           minuteInterval={15}
-                          minimumDate={requestMin}
+                          minimumDate={fromDateTime}
                           maximumDate={requestMax}
                           onChange={(_, d) => d && setUntilClamped(d)}
                           style={inputStyles.picker}

@@ -363,6 +363,26 @@ class FirestoreService {
     return query(this.offersCollection(requestId), orderBy('createdAt', 'desc'));
   }
 
+  async getOffersForRequest(requestId: string): Promise<RequestOffer[]> {
+    const q = query(this.offersCollection(requestId), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const status = (data?.status ?? 'active') as RequestOffer['status'];
+      const createdAt = data?.createdAt ? (data.createdAt as any).toDate() : undefined;
+      return {
+        id: d.id,
+        requestId,
+        offererId: data?.offererId ?? '',
+        spotId: data?.spotId ?? '',
+        from: (data?.from as any)?.toDate?.() ?? new Date(0),
+        until: (data?.until as any)?.toDate?.() ?? new Date(0),
+        status,
+        createdAt,
+      } as RequestOffer;
+    });
+  }
+
   /**
    * Watch all offers made by a given offerer for a given spot (e.g. from one availability).
    * Used on the "Frei" tab to show "Bereits angeboten" in each availability card.

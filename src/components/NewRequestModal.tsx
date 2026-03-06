@@ -34,16 +34,6 @@ const NewRequestModal: React.FC<Props> = ({
   onClose,
   onSubmit,
 }) => {
-  const toWebDateString = (date: Date) => {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  };
-
-  const toWebTimeString = (date: Date) => {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  };
-
   const colors = getColors(useColorScheme());
   const defaultRange = () => {
     const base = new Date(Date.now() + 4 * 60 * 60 * 1000); // now + 4h
@@ -65,9 +55,6 @@ const NewRequestModal: React.FC<Props> = ({
   const [allowPartialOffers, setAllowPartialOffers] = useState(true);
   const [showPartialInfo, setShowPartialInfo] = useState(false);
 
-  // Import centralized validation utility
-  const {adjustDateKeepingTime, adjustTimeKeepingDate} = require('../utils/dateTimeValidation');
-
   const handleFromDateSelected = (event: any, date?: Date) => {
     // On Android, close the picker when user confirms (type === 'set') or cancels (type === 'dismissed')
     if (Platform.OS === 'android') {
@@ -77,7 +64,7 @@ const NewRequestModal: React.FC<Props> = ({
       }
     }
     if (!date) return;
-    const result = adjustDateKeepingTime(date, fromDateTime, untilDateTime, 2);
+    const result = adjustDateKeepingTime(date, fromDateTime, untilDateTime, 1);
     setFromDateTime(result.adjusted);
     setUntilDateTime(result.other);
   };
@@ -91,7 +78,7 @@ const NewRequestModal: React.FC<Props> = ({
       }
     }
     if (!time) return;
-    const result = adjustTimeKeepingDate(fromDateTime, time, untilDateTime, 2);
+    const result = adjustTimeKeepingDate(fromDateTime, time, untilDateTime, 1);
     setFromDateTime(result.adjusted);
     setUntilDateTime(result.other);
   };
@@ -107,7 +94,7 @@ const NewRequestModal: React.FC<Props> = ({
     if (!date) return;
     const next = new Date(untilDateTime);
     next.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
-    setUntilDateTime(ensureEndAfterStart(fromDateTime, next, 2));
+    setUntilDateTime(ensureEndAfterStart(fromDateTime, next, 1));
   };
 
   const handleUntilTimeSelected = (event: any, time?: Date) => {
@@ -121,7 +108,7 @@ const NewRequestModal: React.FC<Props> = ({
     if (!time) return;
     const next = new Date(untilDateTime);
     next.setHours(time.getHours(), time.getMinutes(), 0, 0);
-    setUntilDateTime(ensureEndAfterStart(fromDateTime, next, 2));
+    setUntilDateTime(ensureEndAfterStart(fromDateTime, next, 1));
   };
 
   const handleSubmit = async () => {
@@ -289,21 +276,38 @@ const NewRequestModal: React.FC<Props> = ({
                     <View
                       style={[
                         inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.border,
+                          marginTop: 8,
+                          width: '100%',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                        },
                       ]}>
                       {/* @ts-ignore web-only input */}
                       <input
                         type="date"
-                        value={toWebDateString(fromDateTime)}
-                        min={toWebDateString(new Date())}
+                        value={(() => {
+                          const d = fromDateTime;
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        })()}
+                        min={(() => {
+                          const d = new Date();
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        })()}
                         onChange={(e: any) => {
                           const value = e.target.value as string;
                           if (!value) return;
                           const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
                           if (!year || !month || !day) return;
-                          const next = new Date(fromDateTime);
-                          next.setFullYear(year, month - 1, day);
-                          handleFromDateSelected({}, next);
+                          const picked = new Date(fromDateTime);
+                          picked.setFullYear(year, month - 1, day);
+                          const result = adjustDateKeepingTime(picked, fromDateTime, untilDateTime, 1);
+                          setFromDateTime(result.adjusted);
+                          setUntilDateTime(result.other);
                         }}
                         style={{width: '100%', padding: 8, fontSize: 14}}
                       />
@@ -338,21 +342,34 @@ const NewRequestModal: React.FC<Props> = ({
                     <View
                       style={[
                         inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.border,
+                          marginTop: 8,
+                          width: '100%',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                        },
                       ]}>
                       {/* @ts-ignore web-only input */}
                       <input
                         type="time"
                         step={900}
-                        value={toWebTimeString(fromDateTime)}
+                        value={(() => {
+                          const d = fromDateTime;
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        })()}
                         onChange={(e: any) => {
                           const value = e.target.value as string;
                           if (!value) return;
-                          const [hours, minutes] = value.split(':').map((v) => parseInt(v, 10));
-                          if (hours == null || minutes == null) return;
-                          const next = new Date(fromDateTime);
-                          next.setHours(hours, minutes, 0, 0);
-                          handleFromTimeSelected({}, next);
+                          const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                          if (h == null || m == null) return;
+                          const picked = new Date(fromDateTime);
+                          picked.setHours(h, m, 0, 0);
+                          const result = adjustTimeKeepingDate(fromDateTime, picked, untilDateTime, 1);
+                          setFromDateTime(result.adjusted);
+                          setUntilDateTime(result.other);
                         }}
                         style={{width: '100%', padding: 8, fontSize: 14}}
                       />
@@ -446,28 +463,46 @@ const NewRequestModal: React.FC<Props> = ({
                       value={untilDateTime}
                       mode="date"
                       display="default"
-                      minimumDate={new Date()}
+                      minimumDate={fromDateTime}
                       onChange={handleUntilDateSelected}
                     />
                   ) : Platform.OS === 'web' ? (
                     <View
                       style={[
                         inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.border,
+                          marginTop: 8,
+                          width: '100%',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                        },
                       ]}>
                       {/* @ts-ignore web-only input */}
                       <input
                         type="date"
-                        value={toWebDateString(untilDateTime)}
-                        min={toWebDateString(new Date())}
+                        value={(() => {
+                          const d = untilDateTime;
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        })()}
+                        min={(() => {
+                          const d = fromDateTime;
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        })()}
                         onChange={(e: any) => {
                           const value = e.target.value as string;
                           if (!value) return;
                           const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
                           if (!year || !month || !day) return;
-                          const next = new Date(untilDateTime);
-                          next.setFullYear(year, month - 1, day);
-                          handleUntilDateSelected({}, next);
+                          const picked = new Date(untilDateTime);
+                          picked.setFullYear(year, month - 1, day);
+                          const next = new Date(picked);
+                          next.setHours(untilDateTime.getHours(), untilDateTime.getMinutes(), 0, 0);
+                          const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                          setUntilDateTime(adjusted);
                         }}
                         style={{width: '100%', padding: 8, fontSize: 14}}
                       />
@@ -482,7 +517,7 @@ const NewRequestModal: React.FC<Props> = ({
                         value={untilDateTime}
                         mode="date"
                         display="spinner"
-                        minimumDate={new Date()}
+                        minimumDate={fromDateTime}
                         onChange={handleUntilDateSelected}
                         style={inputStyles.picker}
                       />
@@ -502,21 +537,34 @@ const NewRequestModal: React.FC<Props> = ({
                     <View
                       style={[
                         inputStyles.pickerContainer,
-                        {backgroundColor: colors.surface2, borderColor: colors.border},
+                        {
+                          backgroundColor: colors.surface2,
+                          borderColor: colors.border,
+                          marginTop: 8,
+                          width: '100%',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                        },
                       ]}>
                       {/* @ts-ignore web-only input */}
                       <input
                         type="time"
                         step={900}
-                        value={toWebTimeString(untilDateTime)}
+                        value={(() => {
+                          const d = untilDateTime;
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        })()}
                         onChange={(e: any) => {
                           const value = e.target.value as string;
                           if (!value) return;
-                          const [hours, minutes] = value.split(':').map((v) => parseInt(v, 10));
-                          if (hours == null || minutes == null) return;
-                          const next = new Date(untilDateTime);
-                          next.setHours(hours, minutes, 0, 0);
-                          handleUntilTimeSelected({}, next);
+                          const [h, m] = value.split(':').map((v) => parseInt(v, 10));
+                          if (h == null || m == null) return;
+                          const picked = new Date(untilDateTime);
+                          picked.setHours(h, m, 0, 0);
+                          const next = new Date(picked);
+                          const adjusted = ensureEndAfterStart(fromDateTime, next, 1);
+                          setUntilDateTime(adjusted);
                         }}
                         style={{width: '100%', padding: 8, fontSize: 14}}
                       />

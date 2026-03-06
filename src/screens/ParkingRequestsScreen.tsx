@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   useColorScheme,
+  Platform,
 } from 'react-native';
 import {confirmAlert, showAlert} from '../utils/alertUtils';
 import {getApp} from '@react-native-firebase/app';
@@ -424,6 +425,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       comment,
     );
     showAlert('Erfolg', 'Anfrage erstellt!');
+    if (Platform.OS === 'web') {
+      const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+      setRequests(newRequests);
+    }
   };
 
   const offerParkingSpot = async (request: ParkingRequest) => {
@@ -440,6 +445,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     try {
       await ParkingRequestService.fulfillRequest(request.id);
       showAlert('Erfolg', 'Anfrage als erfüllt markiert');
+      if (Platform.OS === 'web') {
+        const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+        setRequests(newRequests);
+      }
     } catch (error) {
       showAlert('Fehler', 'Ein Fehler ist aufgetreten');
     }
@@ -487,6 +496,13 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         prev.some((a) => a.id === availabilityId) ? prev : [...prev, optimistic],
       );
       showAlert('Erfolg', 'Verfügbarkeit erstellt!');
+      if (Platform.OS === 'web') {
+        const newAvailabilities = await ParkingAvailabilityService.getUserAvailabilities(
+          currentUserId,
+          currentUserData.facilityCode,
+        );
+        setAvailabilities(newAvailabilities);
+      }
     } catch (error: any) {
       console.error('Fehler beim Erstellen der Verfügbarkeit:', error);
       showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht erstellt werden');
@@ -534,6 +550,13 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         );
       }
       showAlert('Erfolg', 'Verfügbarkeit aktualisiert!');
+      if (Platform.OS === 'web') {
+        const newAvailabilities = await ParkingAvailabilityService.getUserAvailabilities(
+          currentUserId,
+          currentUserData.facilityCode,
+        );
+        setAvailabilities(newAvailabilities);
+      }
     } catch (error: any) {
       console.error('Fehler beim Aktualisieren der Verfügbarkeit:', error);
       showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht aktualisiert werden');
@@ -557,6 +580,13 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
             currentUserData.phone ?? '',
           );
           showAlert('Erfolg', 'Verfügbarkeit gelöscht!');
+          if (Platform.OS === 'web') {
+            const newAvailabilities = await ParkingAvailabilityService.getUserAvailabilities(
+              currentUserId,
+              currentUserData.facilityCode,
+            );
+            setAvailabilities(newAvailabilities);
+          }
         } catch (error: any) {
           console.error('Fehler beim Löschen der Verfügbarkeit:', error);
           showAlert('Fehler', error?.message || 'Verfügbarkeit konnte nicht gelöscht werden');
@@ -576,6 +606,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         try {
           await ParkingRequestService.archiveFulfilledRequest(currentUserId, request);
           showAlert('Erfolg', 'Anfrage wurde archiviert');
+          if (Platform.OS === 'web') {
+            const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+            setRequests(newRequests);
+          }
         } catch (e) {
           console.error('Archive failed:', e);
           showAlert('Fehler', 'Anfrage konnte nicht archiviert werden');
@@ -596,6 +630,14 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           // Der Anbieter ist der currentUserId (weil isMyOffer nur true ist, wenn offeredBy === currentUserId)
           await ParkingRequestService.cancelOffer(request.id, currentUserId);
           showAlert('Erfolg', 'Angebot wurde storniert');
+          if (Platform.OS === 'web') {
+            const [newRequests, newOffers] = await Promise.all([
+              FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode),
+              ParkingRequestService.getOffersForRequest(request.id),
+            ]);
+            setRequests(newRequests);
+            setOffersByRequestId((prev) => ({...prev, [request.id]: newOffers}));
+          }
         } catch (e) {
           console.error('Fehler beim Stornieren:', e);
           showAlert('Fehler', 'Angebot konnte nicht storniert werden');
@@ -615,6 +657,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         try {
           await ParkingRequestService.deleteRequest(request.id, currentUserData.username);
           showAlert('Erfolg', 'Anfrage wurde zurückgezogen');
+          if (Platform.OS === 'web') {
+            const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+            setRequests(newRequests);
+          }
         } catch (e) {
           console.error('Fehler beim Zurückziehen:', e);
           showAlert('Fehler', 'Anfrage konnte nicht zurückgezogen werden');
@@ -1172,18 +1218,26 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                   await ParkingRequestService.acceptOffer(item.id, offer);
                   showAlert('Erfolg', 'Angebot angenommen');
 
-                  // Best-effort: poll the request doc briefly to reflect fulfillment faster on slow server roundtrips.
-                  // This avoids the UI waiting solely for the stream update (which depends on Cloud Function latency).
-                  const timeoutMs = 15000;
-                  const intervalMs = 750;
-                  const start = Date.now();
-                  while (Date.now() - start < timeoutMs) {
-                    const fresh = await FirestoreService.getParkingRequestById(item.id).catch(() => null);
-                    if (fresh?.isFulfilled) {
-                      setRequests((prev) => prev.map((r) => (r.id === fresh.id ? {...r, ...fresh} : r)));
-                      break;
+                  if (Platform.OS === 'web') {
+                    const [newRequests, newOffers] = await Promise.all([
+                      FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode),
+                      ParkingRequestService.getOffersForRequest(item.id),
+                    ]);
+                    setRequests(newRequests);
+                    setOffersByRequestId((prev) => ({...prev, [item.id]: newOffers}));
+                  } else {
+                    // Best-effort: poll the request doc briefly to reflect fulfillment faster on slow server roundtrips.
+                    const timeoutMs = 15000;
+                    const intervalMs = 750;
+                    const start = Date.now();
+                    while (Date.now() - start < timeoutMs) {
+                      const fresh = await FirestoreService.getParkingRequestById(item.id).catch(() => null);
+                      if (fresh?.isFulfilled) {
+                        setRequests((prev) => prev.map((r) => (r.id === fresh.id ? {...r, ...fresh} : r)));
+                        break;
+                      }
+                      await new Promise<void>((resolve) => setTimeout(() => resolve(), intervalMs));
                     }
-                    await new Promise<void>((resolve) => setTimeout(() => resolve(), intervalMs));
                   }
                 } catch (error: any) {
                   console.error('Fehler beim Annehmen des Angebots:', error);
@@ -1325,9 +1379,18 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               // Don't show error to user, offer was created successfully
             }
           }
+          const requestId = offerModalRequest.id;
           setOfferingRequestId(null);
           setShowOfferModal(false);
           setOfferModalRequest(null);
+          if (Platform.OS === 'web') {
+            const [newRequests, newOffers] = await Promise.all([
+              FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode),
+              ParkingRequestService.getOffersForRequest(requestId),
+            ]);
+            setRequests(newRequests);
+            setOffersByRequestId((prev) => ({...prev, [requestId]: newOffers}));
+          }
         }}
       />
       </View>
