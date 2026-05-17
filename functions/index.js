@@ -6,6 +6,8 @@ const admin = require('firebase-admin');
 const {requireAuth, sendPushToUserCore, sendPushToUserByUid, sendPushToAllCore} = require('./lib/push');
 const {runScheduledParkingMaintenance} = require('./lib/maintenance');
 const {findBestMatchingAvailability, calculateOfferTimeWindow} = require('./lib/matching');
+const {runRematchFacility} = require('./lib/rematchFacility');
+const {runDiagnoseParkingMatch} = require('./lib/diagnoseParkingMatch');
 
 admin.initializeApp();
 
@@ -103,6 +105,120 @@ exports.runMaintenanceNowHttp = onRequest({invoker: 'public', region: REGION, co
 });
 
 /**
+ * Re-run auto-matching for all open requests in the caller's facility.
+ * Skips only when an accepted offer fully covers the request; partial offers get gap rematch.
+ * Body: { facilityCode?: string, dryRun?: boolean, skipIfHasActiveOffer?: boolean, sendPush?: boolean }
+ * Requires auth. Use dryRun:true first to preview without creating offers.
+ */
+exports.runRematchFacilityHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  const decoded = await requireAuth(admin, req, res);
+  if (!decoded) return;
+
+  const body = req.body?.data ?? req.body ?? {};
+  let facilityCode =
+    typeof body?.facilityCode === 'string' ? body.facilityCode.trim().toUpperCase() : '';
+
+  const db = admin.firestore();
+  const uid = decoded.uid;
+
+  try {
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (!userSnap.exists) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'User document not found'}});
+      return;
+    }
+    const userFacilityCode = (userSnap.data().facilityCode || '').trim().toUpperCase();
+    if (!facilityCode) facilityCode = userFacilityCode;
+    if (!facilityCode || userFacilityCode !== facilityCode) {
+      res.status(403).json({
+        error: {status: 'PERMISSION_DENIED', message: 'Can only rematch for own facility'},
+      });
+      return;
+    }
+
+    const dryRun = body?.dryRun === true;
+    const skipIfHasActiveOffer = body?.skipIfHasActiveOffer !== false;
+    const sendPush = body?.sendPush !== false;
+
+    const result = await runRematchFacility({
+      admin,
+      db,
+      facilityCode,
+      dryRun,
+      skipIfHasActiveOffer,
+      sendPush: sendPush && !dryRun,
+      sendPushToUser: (userUid, title, pushBody, data) =>
+        sendPushToUserByUid(admin, userUid, title, pushBody, data),
+    });
+
+    console.log('[runRematchFacility]', result);
+    res.status(200).json({result});
+  } catch (e) {
+    res.status(500).json({error: {status: 'UNKNOWN', message: e?.message ?? String(e)}});
+  }
+});
+
+/**
+ * Match diagnosis for one request (gaps, spot offers incl. withdrawn, blockers).
+ * Body: { requestId: string, spotId?: string, facilityCode?: string }
+ */
+exports.diagnoseParkingMatchHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  const decoded = await requireAuth(admin, req, res);
+  if (!decoded) return;
+
+  const body = req.body?.data ?? req.body ?? {};
+  const requestId = typeof body?.requestId === 'string' ? body.requestId.trim() : '';
+  if (!requestId) {
+    res.status(400).json({error: {status: 'INVALID_ARGUMENT', message: 'requestId required'}});
+    return;
+  }
+
+  const db = admin.firestore();
+  const uid = decoded.uid;
+
+  try {
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (!userSnap.exists) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'User document not found'}});
+      return;
+    }
+    const userFacilityCode = (userSnap.data().facilityCode || '').trim().toUpperCase();
+    let facilityCode =
+      typeof body?.facilityCode === 'string' ? body.facilityCode.trim().toUpperCase() : userFacilityCode;
+    if (!facilityCode || userFacilityCode !== facilityCode) {
+      res.status(403).json({
+        error: {status: 'PERMISSION_DENIED', message: 'Can only diagnose for own facility'},
+      });
+      return;
+    }
+
+    const spotId = typeof body?.spotId === 'string' ? body.spotId.trim() : undefined;
+    const result = await runDiagnoseParkingMatch(admin, db, {requestId, spotId, facilityCode});
+    res.status(200).json({result});
+  } catch (e) {
+    res.status(500).json({error: {status: 'UNKNOWN', message: e?.message ?? String(e)}});
+  }
+});
+
+/**
  * Returns the number of users registered for the given facility.
  * Caller must be authenticated; may only request the count for their own facility (same facilityCode as in their user doc).
  */
@@ -145,6 +261,102 @@ exports.getFacilityMemberCountHttp = onRequest({invoker: 'public', region: REGIO
     const count = usersSnap.size;
 
     res.status(200).json({result: {count}});
+  } catch (e) {
+    res.status(500).json({error: {status: 'UNKNOWN', message: e?.message ?? String(e)}});
+  }
+});
+
+/**
+ * Returns fulfilled request stats for the given facility.
+ * Bereits erfüllt: total fulfilled ever in facility
+ * Zukünftig: fulfilled with until >= now (current + future)
+ * Von mir: fulfilled by/for current user ever in facility
+ * Pass data.debug: true to get debug list in response (and server console.table)
+ */
+exports.getFacilityFulfilledStatsHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  const decoded = await requireAuth(admin, req, res);
+  if (!decoded) return;
+
+  const body = req.body?.data ?? req.body ?? {};
+  const facilityCode = typeof body?.facilityCode === 'string' ? body.facilityCode.trim().toUpperCase() : '';
+  if (!facilityCode) {
+    res.status(400).json({error: {status: 'INVALID_ARGUMENT', message: 'facilityCode required'}});
+    return;
+  }
+
+  const db = admin.firestore();
+  const uid = decoded.uid;
+
+  try {
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (!userSnap.exists) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'User document not found'}});
+      return;
+    }
+    const userFacilityCode = (userSnap.data().facilityCode || '').trim().toUpperCase();
+    if (userFacilityCode !== facilityCode) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'Can only request stats for own facility'}});
+      return;
+    }
+
+    const fulfilledSnap = await db.collection('parking_requests')
+      .where('facilityCode', '==', facilityCode)
+      .where('isFulfilled', '==', true)
+      .get();
+
+    const now = Date.now();
+    let total = 0;
+    let future = 0;
+    let byUser = 0;
+    const wantDebug = body?.debug === true;
+    const debugList = wantDebug ? [] : null;
+
+    fulfilledSnap.docs.forEach((d) => {
+      const data = d.data();
+      // Archivierte zählen mit (waren erfüllt) – nur für total und byUser; Zukünftig schließt sie per until < now aus
+      total++;
+      const fromDate = data.from?.toDate ? data.from.toDate() : null;
+      const untilDate = data.until?.toDate ? data.until.toDate() : null;
+      const until = untilDate ? untilDate.getTime() : 0;
+      if (until >= now) future++;
+      const requestedBy = data.requestedBy || '';
+      const fulfilledByUserIds = Array.isArray(data.fulfilledByUserIds) ? data.fulfilledByUserIds : [];
+      const offeredBy = data.offeredBy || '';
+      const isByUser = requestedBy === uid || offeredBy === uid || fulfilledByUserIds.includes(uid);
+      if (isByUser) byUser++;
+
+      if (debugList) {
+        debugList.push({
+          id: d.id,
+          from: fromDate ? fromDate.toISOString() : null,
+          until: untilDate ? untilDate.toISOString() : null,
+          requestedBy: data.requestedByUsername || requestedBy?.slice(0, 8) + '…',
+          offeredBy: data.offeredByUsername || (offeredBy ? offeredBy.slice(0, 8) + '…' : null),
+          fulfilledByUserIds: fulfilledByUserIds.length,
+          isArchived: data.isArchived === true,
+          isFuture: until >= now,
+          isByUser,
+        });
+      }
+    });
+
+    if (debugList) {
+      console.log('[getFacilityFulfilledStats] facilityCode=', facilityCode, 'uid=', uid);
+      console.table(debugList);
+    }
+
+    const result = {total, future, byUser};
+    if (debugList) result.debug = debugList;
+    res.status(200).json({result});
   } catch (e) {
     res.status(500).json({error: {status: 'UNKNOWN', message: e?.message ?? String(e)}});
   }

@@ -11,3 +11,5 @@ export {expandRecurringAvailability} from './expand';
 export {overlaps, calculateOverlapPercentage} from './overlap';
 export {calculateMatchScore} from './scoring';
 export {calculateOfferTimeWindow} from './offerWindow';
+export {BLOCK_TOLERANCE_MS, mergeIntervals, rangesOverlapWithTolerance} from './blocking';
+export {getFreeTimeWindowsFromBlocked} from './freeWindows';

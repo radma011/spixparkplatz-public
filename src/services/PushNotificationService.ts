@@ -240,6 +240,34 @@ class PushNotificationService {
       ...(typeof opts?.nowMs === 'number' ? {nowMs: opts.nowMs} : {}),
     });
   }
+
+  /**
+   * Re-run auto-matching for all open requests in the user's facility.
+   * Use dryRun:true first to preview matches without creating offers.
+   */
+  async diagnoseParkingMatch(opts: {requestId: string; spotId?: string; facilityCode?: string}): Promise<{
+    result: {lines: string[]};
+  }> {
+    return await this.callCallableHttp('diagnoseParkingMatchHttp', {
+      requestId: opts.requestId,
+      ...(opts.spotId ? {spotId: opts.spotId} : {}),
+      ...(opts.facilityCode ? {facilityCode: opts.facilityCode} : {}),
+    });
+  }
+
+  async runRematchFacilityNow(opts?: {
+    facilityCode?: string;
+    dryRun?: boolean;
+    skipIfHasActiveOffer?: boolean;
+    sendPush?: boolean;
+  }): Promise<{result: unknown}> {
+    return await this.callCallableHttp('runRematchFacilityHttp', {
+      ...(opts?.facilityCode ? {facilityCode: opts.facilityCode} : {}),
+      dryRun: opts?.dryRun === true,
+      ...(opts?.skipIfHasActiveOffer === false ? {skipIfHasActiveOffer: false} : {}),
+      ...(opts?.sendPush === false ? {sendPush: false} : {}),
+    });
+  }
 }
 
 export default new PushNotificationService();

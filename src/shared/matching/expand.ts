@@ -17,26 +17,6 @@ export function expandRecurringAvailability(
   const avUntil = toDate(availability.until);
   if (!avFrom || !avUntil) return [];
 
-  if (!availability.recurrence) {
-    return [
-      {
-        availabilityId: availability.id,
-        userId: availability.userId,
-        spotId: availability.spotId,
-        from: avFrom,
-        until: avUntil,
-        autoOffer: availability.autoOffer !== false,
-        username: availability.username,
-        phone: availability.phone,
-      },
-    ];
-  }
-
-  const startDate = new Date(avFrom);
-  startDate.setHours(0, 0, 0, 0);
-  const startTime = avFrom;
-  const endTime = avUntil;
-
   const reqFromDate =
     toDate(requestFrom) ??
     (requestFrom && typeof (requestFrom as { toDate?: () => Date }).toDate === 'function'
@@ -49,6 +29,30 @@ export function expandRecurringAvailability(
       : new Date(requestUntil as number));
   const reqFromTime = reqFromDate.getTime();
   const reqUntilTime = reqUntilDate.getTime();
+
+  if (!availability.recurrence) {
+    const from = new Date(Math.max(avFrom.getTime(), reqFromTime));
+    const until = new Date(Math.min(avUntil.getTime(), reqUntilTime));
+    if (until.getTime() <= from.getTime()) return [];
+
+    return [
+      {
+        availabilityId: availability.id,
+        userId: availability.userId,
+        spotId: availability.spotId,
+        from,
+        until,
+        autoOffer: availability.autoOffer !== false,
+        username: availability.username,
+        phone: availability.phone,
+      },
+    ];
+  }
+
+  const startDate = new Date(avFrom);
+  startDate.setHours(0, 0, 0, 0);
+  const startTime = avFrom;
+  const endTime = avUntil;
 
   const occurrences = calculateNextOccurrences(
     startDate,

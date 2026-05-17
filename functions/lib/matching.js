@@ -1,7 +1,6 @@
 /**
  * Cloud Functions adapter for availability matching.
  * Pure logic lives in matchingCore (built from src/shared/matching).
- * This file only implements Firestore-specific blocking and orchestrates findBestMatchingAvailability.
  */
 
 const {
@@ -9,32 +8,40 @@ const {
   overlaps,
   calculateMatchScore,
   calculateOfferTimeWindow: coreCalculateOfferTimeWindow,
+  rangesOverlapWithTolerance,
+  BLOCK_TOLERANCE_MS,
+  mergeIntervals,
+  getFreeTimeWindowsFromBlocked,
 } = require('./matchingCore');
 
-const ONE_MINUTE_MS = 60 * 1000;
-const TOLERANCE_MS = ONE_MINUTE_MS;
+function toDate(v) {
+  if (!v) return null;
+  if (v.toDate) return v.toDate();
+  if (v instanceof Date) return v;
+  return new Date(v);
+}
 
 /**
- * Check if spot is blocked by fulfilled requests and active/accepted offers.
- * Uses 1-minute tolerance: booking ending at 18:00 allows next to start at 18:00.
+ * Collect merged blocking intervals on a spot within [rangeFrom, rangeUntil].
  */
-async function isTimeWindowBlocked(admin, db, spotId, facilityCode, from, until, excludeRequestId) {
-  const newStartsAt = from.getTime();
-  const newEndsAt = until.getTime();
+async function collectBlockingIntervals(
+  admin,
+  db,
+  spotId,
+  facilityCode,
+  rangeFrom,
+  rangeUntil,
+  excludeRequestId,
+  extraBlocks,
+) {
+  const avFrom = rangeFrom.getTime();
+  const avUntil = rangeUntil.getTime();
+  const raw = [];
 
-  function blocks(existingStartsAt, existingEndsAt, logContext) {
-    const overlapStart = Math.max(newStartsAt, existingStartsAt);
-    const overlapEnd = Math.min(newEndsAt, existingEndsAt);
-    const overlapMs = overlapEnd - overlapStart;
-    const timeGapStart = newStartsAt - existingEndsAt;
-    const timeGapEnd = existingStartsAt - newEndsAt;
-    if (timeGapStart >= -TOLERANCE_MS && timeGapStart <= TOLERANCE_MS) return false;
-    if (timeGapEnd >= -TOLERANCE_MS && timeGapEnd <= TOLERANCE_MS) return false;
-    if (overlapMs > TOLERANCE_MS) {
-      console.log('[isTimeWindowBlocked] Blocked:', logContext, { overlapMs, timeGapStart, timeGapEnd });
-      return true;
-    }
-    return false;
+  function addBlock(startMs, endMs) {
+    const start = Math.max(startMs, avFrom);
+    const end = Math.min(endMs, avUntil);
+    if (end > start) raw.push({start, end});
   }
 
   const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 14 * 24 * 60 * 60 * 1000);
@@ -52,10 +59,25 @@ async function isTimeWindowBlocked(admin, db, spotId, facilityCode, from, until,
     const data = doc.data();
     if (data.isArchived === true) continue;
     if (!(data.fulfilledSpotIds || []).includes(spotId)) continue;
-    const reqFrom = data.from?.toDate ? data.from.toDate() : null;
-    const reqUntil = data.until?.toDate ? data.until.toDate() : null;
-    if (!reqFrom || !reqUntil) continue;
-    if (blocks(reqFrom.getTime(), reqUntil.getTime(), `fulfilled request ${doc.id}`)) return true;
+
+    const offersSnap = await doc.ref.collection('offers').where('spotId', '==', spotId).get();
+    let matchedOffer = false;
+    for (const offerDoc of offersSnap.docs) {
+      const offerData = offerDoc.data();
+      const st = offerData.status || 'active';
+      if (st !== 'accepted') continue;
+      const offerFrom = toDate(offerData.from);
+      const offerUntil = toDate(offerData.until);
+      if (!offerFrom || !offerUntil) continue;
+      matchedOffer = true;
+      addBlock(offerFrom.getTime(), offerUntil.getTime());
+    }
+
+    const reqFrom = toDate(data.from);
+    const reqUntil = toDate(data.until);
+    if (!matchedOffer && reqFrom && reqUntil) {
+      addBlock(reqFrom.getTime(), reqUntil.getTime());
+    }
   }
 
   const requestsSnap = await db
@@ -70,38 +92,64 @@ async function isTimeWindowBlocked(admin, db, spotId, facilityCode, from, until,
     const requestData = requestDoc.data();
     if (requestData.isArchived === true || requestData.isFulfilled === true) continue;
 
-    const offersSnap = await requestDoc.ref
-      .collection('offers')
-      .where('spotId', '==', spotId)
-      .limit(10)
-      .get();
+    const offersSnap = await requestDoc.ref.collection('offers').where('spotId', '==', spotId).limit(10).get();
 
     for (const offerDoc of offersSnap.docs) {
       const offerData = offerDoc.data();
       const status = offerData.status || 'active';
+      if (status === 'withdrawn' || status === 'standby') continue;
       if (status !== 'active' && status !== 'accepted') continue;
-      const offerFrom = offerData.from?.toDate ? offerData.from.toDate() : null;
-      const offerUntil = offerData.until?.toDate ? offerData.until.toDate() : null;
+      const offerFrom = toDate(offerData.from);
+      const offerUntil = toDate(offerData.until);
       if (!offerFrom || !offerUntil) continue;
-      if (
-        blocks(
-          offerFrom.getTime(),
-          offerUntil.getTime(),
-          `offer ${offerDoc.id} in request ${requestDoc.id}`,
-        )
-      )
-        return true;
+      addBlock(offerFrom.getTime(), offerUntil.getTime());
     }
   }
 
-  return false;
+  if (extraBlocks) {
+    for (const b of extraBlocks) {
+      if (b && typeof b.start === 'number' && typeof b.end === 'number') {
+        addBlock(b.start, b.end);
+      }
+    }
+  }
+
+  return mergeIntervals(raw);
+}
+
+/** @deprecated use collectBlockingIntervals; kept for scripts */
+async function isTimeWindowBlocked(admin, db, spotId, facilityCode, from, until, excludeRequestId) {
+  const windowStart = from.getTime();
+  const windowEnd = until.getTime();
+  const blocked = await collectBlockingIntervals(
+    admin,
+    db,
+    spotId,
+    facilityCode,
+    from,
+    until,
+    excludeRequestId,
+  );
+  for (const b of blocked) {
+    if (
+      rangesOverlapWithTolerance(windowStart, windowEnd, b.start, b.end, BLOCK_TOLERANCE_MS) &&
+      b.start <= windowStart + BLOCK_TOLERANCE_MS &&
+      b.end >= windowEnd - BLOCK_TOLERANCE_MS
+    ) {
+      return true;
+    }
+  }
+  return blocked.some((b) =>
+    rangesOverlapWithTolerance(windowStart, windowEnd, b.start, b.end, BLOCK_TOLERANCE_MS),
+  );
 }
 
 /**
  * Find best matching availability for a request (uses core for expand/overlap/score).
- * Checks blocking for the REQUEST window so partial availability works.
+ * Splits each candidate window into spot-free sub-windows (aligns with calendar).
  */
-async function findBestMatchingAvailability(admin, db, request, availabilities) {
+async function findBestMatchingAvailability(admin, db, request, availabilities, options = {}) {
+  const simulatedBlocks = options.simulatedBlocks || [];
   const requestFrom = request.from;
   const requestUntil = request.until;
   const allowPartialOffers = request.allowPartialOffers !== false;
@@ -121,24 +169,34 @@ async function findBestMatchingAvailability(admin, db, request, availabilities) 
     for (const window of windows) {
       if (!overlaps(requestFrom, requestUntil, window.from, window.until)) continue;
 
-      if (!allowPartialOffers) {
-        const winFromTime = window.from.getTime();
-        const winUntilTime = window.until.getTime();
-        if (winFromTime > reqFromDate.getTime() || winUntilTime < reqUntilDate.getTime()) continue;
-      }
-
-      const isBlocked = await isTimeWindowBlocked(
+      const extraBlocks = simulatedBlocks
+        .filter((b) => String(b.spotId) === String(window.spotId))
+        .map((b) => ({start: b.start, end: b.end}));
+      const blocked = await collectBlockingIntervals(
         admin,
         db,
         window.spotId,
         request.facilityCode,
-        reqFromDate,
-        reqUntilDate,
+        window.from,
+        window.until,
         request.id,
+        extraBlocks.length > 0 ? extraBlocks : undefined,
       );
-      if (isBlocked) continue;
+      const freeParts = getFreeTimeWindowsFromBlocked(window.from, window.until, blocked);
 
-      allWindows.push(window);
+      for (const part of freeParts) {
+        if (!allowPartialOffers) {
+          if (part.from.getTime() > reqFromDate.getTime() || part.until.getTime() < reqUntilDate.getTime()) {
+            continue;
+          }
+        }
+
+        allWindows.push({
+          ...window,
+          from: part.from,
+          until: part.until,
+        });
+      }
     }
   }
 
@@ -153,6 +211,56 @@ async function findBestMatchingAvailability(admin, db, request, availabilities) 
   return scoredWindows[0].window;
 }
 
+/**
+ * Dry-run helper: why a gap did not match (for rematch logging).
+ */
+async function diagnoseGapMatch(admin, db, request, gap, availabilities) {
+  const lines = [];
+  const requestFrom = admin.firestore.Timestamp.fromDate(gap.from);
+  const requestUntil = admin.firestore.Timestamp.fromDate(gap.until);
+  const gapReq = {...request, from: requestFrom, until: requestUntil};
+  const candidates = availabilities.filter((a) => a.userId !== request.requestedBy);
+
+  let overlappingAv = 0;
+  for (const availability of candidates) {
+    if (availability.isActive === false || availability.isMatched === true) continue;
+    const windows = expandRecurringAvailability(availability, requestFrom, requestUntil);
+    if (windows.length === 0) continue;
+    overlappingAv += 1;
+
+    for (const window of windows) {
+      const blocked = await collectBlockingIntervals(
+        admin,
+        db,
+        window.spotId,
+        request.facilityCode,
+        window.from,
+        window.until,
+        request.id,
+      );
+      const freeParts = getFreeTimeWindowsFromBlocked(window.from, window.until, blocked);
+      if (freeParts.length === 0) {
+        lines.push(`Spot ${window.spotId}: Verfügbarkeit überlappt, aber 0 freie Teilfenster (${blocked.length} Blocker)`);
+      } else {
+        lines.push(
+          `Spot ${window.spotId}: ${freeParts.length} freies Teilfenster, autoOffer=${window.autoOffer !== false}`,
+        );
+      }
+    }
+  }
+
+  if (overlappingAv === 0) {
+    lines.unshift('Keine aktive Verfügbarkeit überlappt diese Lücke.');
+  }
+
+  const best = await findBestMatchingAvailability(admin, db, gapReq, availabilities);
+  if (best) {
+    lines.push(`Bestes Match: Spot ${best.spotId}`);
+  }
+
+  return lines;
+}
+
 function calculateOfferTimeWindow(requestFrom, requestUntil, windowFrom, windowUntil) {
   return coreCalculateOfferTimeWindow(requestFrom, requestUntil, windowFrom, windowUntil);
 }
@@ -160,4 +268,7 @@ function calculateOfferTimeWindow(requestFrom, requestUntil, windowFrom, windowU
 module.exports = {
   findBestMatchingAvailability,
   calculateOfferTimeWindow,
+  diagnoseGapMatch,
+  collectBlockingIntervals,
+  isTimeWindowBlocked,
 };

@@ -20,12 +20,16 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/shared/matching/index.ts
 var index_exports = {};
 __export(index_exports, {
+  BLOCK_TOLERANCE_MS: () => BLOCK_TOLERANCE_MS,
   calculateMatchScore: () => calculateMatchScore,
   calculateNextOccurrences: () => calculateNextOccurrences,
   calculateOfferTimeWindow: () => calculateOfferTimeWindow,
   calculateOverlapPercentage: () => calculateOverlapPercentage,
   expandRecurringAvailability: () => expandRecurringAvailability,
+  getFreeTimeWindowsFromBlocked: () => getFreeTimeWindowsFromBlocked,
+  mergeIntervals: () => mergeIntervals,
   overlaps: () => overlaps,
+  rangesOverlapWithTolerance: () => rangesOverlapWithTolerance,
   toDate: () => toDate
 });
 module.exports = __toCommonJS(index_exports);
@@ -160,14 +164,21 @@ function expandRecurringAvailability(availability, requestFrom, requestUntil) {
   const avFrom = toDate(availability.from);
   const avUntil = toDate(availability.until);
   if (!avFrom || !avUntil) return [];
+  const reqFromDate = toDate(requestFrom) ?? (requestFrom && typeof requestFrom.toDate === "function" ? requestFrom.toDate() : new Date(requestFrom));
+  const reqUntilDate = toDate(requestUntil) ?? (requestUntil && typeof requestUntil.toDate === "function" ? requestUntil.toDate() : new Date(requestUntil));
+  const reqFromTime = reqFromDate.getTime();
+  const reqUntilTime = reqUntilDate.getTime();
   if (!availability.recurrence) {
+    const from = new Date(Math.max(avFrom.getTime(), reqFromTime));
+    const until = new Date(Math.min(avUntil.getTime(), reqUntilTime));
+    if (until.getTime() <= from.getTime()) return [];
     return [
       {
         availabilityId: availability.id,
         userId: availability.userId,
         spotId: availability.spotId,
-        from: avFrom,
-        until: avUntil,
+        from,
+        until,
         autoOffer: availability.autoOffer !== false,
         username: availability.username,
         phone: availability.phone
@@ -178,10 +189,6 @@ function expandRecurringAvailability(availability, requestFrom, requestUntil) {
   startDate.setHours(0, 0, 0, 0);
   const startTime = avFrom;
   const endTime = avUntil;
-  const reqFromDate = toDate(requestFrom) ?? (requestFrom && typeof requestFrom.toDate === "function" ? requestFrom.toDate() : new Date(requestFrom));
-  const reqUntilDate = toDate(requestUntil) ?? (requestUntil && typeof requestUntil.toDate === "function" ? requestUntil.toDate() : new Date(requestUntil));
-  const reqFromTime = reqFromDate.getTime();
-  const reqUntilTime = reqUntilDate.getTime();
   const occurrences = calculateNextOccurrences(
     startDate,
     startTime,
@@ -284,13 +291,68 @@ function calculateOfferTimeWindow(requestFrom, requestUntil, windowFrom, windowU
     until: new Date(Math.min(reqUntil, winUntil))
   };
 }
+
+// src/shared/matching/blocking.ts
+var BLOCK_TOLERANCE_MS = 60 * 1e3;
+function mergeIntervals(intervals) {
+  const sorted = intervals.filter((i) => i.end > i.start).sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const it of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || it.start > last.end) merged.push({ ...it });
+    else last.end = Math.max(last.end, it.end);
+  }
+  return merged;
+}
+function rangesOverlapWithTolerance(windowStart, windowEnd, blockStart, blockEnd, toleranceMs = BLOCK_TOLERANCE_MS) {
+  const overlapStart = Math.max(windowStart, blockStart);
+  const overlapEnd = Math.min(windowEnd, blockEnd);
+  const overlapMs = overlapEnd - overlapStart;
+  const timeGapStart = windowStart - blockEnd;
+  const timeGapEnd = blockStart - windowEnd;
+  if (timeGapStart >= -toleranceMs && timeGapStart <= toleranceMs) return false;
+  if (timeGapEnd >= -toleranceMs && timeGapEnd <= toleranceMs) return false;
+  return overlapMs > toleranceMs;
+}
+
+// src/shared/matching/freeWindows.ts
+function getFreeTimeWindowsFromBlocked(rangeFrom, rangeUntil, blocked) {
+  const avFrom = rangeFrom.getTime();
+  const avUntil = rangeUntil.getTime();
+  if (avUntil <= avFrom) return [];
+  const merged = mergeIntervals(
+    blocked.map((b) => ({
+      start: Math.max(b.start, avFrom),
+      end: Math.min(b.end, avUntil)
+    })).filter((b) => b.end > b.start)
+  );
+  if (merged.length === 0) {
+    return [{ from: new Date(rangeFrom), until: new Date(rangeUntil) }];
+  }
+  const free = [];
+  let cursor = avFrom;
+  for (const b of merged) {
+    if (b.start > cursor) {
+      free.push({ from: new Date(cursor), until: new Date(b.start) });
+    }
+    cursor = Math.max(cursor, b.end);
+  }
+  if (cursor < avUntil) {
+    free.push({ from: new Date(cursor), until: new Date(avUntil) });
+  }
+  return free.filter((w) => w.until.getTime() - w.from.getTime() > BLOCK_TOLERANCE_MS);
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  BLOCK_TOLERANCE_MS,
   calculateMatchScore,
   calculateNextOccurrences,
   calculateOfferTimeWindow,
   calculateOverlapPercentage,
   expandRecurringAvailability,
+  getFreeTimeWindowsFromBlocked,
+  mergeIntervals,
   overlaps,
+  rangesOverlapWithTolerance,
   toDate
 });

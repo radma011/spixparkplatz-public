@@ -7,6 +7,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   getDocs,
   getDoc,
   doc,
@@ -22,6 +23,8 @@ import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
 import {ParkingRequest} from '../models/ParkingRequest';
 import {RequestOffer} from '../models/RequestOffer';
 import {RequestComment} from '../models/RequestComment';
+import {BLOCK_TOLERANCE_MS, rangesOverlapWithTolerance} from '../shared/matching';
+import {isOfferBlockingOccupancy} from '../utils/offerOccupancy';
 
 const db = getFirestore();
 
@@ -383,6 +386,199 @@ class FirestoreService {
     });
   }
 
+  private async mapOfferGroupSnapshot(
+    snap: FirebaseFirestoreTypes.QuerySnapshot,
+    facilityCode?: string,
+  ): Promise<OfferFromAvailability[]> {
+    const items: Array<{offer: RequestOffer; requestId: string}> = [];
+    const requestIds = new Set<string>();
+    for (const d of snap.docs) {
+      const data = d.data();
+      const requestDocRef = (d.ref as any).parent?.parent;
+      const requestId = requestDocRef?.id ?? null;
+      if (!requestId) continue;
+      requestIds.add(requestId);
+      const status = (data?.status ?? 'active') as RequestOffer['status'];
+      items.push({
+        requestId,
+        offer: {
+          id: d.id,
+          requestId,
+          offererId: data?.offererId ?? '',
+          spotId: data?.spotId ?? '',
+          from: (data?.from as any)?.toDate?.() ?? new Date(0),
+          until: (data?.until as any)?.toDate?.() ?? new Date(0),
+          status,
+          createdAt: (data?.createdAt as any)?.toDate?.() ?? undefined,
+        },
+      });
+    }
+    if (requestIds.size === 0) return [];
+    const ids = Array.from(requestIds);
+    const requestSnaps = await Promise.all(ids.map((id) => getDoc(doc(this.requestsCollection, id))));
+    const requestById: Record<
+      string,
+      {
+        facilityCode?: string;
+        requestedBy?: string;
+        requestedByUsername?: string;
+        requestFrom?: Date;
+        requestUntil?: Date;
+        isFulfilled?: boolean;
+        isArchived?: boolean;
+      }
+    > = {};
+    requestSnaps.forEach((s, i) => {
+      const id = ids[i];
+      if (!id || !s.exists()) return;
+      const d = s.data();
+      requestById[id] = {
+        facilityCode: d?.facilityCode as string | undefined,
+        requestedBy: d?.requestedBy,
+        requestedByUsername: d?.requestedByUsername as string | undefined,
+        requestFrom: (d?.from as any)?.toDate?.() ?? undefined,
+        requestUntil: (d?.until as any)?.toDate?.() ?? undefined,
+        isFulfilled: d?.isFulfilled === true,
+        isArchived: d?.isArchived === true,
+      };
+    });
+    let result: OfferFromAvailability[] = items.map(({offer, requestId}) => ({
+      offer,
+      requestId,
+      ...requestById[requestId],
+    }));
+    result = result.filter((item) => {
+      if (!isOfferBlockingOccupancy(item.offer.status)) return false;
+      if (requestById[item.requestId]?.isArchived) return false;
+      return true;
+    });
+    if (facilityCode != null && facilityCode !== '') {
+      const normalized = facilityCode.trim().toUpperCase();
+      result = result.filter((item) => {
+        const reqFacility = (requestById[item.requestId]?.facilityCode ?? '').trim().toUpperCase();
+        return reqFacility === normalized;
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Load offers on a spot by scanning facility requests (no collection-group index).
+   */
+  private async loadOffersOnSpotFromRequestDocs(
+    requestDocs: FirebaseFirestoreTypes.QueryDocumentSnapshot[],
+    spotId: string,
+    facilityCode?: string,
+  ): Promise<OfferFromAvailability[]> {
+    const normalized = facilityCode?.trim().toUpperCase();
+    const items: OfferFromAvailability[] = [];
+
+    for (const reqDoc of requestDocs) {
+      const reqData = reqDoc.data();
+      if (normalized && String(reqData.facilityCode || '').trim().toUpperCase() !== normalized) {
+        continue;
+      }
+      if (reqData.isArchived === true) continue;
+
+      const offersSnap = await getDocs(
+        query(this.offersCollection(reqDoc.id), where('spotId', '==', spotId)),
+      );
+      for (const offerDoc of offersSnap.docs) {
+        const data = offerDoc.data();
+        const status = (data?.status ?? 'active') as RequestOffer['status'];
+        if (!isOfferBlockingOccupancy(status)) continue;
+        items.push({
+          offer: {
+            id: offerDoc.id,
+            requestId: reqDoc.id,
+            offererId: data?.offererId ?? '',
+            spotId: data?.spotId ?? spotId,
+            from: (data?.from as Timestamp)?.toDate?.() ?? new Date(0),
+            until: (data?.until as Timestamp)?.toDate?.() ?? new Date(0),
+            status,
+            createdAt: (data?.createdAt as Timestamp)?.toDate?.() ?? undefined,
+          },
+          requestId: reqDoc.id,
+          requestedBy: reqData.requestedBy as string | undefined,
+          requestedByUsername: reqData.requestedByUsername as string | undefined,
+          requestFrom: (reqData.from as Timestamp)?.toDate?.() ?? undefined,
+          requestUntil: (reqData.until as Timestamp)?.toDate?.() ?? undefined,
+          isFulfilled: reqData.isFulfilled === true,
+        });
+      }
+    }
+    return items;
+  }
+
+  private watchOffersBySpotViaFacilityRequests(
+    spotId: string,
+    callback: (items: OfferFromAvailability[]) => void,
+    facilityCode: string,
+  ): () => void {
+    // Index-free: filter facilityCode client-side (same as watchRelevantRequests).
+    const q = query(
+      this.requestsCollection,
+      where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
+      orderBy('until', 'asc'),
+      limit(200),
+    );
+    return onSnapshot(
+      q,
+      async (snap) => {
+        try {
+          const items = await this.loadOffersOnSpotFromRequestDocs(snap.docs, spotId, facilityCode);
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log(
+              `[FirestoreService] watchOffersBySpot ${spotId}: ${items.length} blocking offers (facility scan)`,
+            );
+          }
+          callback(items);
+        } catch (e) {
+          console.error('[FirestoreService] watchOffersBySpot facility scan map error:', e);
+          callback([]);
+        }
+      },
+      (err: any) => {
+        console.error('[FirestoreService] watchOffersBySpot facility scan error:', err);
+        callback([]);
+      },
+    );
+  }
+
+  /**
+   * Watch all offers on a spot (any offerer). Used by calendar for real occupancy on the spot.
+   * With facilityCode: scans recent requests (reliable, matches server diagnose).
+   * Without: collection group on spotId.
+   */
+  watchOffersBySpot(
+    spotId: string,
+    callback: (items: OfferFromAvailability[]) => void,
+    facilityCode?: string,
+  ): () => void {
+    if (facilityCode?.trim()) {
+      return this.watchOffersBySpotViaFacilityRequests(spotId, callback, facilityCode);
+    }
+
+    const q = query(collectionGroup(db, 'offers'), where('spotId', '==', spotId));
+    return onSnapshot(
+      q,
+      async (snap) => {
+        try {
+          const result = await this.mapOfferGroupSnapshot(snap, facilityCode);
+          callback(result);
+        } catch (e) {
+          console.error('[FirestoreService] watchOffersBySpot map error:', e);
+          callback([]);
+        }
+      },
+      (err: any) => {
+        if (String(err?.code ?? '').includes('permission-denied')) return;
+        console.error('[FirestoreService] watchOffersBySpot error:', err);
+        callback([]);
+      },
+    );
+  }
+
   /**
    * Watch all offers made by a given offerer for a given spot (e.g. from one availability).
    * Used on the "Frei" tab to show "Bereits angeboten" in each availability card.
@@ -403,64 +599,12 @@ class FirestoreService {
     const unsubscribe = onSnapshot(
       q,
       async (snap: FirebaseFirestoreTypes.QuerySnapshot) => {
-        const items: Array<{offer: RequestOffer; requestId: string}> = [];
-        const requestIds = new Set<string>();
-        for (const d of snap.docs) {
-          const data = d.data();
-          const requestDocRef = (d.ref as any).parent?.parent;
-          const requestId = requestDocRef?.id ?? null;
-          if (!requestId) continue;
-          requestIds.add(requestId);
-          const status = (data?.status ?? 'active') as RequestOffer['status'];
-          items.push({
-            requestId,
-            offer: {
-              id: d.id,
-              requestId,
-              offererId: data?.offererId ?? '',
-              spotId: data?.spotId ?? '',
-              from: (data?.from as any)?.toDate?.() ?? new Date(0),
-              until: (data?.until as any)?.toDate?.() ?? new Date(0),
-              status,
-              createdAt: (data?.createdAt as any)?.toDate?.() ?? undefined,
-            },
-          });
-        }
-        if (requestIds.size === 0) {
+        try {
+          callback(await this.mapOfferGroupSnapshot(snap, facilityCode));
+        } catch (e) {
+          console.error('[FirestoreService] watchOffersByOffererAndSpot map error:', e);
           callback([]);
-          return;
         }
-        const ids = Array.from(requestIds);
-        const requestSnaps = await Promise.all(
-          ids.map((id) => getDoc(doc(this.requestsCollection, id))),
-        );
-        const requestById: Record<string, {facilityCode?: string; requestedBy?: string; requestedByUsername?: string; requestFrom?: Date; requestUntil?: Date; isFulfilled?: boolean}> = {};
-        requestSnaps.forEach((s, i) => {
-          const id = ids[i];
-          if (!id || !s.exists()) return;
-          const d = s.data();
-          requestById[id] = {
-            facilityCode: d?.facilityCode as string | undefined,
-            requestedBy: d?.requestedBy,
-            requestedByUsername: d?.requestedByUsername as string | undefined,
-            requestFrom: (d?.from as any)?.toDate?.() ?? undefined,
-            requestUntil: (d?.until as any)?.toDate?.() ?? undefined,
-            isFulfilled: d?.isFulfilled === true,
-          };
-        });
-        let result: OfferFromAvailability[] = items.map(({offer, requestId}) => ({
-          offer,
-          requestId,
-          ...requestById[requestId],
-        }));
-        if (facilityCode != null && facilityCode !== '') {
-          const normalized = facilityCode.trim().toUpperCase();
-          result = result.filter((item) => {
-            const reqFacility = (requestById[item.requestId]?.facilityCode ?? '').trim().toUpperCase();
-            return reqFacility === normalized;
-          });
-        }
-        callback(result);
       },
       (err: any) => {
         if (String(err?.code ?? '').includes('permission-denied')) return;
@@ -526,11 +670,13 @@ class FirestoreService {
     until: Date,
     excludeRequestId?: string,
   ): Promise<{request: ParkingRequest; overlapMinutes: number} | null> {
-    const fromTs = Timestamp.fromDate(from);
-    const untilTs = Timestamp.fromDate(until);
-    const oneMinuteMs = 60 * 1000;
+    const windowStart = from.getTime();
+    const windowEnd = until.getTime();
 
-    // Query 1: Check fulfilled requests with this spot
+    const overlapsWindow = (blockFrom: Date, blockUntil: Date) =>
+      rangesOverlapWithTolerance(windowStart, windowEnd, blockFrom.getTime(), blockUntil.getTime());
+
+    // Query 1: Fulfilled requests — block by accepted offer times on this spot (not full request window)
     const fulfilledQuery = query(
       this.requestsCollection,
       where('facilityCode', '==', facilityCode),
@@ -543,56 +689,74 @@ class FirestoreService {
     for (const docSnap of fulfilledSnap.docs) {
       if (excludeRequestId && docSnap.id === excludeRequestId) continue;
       const data = docSnap.data();
-      // Skip archived requests
       if (data.isArchived === true) continue;
       const fulfilledSpots = (data.fulfilledSpotIds as string[] | undefined) ?? [];
       if (!fulfilledSpots.includes(spotId)) continue;
 
+      const offersSnap = await getDocs(
+        query(this.offersCollection(docSnap.id), where('spotId', '==', spotId)),
+      );
+      let matchedOffer = false;
+      for (const offerDoc of offersSnap.docs) {
+        const offerStatus = offerDoc.data()?.status ?? 'active';
+        if (offerStatus !== 'accepted') continue;
+        const offerFrom = offerDoc.data()?.from?.toDate?.() ?? null;
+        const offerUntil = offerDoc.data()?.until?.toDate?.() ?? null;
+        if (!offerFrom || !offerUntil) continue;
+        matchedOffer = true;
+        if (overlapsWindow(offerFrom, offerUntil)) {
+          const overlapMs =
+            Math.min(windowEnd, offerUntil.getTime()) - Math.max(windowStart, offerFrom.getTime());
+          return {
+            request: this.parkingRequestFromDocSnap(docSnap),
+            overlapMinutes: Math.round(Math.max(0, overlapMs) / 60000),
+          };
+        }
+      }
+
       const reqFrom = data.from?.toDate ? data.from.toDate() : null;
       const reqUntil = data.until?.toDate ? data.until.toDate() : null;
-      if (!reqFrom || !reqUntil) continue;
-
-      // Check overlap (allowing 1 minute)
-      const overlapStart = Math.max(from.getTime(), reqFrom.getTime());
-      const overlapEnd = Math.min(until.getTime(), reqUntil.getTime());
-      const overlapMs = overlapEnd - overlapStart;
-      if (overlapMs > oneMinuteMs) {
-        const overlapMinutes = Math.round(overlapMs / 60000);
-        return {request: this.parkingRequestFromDocSnap(docSnap), overlapMinutes};
+      if (!matchedOffer && reqFrom && reqUntil && overlapsWindow(reqFrom, reqUntil)) {
+        const overlapMs =
+          Math.min(windowEnd, reqUntil.getTime()) - Math.max(windowStart, reqFrom.getTime());
+        return {
+          request: this.parkingRequestFromDocSnap(docSnap),
+          overlapMinutes: Math.round(Math.max(0, overlapMs) / 60000),
+        };
       }
     }
 
-    // Query 2: Check requests with offeredSpotId (not yet fulfilled, but spot is offered)
-    // Use index-free query: filter by until only, then filter by offeredSpotId client-side
-    const offeredQuery = query(
+    // Query 2: Open requests — active/accepted offers on this spot (offer times only)
+    const openQuery = query(
       this.requestsCollection,
       where('facilityCode', '==', facilityCode),
       where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
       orderBy('until'),
     );
-    const offeredSnap = await getDocs(offeredQuery);
+    const openSnap = await getDocs(openQuery);
 
-    for (const docSnap of offeredSnap.docs) {
+    for (const docSnap of openSnap.docs) {
       if (excludeRequestId && docSnap.id === excludeRequestId) continue;
       const data = docSnap.data();
-      // Skip archived requests
-      if (data.isArchived === true) continue;
-      // Skip if already fulfilled (handled above)
-      if (data.isFulfilled === true) continue;
-      // Filter by offeredSpotId client-side (index-free)
-      if (data.offeredSpotId !== spotId) continue;
+      if (data.isArchived === true || data.isFulfilled === true) continue;
 
-      const reqFrom = data.from?.toDate ? data.from.toDate() : null;
-      const reqUntil = data.until?.toDate ? data.until.toDate() : null;
-      if (!reqFrom || !reqUntil) continue;
-
-      // Check overlap (allowing 1 minute)
-      const overlapStart = Math.max(from.getTime(), reqFrom.getTime());
-      const overlapEnd = Math.min(until.getTime(), reqUntil.getTime());
-      const overlapMs = overlapEnd - overlapStart;
-      if (overlapMs > oneMinuteMs) {
-        const overlapMinutes = Math.round(overlapMs / 60000);
-        return {request: this.parkingRequestFromDocSnap(docSnap), overlapMinutes};
+      const offersSnap = await getDocs(
+        query(this.offersCollection(docSnap.id), where('spotId', '==', spotId)),
+      );
+      for (const offerDoc of offersSnap.docs) {
+        const status = offerDoc.data()?.status ?? 'active';
+        if (!isOfferBlockingOccupancy(status)) continue;
+        const offerFrom = offerDoc.data()?.from?.toDate?.() ?? null;
+        const offerUntil = offerDoc.data()?.until?.toDate?.() ?? null;
+        if (!offerFrom || !offerUntil) continue;
+        if (overlapsWindow(offerFrom, offerUntil)) {
+          const overlapMs =
+            Math.min(windowEnd, offerUntil.getTime()) - Math.max(windowStart, offerFrom.getTime());
+          return {
+            request: this.parkingRequestFromDocSnap(docSnap),
+            overlapMinutes: Math.round(Math.max(0, overlapMs) / 60000),
+          };
+        }
       }
     }
 
@@ -1034,6 +1198,90 @@ class FirestoreService {
       name: data?.name as string | undefined,
       active: data?.active !== false, // Default: true, wenn nicht explizit false
     };
+  }
+
+  /**
+   * Ruft die erfüllten-Anfragen-Statistiken für diese Parkanlage ab (per HTTP Function).
+   * Gibt bei Fehler oder ohne Auth null zurück.
+   */
+  async getFacilityFulfilledStats(
+    facilityCode: string,
+  ): Promise<{total: number; future: number; byUser: number} | null> {
+    if (!facilityCode || !facilityCode.trim()) return null;
+    const normalizedCode = facilityCode.trim().toUpperCase();
+    const auth = getAuth(getApp());
+    const user = auth.currentUser;
+    if (!user) return null;
+    try {
+      const token = await getIdToken(user, false);
+      const projectId = getApp().options.projectId;
+      if (!projectId) return null;
+      const region = 'europe-west3';
+      const url = `https://${region}-${projectId}.cloudfunctions.net/getFacilityFulfilledStatsHttp`;
+      const isDev =
+        (typeof __DEV__ !== 'undefined' && __DEV__) ||
+        (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production');
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: {facilityCode: normalizedCode, ...(isDev ? {debug: true} : {})},
+        }),
+      });
+      const text = await res.text().catch(() => '');
+      const json: {
+        result?: {
+          total?: number;
+          future?: number;
+          byUser?: number;
+          debug?: Array<{
+            id: string;
+            from: string | null;
+            until: string | null;
+            requestedBy: string;
+            offeredBy: string | null;
+            fulfilledByUserIds: number;
+            isArchived: boolean;
+            isFuture: boolean;
+            isByUser: boolean;
+          }>;
+        };
+        error?: {message?: string};
+      } = (() => {
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch {
+          return {};
+        }
+      })();
+      if (!res.ok) return null;
+      const result = json?.result;
+      if (!result || typeof result.total !== 'number') return null;
+      if (isDev && result.debug && result.debug.length > 0) {
+        console.log('[FulfilledStats] Erfüllte Anfragen:', result.total, 'gesamt,', result.future, 'zukünftig,', result.byUser, 'von mir');
+        console.table(
+          result.debug.map((d) => ({
+            Von: d.from?.slice(0, 16) ?? '-',
+            Bis: d.until?.slice(0, 16) ?? '-',
+            Requester: d.requestedBy,
+            Anbieter: d.offeredBy ?? '-',
+            Zukünftig: d.isFuture ? '✓' : '',
+            VonMir: d.isByUser ? '✓' : '',
+          })),
+        );
+      }
+      return {
+        total: result.total,
+        future: typeof result.future === 'number' ? result.future : 0,
+        byUser: typeof result.byUser === 'number' ? result.byUser : 0,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**

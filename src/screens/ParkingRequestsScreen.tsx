@@ -98,6 +98,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const publicUserUnsubsRef = useRef<Record<string, () => void>>({});
   const [offersByRequestId, setOffersByRequestId] = useState<Record<string, RequestOffer[]>>({});
   const offerUnsubsRef = useRef<Record<string, () => void>>({});
+  const offerListenerInitializedRef = useRef<Set<string>>(new Set());
+  const requestFlagsRef = useRef<Record<string, {isArchived: boolean}>>({});
   const [offersByAvailabilityId, setOffersByAvailabilityId] = useState<
     Record<string, OfferFromAvailability[]>
   >({});
@@ -109,6 +111,11 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const [commentsRequestId, setCommentsRequestId] = useState<string | null>(null);
   const [facilityName, setFacilityName] = useState<string | null>(null);
   const [facilityMemberCount, setFacilityMemberCount] = useState<number | null>(null);
+  const [fulfilledStats, setFulfilledStats] = useState<{
+    total: number;
+    future: number;
+    byUser: number;
+  } | null>(null);
   const [offeringRequestId, setOfferingRequestId] = useState<string | null>(null);
   const requestsUnsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -262,6 +269,20 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       }
     };
     loadFacilityInfo();
+  }, [currentUserData.facilityCode]);
+
+  // Load fulfilled stats for header chip
+  useEffect(() => {
+    if (!currentUserData.facilityCode) return;
+    let cancelled = false;
+    FirestoreService.getFacilityFulfilledStats(currentUserData.facilityCode).then((stats) => {
+      if (!cancelled && stats) {
+        setFulfilledStats(stats);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [currentUserData.facilityCode]);
 
   useEffect(() => {
@@ -701,6 +722,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
   // Subscribe to offers for my open requests (so I can choose which to accept).
   useEffect(() => {
+    const flags: Record<string, {isArchived: boolean}> = {};
+    displayRequests.forEach((r) => {
+      flags[r.id] = {isArchived: r.isArchived === true};
+    });
+    requestFlagsRef.current = flags;
+
     const ids = new Set<string>();
     displayRequests.forEach((r) => {
       const iAmRequester = r.requestedBy === currentUserId;
@@ -717,8 +744,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       if (offerUnsubsRef.current[requestId]) return;
       offerUnsubsRef.current[requestId] = ParkingRequestService.watchOffersForRequest(requestId).onSnapshot(
         (snap: any) => {
+          const isFirstSnapshot = !offerListenerInitializedRef.current.has(requestId);
+          offerListenerInitializedRef.current.add(requestId);
+
           const previousOffers = offersByRequestId[requestId] || [];
           const previousOfferIds = new Set(previousOffers.map((o) => o.id));
+          const parentArchived = requestFlagsRef.current[requestId]?.isArchived === true;
           
           const offers: RequestOffer[] = (snap?.docs ?? [])
             .map((d: any) => {
@@ -727,8 +758,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               const createdAt = data.createdAt ? (data.createdAt as any).toDate() : undefined;
               
               // Check if this is a new offer (not in previous offers)
-              const isNewOffer = !previousOfferIds.has(d.id);
-              if (isNewOffer && createdAt) {
+              const isNewOffer = !isFirstSnapshot && !previousOfferIds.has(d.id);
+              if (isNewOffer && createdAt && !parentArchived) {
                 // Check if it was created very recently (within 10 seconds) - likely auto-match
                 const now = new Date();
                 const timeSinceCreation = now.getTime() - createdAt.getTime();
@@ -746,6 +777,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                     offerId: d.id,
                     requestId,
                     spotId: data.spotId,
+                    status: data.status ?? 'active',
                     offererId: data.offererId,
                     from: (data.from as any).toDate().toISOString(),
                     until: (data.until as any).toDate().toISOString(),
@@ -784,6 +816,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         offerUnsubsRef.current[requestId]?.();
       } finally {
         delete offerUnsubsRef.current[requestId];
+        offerListenerInitializedRef.current.delete(requestId);
         setOffersByRequestId((prev) => {
           const next = {...prev};
           delete next[requestId];
@@ -850,9 +883,6 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   }, [displayRequests, currentUserId, offersByRequestId]);
 
   const fulfilledSections = useMemo(() => {
-    const sortByUntilDesc = (a: ParkingRequest, b: ParkingRequest) =>
-      b.until.getTime() - a.until.getTime();
-
     const hasAcceptedOffers = (request: ParkingRequest) => {
       const offers = offersByRequestId[request.id] ?? [];
       return offers.some((o) => o.status === 'accepted');
@@ -871,7 +901,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           r.requestedBy === currentUserId &&
           (r.isFulfilled || (!r.isFulfilled && hasAcceptedOffers(r))),
       )
-      .sort(sortByUntilDesc);
+      .sort(sortByStartAsc);
 
     const myFulfilledOffers = displayRequests
       .filter((r) => {
@@ -887,7 +917,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
         return isFullyFulfilledAndMine || isPartiallyFulfilledAndMine;
       })
-      .sort(sortByUntilDesc);
+      .sort(sortByStartAsc);
 
     const myArchived = displayRequests
       .filter(
@@ -898,7 +928,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
             r.offeredBy === currentUserId ||
             (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId))),
       )
-      .sort(sortByUntilDesc);
+      .sort(sortByStartAsc);
 
     const sections: RequestSection[] = [];
     sections.push({title: 'MEINE ANFRAGEN', data: myFulfilledRequests});
@@ -907,10 +937,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     return sections;
   }, [displayRequests, currentUserId, offersByRequestId]);
 
-  const displayAvailabilities = useMemo(
-    () => availabilities.filter(isStillVisibleAvailability),
-    [availabilities],
-  );
+  const displayAvailabilities = useMemo(() => {
+    const filtered = availabilities.filter(isStillVisibleAvailability);
+    return [...filtered].sort((a, b) => a.from.getTime() - b.from.getTime());
+  }, [availabilities]);
 
   // Subscribe to "offers from this availability" when on Frei tab (for "Bereits angeboten" in each card).
   useEffect(() => {
@@ -1058,12 +1088,24 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           {facilityName && (
             <Text style={styles.headerSubtitle}>({facilityName})</Text>
           )}
-          {facilityMemberCount !== null && (
-            <View style={styles.headerMemberCount}>
-              <MaterialCommunityIcons name="account-group" size={14} color="rgba(255,255,255,0.95)" />
-              <Text style={styles.headerMemberCountText}>{facilityMemberCount} User</Text>
-            </View>
-          )}
+          <View style={styles.headerChipsRow}>
+            {facilityMemberCount !== null && (
+              <View style={styles.headerMemberCount}>
+                <MaterialCommunityIcons name="account-group" size={14} color="rgba(255,255,255,0.95)" />
+                <Text style={styles.headerMemberCountText}>{facilityMemberCount} User</Text>
+              </View>
+            )}
+            {fulfilledStats !== null && (
+              <View
+                style={styles.headerFulfilledChip}
+                accessibilityLabel={`Erfüllt: ${fulfilledStats.total} gesamt, ${fulfilledStats.future} zukünftig, ${fulfilledStats.byUser} von mir`}>
+                <MaterialCommunityIcons name="check-circle" size={14} color="rgba(255,255,255,0.95)" />
+                <Text style={styles.headerFulfilledChipText}>
+                  {fulfilledStats.total + fulfilledStats.future} insgesamt erfüllt · {fulfilledStats.byUser} eigene
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
         <View style={styles.headerButtons}>
           <TouchableOpacity
@@ -1283,6 +1325,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
                 setLoading(true);
                 const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
                 setRequests(newRequests);
+                if (currentUserData.facilityCode) {
+                  const stats = await FirestoreService.getFacilityFulfilledStats(currentUserData.facilityCode);
+                  if (stats) setFulfilledStats(stats);
+                }
                 setLoading(false);
               }}
             />
@@ -1436,11 +1482,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     opacity: 0.9,
   },
+  headerChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 3,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
   headerMemberCount: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 3,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1448,6 +1500,19 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   headerMemberCountText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.95)',
+  },
+  headerFulfilledChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    gap: 4,
+  },
+  headerFulfilledChipText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.95)',
   },

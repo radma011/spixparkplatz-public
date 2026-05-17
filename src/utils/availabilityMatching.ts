@@ -126,8 +126,8 @@ export async function findBestMatchingAvailability(
         const isBlocked = await isTimeWindowBlocked(
           window.spotId,
           request.facilityCode,
-          requestFrom,
-          requestUntil,
+          window.from,
+          window.until,
           checkSpotAvailabilityFn,
         );
         if (isBlocked) continue;

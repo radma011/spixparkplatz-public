@@ -306,10 +306,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = spixparkplatz/spixparkplatz.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = N2N8GJQSWQ;
+				DEVELOPMENT_TEAM = N2N8GJQSWQ;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = spixparkplatz/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Spix Parken";
@@ -319,7 +319,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -328,7 +328,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.radisoglou.parkplatz;
 				PRODUCT_NAME = spixparkplatz;
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "2025-12-28 Parkplatz";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -346,10 +345,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = spixparkplatz/spixparkplatz.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = N2N8GJQSWQ;
+				DEVELOPMENT_TEAM = N2N8GJQSWQ;
 				INFOPLIST_FILE = spixparkplatz/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Spix Parken";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -358,7 +357,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -367,7 +366,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.radisoglou.parkplatz;
 				PRODUCT_NAME = spixparkplatz;
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "2025-12-28 Parkplatz";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;

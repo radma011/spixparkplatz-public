@@ -2,7 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme, Dimensions, useWindowDimensions} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import FirestoreService from '../services/FirestoreService';
+import FirestoreService, {OfferFromAvailability} from '../services/FirestoreService';
 import ParkingAvailabilityService from '../services/ParkingAvailabilityService';
 import {ParkingRequest} from '../models/ParkingRequest';
 import {ParkingAvailability, isRecurring} from '../models/ParkingAvailability';
@@ -10,6 +10,11 @@ import {formatDateLabel, formatTime} from '../utils/dateUtils';
 import {getColors} from '../theme/colors';
 import WatermarkBackground from '../components/WatermarkBackground';
 import {calculateNextOccurrences} from '../utils/recurrenceUtils';
+import {getFreeTimeWindows} from '../utils/availabilityFreeWindows';
+
+function calendarSpotKey(spotId: string): string {
+  return spotId;
+}
 
 interface Props {
   onBack: () => void;
@@ -150,6 +155,8 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   const [myOffers, setMyOffers] = useState<ParkingRequest[]>([]);
   const [openRequests, setOpenRequests] = useState<ParkingRequest[]>([]);
   const [availabilities, setAvailabilities] = useState<ParkingAvailability[]>([]);
+  const [offersBySpotKey, setOffersBySpotKey] = useState<Record<string, OfferFromAvailability[]>>({});
+  const spotOfferUnsubsRef = useRef<Record<string, () => void>>({});
   const [publicUsers, setPublicUsers] = useState<Record<string, {username?: string; phone?: string}>>({});
   const publicUserUnsubsRef = useRef<Record<string, () => void>>({});
   
@@ -219,6 +226,57 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     };
   }, [facilityCode]);
 
+  // Offers pro Spot (für „vergeben“: freie Restzeit im Kalender)
+  useEffect(() => {
+    if (availabilityFilter === 'none') {
+      Object.values(spotOfferUnsubsRef.current).forEach((unsub) => {
+        try {
+          unsub();
+        } catch (_) {}
+      });
+      spotOfferUnsubsRef.current = {};
+      setOffersBySpotKey({});
+      return;
+    }
+
+    const spotsNeeded = new Set<string>();
+    availabilities.forEach((av) => {
+      if (!av.isActive) return;
+      if (availabilityFilter === 'mine' && av.userId !== currentUserId) return;
+      spotsNeeded.add(av.spotId);
+    });
+
+    spotsNeeded.forEach((spotId) => {
+      const key = calendarSpotKey(spotId);
+      try {
+        spotOfferUnsubsRef.current[key]?.();
+      } catch (_) {}
+      spotOfferUnsubsRef.current[key] = FirestoreService.watchOffersBySpot(
+        spotId,
+        (items) => {
+          setOffersBySpotKey((prev) => {
+            if (prev[key] === items) return prev;
+            return {...prev, [key]: items};
+          });
+        },
+        facilityCode,
+      );
+    });
+
+    Object.keys(spotOfferUnsubsRef.current).forEach((key) => {
+      if (spotsNeeded.has(key)) return;
+      try {
+        spotOfferUnsubsRef.current[key]?.();
+      } catch (_) {}
+      delete spotOfferUnsubsRef.current[key];
+      setOffersBySpotKey((prev) => {
+        const next = {...prev};
+        delete next[key];
+        return next;
+      });
+    });
+  }, [availabilities, availabilityFilter, currentUserId, facilityCode]);
+
   // Keep a live cache of usernames for involved users (so we can show the other person's name in calendar)
   useEffect(() => {
     const ids = new Set<string>();
@@ -277,8 +335,11 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       ? new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59)
       : addDays(weekStart, 6);
 
+    const showRequestInCalendar = (r: ParkingRequest) => !r.isArchived;
+
     // Add requests (filtered by showOpen, showHasOffer, showOffer, showRequest)
     myRequests.forEach((r) => {
+      if (!showRequestInCalendar(r)) return;
       if (seen.has(r.id)) return;
       seen.add(r.id);
       const otherUid = r.offeredBy ?? null;
@@ -309,6 +370,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     });
 
     myOffers.forEach((r) => {
+      if (!showRequestInCalendar(r)) return;
       if (seen.has(r.id)) return;
       seen.add(r.id);
       if (!showOffer) return; // Filter offers
@@ -342,63 +404,86 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       });
     });
 
-    // Add availabilities (filtered by availabilityFilter)
+    // Add availabilities (filtered by availabilityFilter); angenommene Angebote = vergeben
     if (availabilityFilter !== 'none') {
       availabilities.forEach((av) => {
         if (!av.isActive) return;
-        
-        // Filter by availabilityFilter
+
         if (availabilityFilter === 'mine' && av.userId !== currentUserId) return;
 
+        const offers = offersBySpotKey[calendarSpotKey(av.spotId)] ?? [];
+        const otherUsername =
+          av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username);
+
+        const pushFreeWindows = (
+          windowFrom: Date,
+          windowUntil: Date,
+          idBase: string,
+          recurring: boolean,
+        ) => {
+          const freeWindows = getFreeTimeWindows(windowFrom, windowUntil, offers, {
+            includeActiveOffers: true,
+          });
+          freeWindows.forEach((fw, fwIdx) => {
+            out.push({
+              id: fwIdx === 0 ? idBase : `${idBase}-free${fwIdx}`,
+              kind: 'availability',
+              marker: 'availability',
+              from: fw.from,
+              until: fw.until,
+              offeredSpotId: av.spotId,
+              otherUsername,
+              isFulfilled: false,
+              isRecurring: recurring,
+            });
+          });
+        };
+
         if (isRecurring(av) && av.recurrence) {
-          // For recurring availabilities, calculate occurrences within the view range
           const occurrences = calculateNextOccurrences(
             av.from,
             av.from,
             av.until,
             av.recurrence,
-            100, // Get enough occurrences to cover the view
-          ).filter((occ) => {
-            // Filter to only include occurrences within the view range
-            return occ >= viewStart && occ <= viewEnd;
-          });
+            100,
+          ).filter((occ) => occ >= viewStart && occ <= viewEnd);
 
-          // Create an entry for each occurrence
           occurrences.forEach((occurrence, index) => {
             const occurrenceEnd = new Date(occurrence);
             occurrenceEnd.setHours(av.until.getHours(), av.until.getMinutes(), 0, 0);
-            
-            out.push({
-              id: `${av.id}-${index}-${occurrence.getTime()}`,
-              kind: 'availability',
-              marker: 'availability',
-              from: occurrence,
-              until: occurrenceEnd,
-              offeredSpotId: av.spotId,
-              otherUsername: av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username),
-              isFulfilled: false,
-              isRecurring: true,
-            });
+            if (occurrenceEnd <= occurrence) occurrenceEnd.setDate(occurrenceEnd.getDate() + 1);
+
+            pushFreeWindows(
+              occurrence,
+              occurrenceEnd,
+              `${av.id}-${index}-${occurrence.getTime()}`,
+              true,
+            );
           });
         } else {
-          // One-time availability
-          out.push({
-            id: av.id,
-            kind: 'availability',
-            marker: 'availability',
-            from: av.from,
-            until: av.until,
-            offeredSpotId: av.spotId,
-            otherUsername: av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username),
-            isFulfilled: false,
-            isRecurring: false,
-          });
+          pushFreeWindows(av.from, av.until, av.id, false);
         }
       });
     }
 
     return out;
-  }, [myRequests, myOffers, openRequests, availabilities, publicUsers, currentUserId, cursor, mode, weekStart, showOpen, showHasOffer, showOffer, availabilityFilter, showRequest]);
+  }, [
+    myRequests,
+    myOffers,
+    openRequests,
+    availabilities,
+    offersBySpotKey,
+    publicUsers,
+    currentUserId,
+    cursor,
+    mode,
+    weekStart,
+    showOpen,
+    showHasOffer,
+    showOffer,
+    availabilityFilter,
+    showRequest,
+  ]);
 
   // Keep cursor aligned with selection (helps week mode always show selected day)
   useEffect(() => {

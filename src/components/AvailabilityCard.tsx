@@ -234,7 +234,7 @@ const AvailabilityCard: React.FC<Props> = ({
         const active = offersFromAvailability.filter(
           (x) => x.offer.status === 'active' || x.offer.status === 'accepted',
         );
-        if (__DEV__) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
           const withdrawn = offersFromAvailability.filter((x) => x.offer.status === 'withdrawn');
           const standby = offersFromAvailability.filter((x) => x.offer.status === 'standby');
           if (offersFromAvailability.length > 0) {

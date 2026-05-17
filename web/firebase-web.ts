@@ -10,6 +10,7 @@ import {
   getFirestore as getFirestoreSDK, 
   Firestore,
   collection as webCollection,
+  collectionGroup as webCollectionGroup,
   doc as webDoc,
   query as webQuery,
   where as webWhere,
@@ -110,6 +111,11 @@ export const collection = (dbOrRef: Firestore | DocumentReference, ...pathSegmen
   // It's a Firestore instance
   const path = pathSegments.join('/');
   return webCollection(dbOrRef as Firestore, path);
+};
+
+/** Collection group query (e.g. all `offers` subcollections). Matches RN Firebase: collectionGroup(db, id). */
+export const collectionGroup = (firestore: Firestore, collectionId: string) => {
+  return webCollectionGroup(firestore, collectionId);
 };
 
 export const doc = (collectionOrRef: Firestore | CollectionReference | DocumentReference, ...pathSegments: string[]) => {

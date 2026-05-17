@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
@@ -73,8 +74,10 @@ module.exports = {
     ],
   },
   plugins: [
-    // Note: Webpack automatically sets process.env.NODE_ENV based on --mode flag
-    // No need to manually define it with DefinePlugin
+    // React Native / Metro global (used in app code and some RN packages)
+    new webpack.DefinePlugin({
+      __DEV__: JSON.stringify(!isProduction),
+    }),
     new HtmlWebpackPlugin({
       template: './web/index.html',
       filename: 'index.html',

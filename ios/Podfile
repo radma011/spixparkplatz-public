@@ -47,6 +47,12 @@ post_install do |installer|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
       # Allow non-modular includes in framework modules
       config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+
+      # fmt 11.0.2 (RCT-Folly): Xcode 26+ / Apple Clang 21 rejects consteval in format-inl.h.
+      # C++17 disables FMT_USE_CONSTEVAL in fmt/base.h (see fmtlib/fmt#4740).
+      if target.name == 'fmt'
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+      end
       
       # Fix for FirebaseAuth Swift headers
       if target.name == 'FirebaseAuth' || target.name == 'RNFBAuth'

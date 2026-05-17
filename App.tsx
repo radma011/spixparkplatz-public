@@ -11,6 +11,8 @@ import {getMessaging, getInitialNotification, onNotificationOpenedApp} from '@re
 import AuthScreen from './src/screens/AuthScreen';
 import ParkingRequestsScreen from './src/screens/ParkingRequestsScreen';
 import AuthService, {UserData} from './src/services/AuthService';
+import PushNotificationService from './src/services/PushNotificationService';
+import {logRematchResult} from './src/utils/logRematchResult';
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
@@ -124,6 +126,66 @@ function App(): React.JSX.Element {
     const userData = await AuthService.getCurrentUser();
     setUser(userData);
   };
+
+  // Web dev: ?rematch=dry | ?diagnose=jFqhKg0gG1yUS3Wk4X7c&spot=2082
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !user || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const diagnoseId = params.get('diagnose');
+    if (diagnoseId) {
+      const spot = params.get('spot') || undefined;
+      (async () => {
+        try {
+          const payload = await PushNotificationService.diagnoseParkingMatch({
+            requestId: diagnoseId,
+            spotId: spot,
+          });
+          const lines =
+            (payload as {lines?: string[]})?.lines ??
+            (payload as {result?: {lines?: string[]}})?.result?.lines ??
+            [];
+          console.log(`[diagnose] ${diagnoseId}${spot ? ` spot ${spot}` : ''} (${lines.length} Zeilen)`);
+          if (lines.length === 0) {
+            console.log('[diagnose] (keine Zeilen – Rohantwort:)', payload);
+          }
+          for (const line of lines) {
+            console.log(`[diagnose] ${line}`);
+          }
+        } catch (e) {
+          console.error('[diagnose] failed:', e);
+        } finally {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })();
+      return;
+    }
+
+    const mode = params.get('rematch');
+    if (!mode) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        if (mode === 'dry' || mode === 'all') {
+          const dry = await PushNotificationService.runRematchFacilityNow({dryRun: true});
+          logRematchResult('Dry Run', dry);
+        }
+        if (cancelled) return;
+        if (mode === 'live' || mode === 'all') {
+          const live = await PushNotificationService.runRematchFacilityNow();
+          logRematchResult('Live', live);
+        }
+      } catch (e) {
+        console.error('[rematch] failed:', e);
+      } finally {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   if (loading) {
     return (

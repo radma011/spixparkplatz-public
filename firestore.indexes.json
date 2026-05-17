@@ -7,7 +7,24 @@
         { "fieldPath": "offererId", "order": "ASCENDING" },
         { "fieldPath": "spotId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "parking_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "facilityCode", "order": "ASCENDING" },
+        { "fieldPath": "isFulfilled", "order": "ASCENDING" }
+      ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "offers",
+      "fieldPath": "spotId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
 }

@@ -17,6 +17,7 @@ if (isWeb) {
     // Firestore
     getFirestore: require('@react-native-firebase/firestore').getFirestore,
     collection: require('@react-native-firebase/firestore').collection,
+    collectionGroup: require('@react-native-firebase/firestore').collectionGroup,
     doc: require('@react-native-firebase/firestore').doc,
     query: require('@react-native-firebase/firestore').query,
     where: require('@react-native-firebase/firestore').where,
