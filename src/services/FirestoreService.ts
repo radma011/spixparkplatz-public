@@ -20,7 +20,7 @@ import {
   FieldPath,
 } from '@react-native-firebase/firestore';
 import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
-import {ParkingRequest} from '../models/ParkingRequest';
+import {ParkingRequest, isOpen} from '../models/ParkingRequest';
 import {RequestOffer} from '../models/RequestOffer';
 import {RequestComment} from '../models/RequestComment';
 import {BLOCK_TOLERANCE_MS, rangesOverlapWithTolerance} from '../shared/matching';
@@ -38,6 +38,37 @@ export interface OfferFromAvailability {
   requestFrom?: Date;
   requestUntil?: Date;
   isFulfilled?: boolean;
+}
+
+/** Client-side filter for relevant requests (live snapshot + refresh). */
+export function shouldIncludeRelevantRequest(
+  r: ParkingRequest,
+  currentUserId: string,
+  facilityCode: string,
+  options?: {isAdmin?: boolean},
+): boolean {
+  if (r.facilityCode !== facilityCode) {
+    return false;
+  }
+
+  const isInvolved =
+    r.requestedBy === currentUserId ||
+    r.offeredBy === currentUserId ||
+    (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId));
+
+  if (r.isArchived) {
+    return isInvolved;
+  }
+  if (isOpen(r)) {
+    return true;
+  }
+  if (r.isFulfilled) {
+    return options?.isAdmin === true || isInvolved;
+  }
+  if (r.offeredSpotId && !r.isFulfilled) {
+    return true;
+  }
+  return false;
 }
 
 class FirestoreService {
@@ -169,7 +200,11 @@ class FirestoreService {
   }
 
   // Alle relevanten Anfragen abrufen (offene + erfüllte, wenn User beteiligt ist)
-  async getRelevantRequests(currentUserId: string, facilityCode: string): Promise<ParkingRequest[]> {
+  async getRelevantRequests(
+    currentUserId: string,
+    facilityCode: string,
+    options?: {isAdmin?: boolean},
+  ): Promise<ParkingRequest[]> {
     // IMPORTANT: Keep query index-free by filtering only by until, then filter facilityCode client-side
     const q = query(
       this.requestsCollection,
@@ -180,37 +215,7 @@ class FirestoreService {
 
     return snapshot.docs
       .map((doc) => this.parkingRequestFromDocSnap(doc))
-      .filter((r) => {
-        // Filter by facilityCode client-side (index-free)
-        if (r.facilityCode !== facilityCode) {
-          return false;
-        }
-        
-        if (r.isArchived) {
-          return (
-            r.requestedBy === currentUserId ||
-            r.offeredBy === currentUserId ||
-            (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId))
-          );
-        }
-        // Zeige offene Anfragen
-        if (!r.isFulfilled && !r.offeredSpotId) {
-          return true;
-        }
-        // Zeige erfüllte Anfragen, wenn der User beteiligt ist
-        if (r.isFulfilled) {
-          return (
-            r.requestedBy === currentUserId ||
-            r.offeredBy === currentUserId ||
-            (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId))
-          );
-        }
-        // Zeige Anfragen mit Angebot, wenn der User beteiligt ist
-        if (r.offeredSpotId) {
-          return r.requestedBy === currentUserId || r.offeredBy === currentUserId;
-        }
-        return false;
-      });
+      .filter((r) => shouldIncludeRelevantRequest(r, currentUserId, facilityCode, options));
   }
 
   async archiveRequest(requestId: string, byUserId: string): Promise<void> {

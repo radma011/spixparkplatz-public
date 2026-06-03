@@ -13,6 +13,7 @@ import ParkingRequestsScreen from './src/screens/ParkingRequestsScreen';
 import AuthService, {UserData} from './src/services/AuthService';
 import PushNotificationService from './src/services/PushNotificationService';
 import {logRematchResult} from './src/utils/logRematchResult';
+import {getColors} from './src/theme/colors';
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
@@ -187,10 +188,12 @@ function App(): React.JSX.Element {
     };
   }, [user]);
 
+  const colors = getColors(isDarkMode ? 'dark' : 'light');
+
   if (loading) {
     return (
       <SafeAreaProvider>
-        <View style={styles.loadingContainer}>
+        <View style={[styles.loadingContainer, {backgroundColor: colors.screenBg}]}>
           <ActivityIndicator size="large" color="#007AFF" />
         </View>
       </SafeAreaProvider>
@@ -214,7 +217,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   useColorScheme,
   Platform,
+  type ViewStyle,
 } from 'react-native';
 import {confirmAlert, showAlert} from '../utils/alertUtils';
 import {getApp} from '@react-native-firebase/app';
@@ -18,7 +19,10 @@ import {getAuth, getIdToken, onAuthStateChanged} from '@react-native-firebase/au
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ParkingRequestService from '../services/ParkingRequestService';
-import FirestoreService, {OfferFromAvailability} from '../services/FirestoreService';
+import FirestoreService, {
+  OfferFromAvailability,
+  shouldIncludeRelevantRequest,
+} from '../services/FirestoreService';
 import {UserData} from '../services/AuthService';
 import {ParkingRequest, isOpen} from '../models/ParkingRequest';
 import ProfileScreen from './ProfileScreen';
@@ -117,7 +121,15 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     byUser: number;
   } | null>(null);
   const [offeringRequestId, setOfferingRequestId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const isAdminRef = useRef(false);
   const requestsUnsubscribeRef = useRef<(() => void) | null>(null);
+
+  const reloadRequests = useCallback(
+    () =>
+      FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode, {isAdmin}),
+    [currentUserId, currentUserData.facilityCode, isAdmin],
+  );
 
   useEffect(() => {
     // Wait for authentication to be ready before initializing
@@ -159,36 +171,11 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           .map((doc) => {
             return FirestoreService.parkingRequestFromDocSnap(doc as any);
           })
-          .filter((r) => {
-            // Filter by facilityCode client-side (index-free query)
-            if (r.facilityCode !== currentUserData.facilityCode) {
-              return false;
-            }
-            
-            const isInvolved =
-              r.requestedBy === currentUserId ||
-              r.offeredBy === currentUserId ||
-              (Array.isArray(r.fulfilledByUserIds) && r.fulfilledByUserIds.includes(currentUserId));
-
-            // Archived requests stay visible for involved users, but will be shown greyed-out.
-            if (r.isArchived) return isInvolved;
-            // Zeige offene Anfragen
-            if (isOpen(r)) {
-              return true;
-            }
-            // Zeige erfüllte Anfragen, wenn der User beteiligt ist
-            if (r.isFulfilled) {
-              return isInvolved;
-            }
-            // Zeige Anfragen mit Angebot, wenn der User beteiligt ist
-            // (Requester, Anbieter des vollständigen Angebots, oder User mit Standby-Angebot)
-            // Load all non-fulfilled requests with offers - we'll check for standby offers in the frontend
-            if (r.offeredSpotId && !r.isFulfilled) {
-              // Always load requests with offers (not fulfilled) so we can check for standby offers
-              return true;
-            }
-            return false;
-          });
+          .filter((r) =>
+            shouldIncludeRelevantRequest(r, currentUserId, currentUserData.facilityCode, {
+              isAdmin: isAdminRef.current,
+            }),
+          );
         setRequests(allRequests);
         setLoading(false);
       },
@@ -248,7 +235,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         console.error('Error unsubscribing from availability listener:', e);
       }
     };
-  }, [currentUserId, currentUserData.facilityCode]);
+  }, [currentUserId, currentUserData.facilityCode, isAdmin]);
 
   // Load facility name and member count
   useEffect(() => {
@@ -382,6 +369,17 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         throw new Error('Authentication token not available');
       }
 
+      // Check admin status
+      try {
+        const {getFirestore, doc, getDoc} = require('@react-native-firebase/firestore');
+        const adminSnap = await getDoc(doc(getFirestore(), 'users', currentUserId));
+        if (adminSnap.exists()) {
+          const adminStatus = adminSnap.data()?.admin === true;
+          isAdminRef.current = adminStatus;
+          setIsAdmin(adminStatus);
+        }
+      } catch (_) {}
+
       // Ensure current user's public profile exists for other users (and for immediate UI resolution)
       try {
         await FirestoreService.upsertPublicUserData(currentUserId, {
@@ -447,7 +445,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     );
     showAlert('Erfolg', 'Anfrage erstellt!');
     if (Platform.OS === 'web') {
-      const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+      const newRequests = await reloadRequests();
       setRequests(newRequests);
     }
   };
@@ -467,7 +465,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       await ParkingRequestService.fulfillRequest(request.id);
       showAlert('Erfolg', 'Anfrage als erfüllt markiert');
       if (Platform.OS === 'web') {
-        const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+        const newRequests = await reloadRequests();
         setRequests(newRequests);
       }
     } catch (error) {
@@ -628,7 +626,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           await ParkingRequestService.archiveFulfilledRequest(currentUserId, request);
           showAlert('Erfolg', 'Anfrage wurde archiviert');
           if (Platform.OS === 'web') {
-            const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+            const newRequests = await reloadRequests();
             setRequests(newRequests);
           }
         } catch (e) {
@@ -653,7 +651,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           showAlert('Erfolg', 'Angebot wurde storniert');
           if (Platform.OS === 'web') {
             const [newRequests, newOffers] = await Promise.all([
-              FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode),
+              reloadRequests(),
               ParkingRequestService.getOffersForRequest(request.id),
             ]);
             setRequests(newRequests);
@@ -679,7 +677,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           await ParkingRequestService.deleteRequest(request.id, currentUserData.username);
           showAlert('Erfolg', 'Anfrage wurde zurückgezogen');
           if (Platform.OS === 'web') {
-            const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+            const newRequests = await reloadRequests();
             setRequests(newRequests);
           }
         } catch (e) {
@@ -737,7 +735,18 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       const isOpenToCover = !r.isFulfilled && !r.offeredSpotId; // include open requests so everyone can see coverage
       const hasOfferAndIAmRequester = !r.isFulfilled && r.offeredSpotId && iAmRequester; // Load offers for requester even if request has an offer
       const hasOfferAndNotFulfilled = !r.isFulfilled && r.offeredSpotId; // Load offers for all requests with offers (to check for standby)
-      if (iAmRequester || iAmFulfilledOfferer || iAmLegacyOfferer || isOpenToCover || hasOfferAndIAmRequester || hasOfferAndNotFulfilled) ids.add(r.id);
+      const adminViewFulfilled = isAdmin && r.isFulfilled;
+      if (
+        iAmRequester ||
+        iAmFulfilledOfferer ||
+        iAmLegacyOfferer ||
+        isOpenToCover ||
+        hasOfferAndIAmRequester ||
+        hasOfferAndNotFulfilled ||
+        adminViewFulfilled
+      ) {
+        ids.add(r.id);
+      }
     });
 
     ids.forEach((requestId) => {
@@ -824,7 +833,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         });
       }
     });
-  }, [displayRequests, currentUserId]);
+  }, [displayRequests, currentUserId, isAdmin]);
 
   const sortByStartAsc = (a: ParkingRequest, b: ParkingRequest) =>
     a.from.getTime() - b.from.getTime();
@@ -934,8 +943,29 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     sections.push({title: 'MEINE ANFRAGEN', data: myFulfilledRequests});
     sections.push({title: 'MEINE ANGEBOTE', data: myFulfilledOffers});
     if (myArchived.length > 0) sections.push({title: 'AUFGEHOBEN', data: myArchived});
+
+    if (isAdmin) {
+      const myIds = new Set([
+        ...myFulfilledRequests.map((r) => r.id),
+        ...myFulfilledOffers.map((r) => r.id),
+        ...myArchived.map((r) => r.id),
+      ]);
+      const allFulfilled = displayRequests
+        .filter(
+          (r) =>
+            !myIds.has(r.id) &&
+            !r.isArchived &&
+            isStillVisibleFulfilled(r) &&
+            r.isFulfilled,
+        )
+        .sort(sortByStartAsc);
+      if (allFulfilled.length > 0) {
+        sections.push({title: 'ALLE ERFÜLLTEN (ADMIN)', data: allFulfilled});
+      }
+    }
+
     return sections;
-  }, [displayRequests, currentUserId, offersByRequestId]);
+  }, [displayRequests, currentUserId, offersByRequestId, isAdmin]);
 
   const displayAvailabilities = useMemo(() => {
     const filtered = availabilities.filter(isStillVisibleAvailability);
@@ -1181,8 +1211,10 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
       {activeTab === 'available' ? (
         <ScrollView
+          style={[styles.listScroll, {backgroundColor: colors.screenBg}]}
           contentContainerStyle={[
             styles.list,
+            {backgroundColor: colors.screenBg},
             displayAvailabilities.length === 0 && styles.listEmpty,
           ]}
           refreshControl={
@@ -1202,8 +1234,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           {displayAvailabilities.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>📅</Text>
-              <Text style={styles.emptyTitle}>Keine Verfügbarkeiten</Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={[styles.emptyTitle, {color: colors.text}]}>Keine Verfügbarkeiten</Text>
+              <Text style={[styles.emptySubtitle, {color: colors.subtext}]}>
                 Erstelle eine Verfügbarkeit, um anderen zu zeigen, wann dein Parkplatz frei ist
               </Text>
             </View>
@@ -1235,12 +1267,13 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         </ScrollView>
       ) : (
         <SectionList
+          style={[styles.listScroll, {backgroundColor: colors.screenBg}]}
           sections={activeTab === 'active' ? activeSections : fulfilledSections}
           keyExtractor={(item) => item.id}
           ref={(r) => {
             listRef.current = r;
           }}
-          renderItem={({item}) => (
+          renderItem={({item, section}) => (
             <RequestCard
               request={item}
               currentUserId={currentUserId}
@@ -1255,6 +1288,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               focusOfferId={focusOfferId}
               isOffering={offeringRequestId === item.id}
               contextTab={activeTab}
+              adminOverview={section.title === 'ALLE ERFÜLLTEN (ADMIN)'}
               onAcceptOffer={async (offer) => {
                 try {
                   await ParkingRequestService.acceptOffer(item.id, offer);
@@ -1262,7 +1296,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 
                   if (Platform.OS === 'web') {
                     const [newRequests, newOffers] = await Promise.all([
-                      FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode),
+                      reloadRequests(),
                       ParkingRequestService.getOffersForRequest(item.id),
                     ]);
                     setRequests(newRequests);
@@ -1303,6 +1337,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           stickySectionHeadersEnabled={false}
           contentContainerStyle={[
             styles.list,
+            {backgroundColor: colors.screenBg},
             (activeTab === 'active'
               ? activeSections.every((s) => s.data.length === 0)
               : fulfilledSections.every((s) => s.data.length === 0)) && styles.listEmpty,
@@ -1310,8 +1345,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>✓</Text>
-              <Text style={styles.emptyTitle}>Keine Anfragen</Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={[styles.emptyTitle, {color: colors.text}]}>Keine Anfragen</Text>
+              <Text style={[styles.emptySubtitle, {color: colors.subtext}]}>
                 {activeTab === 'fulfilled'
                   ? 'Noch keine erfüllten Anfragen'
                   : 'Keine offenen Anfragen'}
@@ -1323,7 +1358,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               refreshing={loading}
               onRefresh={async () => {
                 setLoading(true);
-                const newRequests = await FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode);
+                const newRequests = await reloadRequests();
                 setRequests(newRequests);
                 if (currentUserData.facilityCode) {
                   const stats = await FirestoreService.getFacilityFulfilledStats(currentUserData.facilityCode);
@@ -1337,7 +1372,12 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
       )}
 
       <TouchableOpacity
-        style={styles.fab}
+        style={[
+          styles.fab,
+          Platform.OS === 'web'
+            ? fabWebViewportStyle
+            : {bottom: 16 + insets.bottom},
+        ]}
         onPress={() => {
           if (activeTab === 'available') {
             setEditingAvailability(null);
@@ -1431,7 +1471,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           setOfferModalRequest(null);
           if (Platform.OS === 'web') {
             const [newRequests, newOffers] = await Promise.all([
-              FirestoreService.getRelevantRequests(currentUserId, currentUserData.facilityCode),
+              reloadRequests(),
               ParkingRequestService.getOffersForRequest(requestId),
             ]);
             setRequests(newRequests);
@@ -1445,10 +1485,18 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
 };
 
 
+/** Web only: pin FAB to browser viewport (react-native-web supports position: fixed). */
+const fabWebViewportStyle: ViewStyle =
+  Platform.OS === 'web'
+    ? ({position: 'fixed', bottom: 24, zIndex: 1000} as unknown as ViewStyle)
+    : {};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+  },
+  listScroll: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,

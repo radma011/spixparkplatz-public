@@ -81,23 +81,7 @@ class ParkingRequestService {
       );
     }
 
-    // Push-Benachrichtigung an alle User derselben Facility senden
-    try {
-      await PushNotificationService.sendPushToAll(
-        'Neue Parkplatz-Anfrage',
-        `${username} sucht einen Parkplatz von ${formatDateTime(from)} bis ${formatDateTime(until)}`,
-        {
-          type: 'new_request',
-          requestId: request.id,
-          requestedBy: userId,
-        },
-        userId,
-        facilityCode,
-      );
-    } catch (e) {
-      // Request creation must succeed even if push sending fails.
-      console.log('Push send (new_request) failed:', e);
-    }
+    // Broadcast push: server-side in onRequestCreatedV2 after auto-match (only if no full auto-match).
 
     return request;
   }

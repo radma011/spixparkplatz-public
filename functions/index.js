@@ -14,6 +14,52 @@ admin.initializeApp();
 const REGION = 'europe-west3';
 const firestoreOpt = (document) => ({ document, region: REGION });
 
+function formatBerlinDateTime(d) {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d instanceof Date ? d : new Date(d));
+}
+
+function isPartialAutoOffer(offerWindow, requestFrom, requestUntil) {
+  const rf = requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom);
+  const ru = requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil);
+  return (
+    offerWindow.from.getTime() !== rf.getTime() || offerWindow.until.getTime() !== ru.getTime()
+  );
+}
+
+/** Notify facility users about a new open request (excludes requester). */
+async function notifyFacilityNewRequest(admin, opts) {
+  const {requestedBy, facilityCode, requestFrom, requestUntil, requestId, username} = opts;
+  const fromDate = requestFrom.toDate ? requestFrom.toDate() : new Date(requestFrom);
+  const untilDate = requestUntil.toDate ? requestUntil.toDate() : new Date(requestUntil);
+  const name = username || 'Ein Nutzer';
+  try {
+    await sendPushToAllCore(admin, {
+      notification: {
+        title: 'Neue Parkplatz-Anfrage',
+        body: `${name} sucht einen Parkplatz von ${formatBerlinDateTime(fromDate)} bis ${formatBerlinDateTime(untilDate)}`,
+      },
+      data: {
+        type: 'new_request',
+        requestId: String(requestId),
+        requestedBy: String(requestedBy),
+      },
+      excludeUserId: String(requestedBy),
+      facilityCode: String(facilityCode),
+    });
+    console.log(`[onRequestCreated] Broadcast new_request to facility ${facilityCode}`);
+  } catch (e) {
+    console.log('Push send (new_request) failed:', e?.message ?? e);
+  }
+}
+
 /**
  * HTTP variant used by the React Native client (explicit Bearer token).
  */
@@ -648,6 +694,7 @@ exports.onRequestCreatedV2 = onDocumentCreated(
     }
 
     // Try to find matching availability and create auto-offer if enabled
+    let fullAutoMatch = false;
     try {
       console.log(`[onRequestCreated] Starting matching for request ${requestId}`);
       const facilityCode = data.facilityCode;
@@ -665,6 +712,17 @@ exports.onRequestCreatedV2 = onDocumentCreated(
         console.log('[onRequestCreated] Empty facilityCode after normalize, skipping matching');
         return;
       }
+
+      const requesterUsername =
+        data.requestedByUsername ||
+        (await admin
+          .firestore()
+          .collection('users_public')
+          .doc(String(requestedBy))
+          .get()
+          .then((d) => d.data()?.username)
+          .catch(() => null)) ||
+        'Ein Nutzer';
 
       console.log(`[onRequestCreated] Request: facilityCode=${normalizedFacilityCode}, from=${requestFrom.toDate ? requestFrom.toDate().toISOString() : requestFrom}, until=${requestUntil.toDate ? requestUntil.toDate().toISOString() : requestUntil}`);
 
@@ -694,8 +752,7 @@ exports.onRequestCreatedV2 = onDocumentCreated(
       
       if (availabilities.length === 0) {
         console.log(`[onRequestCreated] No availabilities found for facility ${facilityCode}`);
-        return;
-      }
+      } else {
       
       const request = {
         id: requestId,
@@ -744,9 +801,10 @@ exports.onRequestCreatedV2 = onDocumentCreated(
           
           console.log(`[onRequestCreated] Offer created: ${offerRef.id} for spot ${bestMatch.spotId}`);
           
-          const isPartial =
-            offerWindow.from.getTime() !== requestFrom.toDate().getTime() ||
-            offerWindow.until.getTime() !== requestUntil.toDate().getTime();
+          const isPartial = isPartialAutoOffer(offerWindow, requestFrom, requestUntil);
+          if (!isPartial) {
+            fullAutoMatch = true;
+          }
           let requesterUsername = 'einem Nutzer';
           try {
             const requesterPublicDoc = await admin.firestore()
@@ -834,9 +892,37 @@ exports.onRequestCreatedV2 = onDocumentCreated(
           }
         }
       }
+      }
+
+      if (!fullAutoMatch) {
+        await notifyFacilityNewRequest(admin, {
+          requestedBy,
+          facilityCode: normalizedFacilityCode,
+          requestFrom,
+          requestUntil,
+          requestId,
+          username: requesterUsername,
+        });
+      } else {
+        console.log(`[onRequestCreated] Full auto-match for ${requestId}, skipping facility broadcast`);
+      }
     } catch (e) {
       // Matching failure should not prevent request creation
       console.error('Availability matching failed:', e);
+      const facilityCode = data.facilityCode;
+      const requestFrom = data.from;
+      const requestUntil = data.until;
+      const normalizedFacilityCode = String(facilityCode || '').trim().toUpperCase();
+      if (normalizedFacilityCode && requestFrom && requestUntil) {
+        await notifyFacilityNewRequest(admin, {
+          requestedBy,
+          facilityCode: normalizedFacilityCode,
+          requestFrom,
+          requestUntil,
+          requestId,
+          username: data.requestedByUsername || 'Ein Nutzer',
+        });
+      }
     }
   },
 );

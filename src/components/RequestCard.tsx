@@ -31,6 +31,8 @@ interface Props {
   highlight?: boolean;
   isOffering?: boolean;
   contextTab?: 'active' | 'fulfilled' | 'available';
+  /** Admin-Übersicht: Anfragenden („an wen“) und Anbieter („von wem“) klar trennen. */
+  adminOverview?: boolean;
 }
 
 const RequestCard: React.FC<Props> = ({
@@ -50,6 +52,7 @@ const RequestCard: React.FC<Props> = ({
   highlight,
   isOffering = false,
   contextTab,
+  adminOverview = false,
 }) => {
   const colors = getColors(useColorScheme());
   const isMyRequest = request.requestedBy === currentUserId;
@@ -236,30 +239,46 @@ const RequestCard: React.FC<Props> = ({
       </View>
     );
   };
+  const requesterDisplayName =
+    request.requestedByUsername ??
+    publicUsers?.[request.requestedBy]?.username ??
+    'Unbekannt';
+
   const showOtherUserAsTitle = hasOfferOrFulfilled;
   // When an offer exists (or the request is fulfilled), show the OTHER involved user:
   // - requester sees offerer
   // - offerer sees requester
-  const displayTitle = showOtherUserAsTitle
-    ? (isMyRequest
-        ? (isFulfilled
-            ? (acceptedOffererNames.length > 0 ? acceptedOffererNames.join(', ') : 'Anbieter')
-            : (request.offeredByUsername ?? 'Anbieter'))
-        : isMyOffer
-          ? (request.requestedByUsername ?? 'Unbekannt')
-          : (request.offeredByUsername ?? request.requestedByUsername ?? 'Unbekannt'))
-    : (request.requestedByUsername ?? 'Unbekannt');
-  const displaySubtitle = showOtherUserAsTitle
-    ? (isMyRequest
-        ? (isFulfilled && acceptedOffererNames.length > 1
+  // - admin overview: always show requester in title („an wen“)
+  const displayTitle =
+    adminOverview && isFulfilled
+      ? requesterDisplayName
+      : showOtherUserAsTitle
+        ? isMyRequest
+          ? isFulfilled
+            ? acceptedOffererNames.length > 0
+              ? acceptedOffererNames.join(', ')
+              : 'Anbieter'
+            : (request.offeredByUsername ?? 'Anbieter')
+          : isMyOffer
+            ? requesterDisplayName
+            : (request.offeredByUsername ?? requesterDisplayName)
+        : requesterDisplayName;
+  const displaySubtitle =
+    adminOverview && isFulfilled
+      ? acceptedOffererNames.length > 0
+        ? `erfüllt durch ${acceptedOffererNames.join(', ')}`
+        : 'Parkplatz-Anfrage erfüllt'
+      : showOtherUserAsTitle
+        ? isMyRequest
+          ? isFulfilled && acceptedOffererNames.length > 1
             ? 'stellen dir folgende Parkplätze'
-            : 'stellt dir folgenden Parkplatz')
-        : isMyOffer
-          ? 'bekommt folgenden Parkplatz'
-          : 'stellt folgenden Parkplatz zur Verfügung')
-    : isFulfilled
-      ? 'hatte einen Parkplatz gesucht'
-      : 'sucht einen Parkplatz';
+            : 'stellt dir folgenden Parkplatz'
+          : isMyOffer
+            ? 'bekommt folgenden Parkplatz'
+            : 'stellt folgenden Parkplatz zur Verfügung'
+        : isFulfilled
+          ? 'hatte einen Parkplatz gesucht'
+          : 'sucht einen Parkplatz';
 
   const subtitleWithArchived = isArchived ? 'wurde aufgehoben' : displaySubtitle;
 
@@ -688,11 +707,69 @@ const RequestCard: React.FC<Props> = ({
 
       {isFulfilled && (
         <View style={styles.fulfilledBox}>
-          <Text style={[styles.fulfilledTitle, {color: colors.subtext}]}>Erfüllt durch</Text>
+          {adminOverview && (
+            <View style={[styles.fulfilledMetaRow, {borderColor: colors.border}]}>
+              <Text style={[styles.fulfilledMetaLabel, {color: colors.subtext}]}>Anfrage von</Text>
+              <Text style={[styles.fulfilledMetaValue, {color: colors.text}]} numberOfLines={1}>
+                {requesterDisplayName}
+              </Text>
+            </View>
+          )}
+          <Text style={[styles.fulfilledTitle, {color: colors.subtext}]}>
+            {adminOverview ? 'Erfüllt durch (Anbieter)' : 'Erfüllt durch'}
+          </Text>
+          {adminOverview && (
+            <View style={[styles.fulfilledHeaderRow, {borderColor: colors.border}]}>
+              <Text style={[styles.fulfilledColHead, styles.fulfilledTime, {color: colors.subtext}]}>
+                Zeit
+              </Text>
+              <Text style={[styles.fulfilledColHead, styles.fulfilledSpot, {color: colors.subtext}]}>
+                Platz
+              </Text>
+              <Text style={[styles.fulfilledColHead, styles.fulfilledUser, {color: colors.subtext}]}>
+                Anbieter
+              </Text>
+            </View>
+          )}
           {(() => {
             // Filtere nur angenommene Angebote heraus (nicht zurückgezogene)
             const acceptedOffers = offers.filter((o) => o.status === 'accepted');
             if (acceptedOffers.length === 0) {
+              const spotIds =
+                request.fulfilledSpotIds && request.fulfilledSpotIds.length > 0
+                  ? request.fulfilledSpotIds
+                  : request.offeredSpotId
+                    ? [request.offeredSpotId]
+                    : [];
+              const offererIds =
+                request.fulfilledByUserIds && request.fulfilledByUserIds.length > 0
+                  ? request.fulfilledByUserIds
+                  : request.offeredBy
+                    ? [request.offeredBy]
+                    : [];
+              if (spotIds.length > 0) {
+                return spotIds.map((spotId, idx) => (
+                  <View
+                    key={`fulfilled-fallback-${spotId}-${idx}`}
+                    style={[
+                      styles.fulfilledRow,
+                      {borderColor: colors.border},
+                      idx === spotIds.length - 1 && {borderBottomWidth: 0},
+                    ]}>
+                    <Text style={[styles.fulfilledTime, {color: colors.text}]} numberOfLines={1}>
+                      {formatDateRange(request.from, request.until)}
+                    </Text>
+                    <Text style={styles.fulfilledSpot} numberOfLines={1}>
+                      P {spotId}
+                    </Text>
+                    <Text style={[styles.fulfilledUser, {color: colors.text}]} numberOfLines={1}>
+                      {publicUsers?.[offererIds[idx] ?? request.offeredBy ?? '']?.username ??
+                        request.offeredByUsername ??
+                        'Unbekannt'}
+                    </Text>
+                  </View>
+                ));
+              }
               return (
                 <Text style={[styles.fulfilledEmpty, {color: colors.subtext}]}>
                   Details werden geladen…
@@ -1028,6 +1105,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     marginBottom: 6,
+  },
+  fulfilledMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 8,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+  },
+  fulfilledMetaLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  fulfilledMetaValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  fulfilledHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 4,
+    marginBottom: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  fulfilledColHead: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   fulfilledEmpty: {
     fontSize: 12,
