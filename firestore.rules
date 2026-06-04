@@ -244,6 +244,12 @@ service cloud.firestore {
       allow write: if false; // Only admins should write (configure separately if needed)
     }
     
+    // Facility floor plans (layout editor — admin write, all users read)
+    match /facility_layouts/{facilityCode} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
     // Facilities Collection (for facility code validation)
     match /facilities/{facilityCode} {
       // Anyone authenticated can read facilities (needed for registration validation)

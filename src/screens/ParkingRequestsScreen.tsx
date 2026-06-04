@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   useColorScheme,
   Platform,
+  Modal,
   type ViewStyle,
 } from 'react-native';
 import {confirmAlert, showAlert} from '../utils/alertUtils';
@@ -34,6 +35,7 @@ import OfferModal from '../components/OfferModal';
 import {RequestOffer} from '../models/RequestOffer';
 import CommentsModal from '../components/CommentsModal';
 import WatermarkBackground from '../components/WatermarkBackground';
+import {FacilityLayoutViewer} from '../facilityLayout';
 import ParkingAvailabilityService from '../services/ParkingAvailabilityService';
 import {ParkingAvailability, RecurrenceRule} from '../models/ParkingAvailability';
 import {getNextOccurrenceWindows} from '../utils/recurrenceUtils';
@@ -88,6 +90,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const [mySpotId, setMySpotId] = useState<string | null>(null);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showLayoutMap, setShowLayoutMap] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [focusRequestId, setFocusRequestId] = useState<string | null>(null);
   const [focusOfferId, setFocusOfferId] = useState<string | null>(null);
@@ -1138,6 +1141,14 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           </View>
         </View>
         <View style={styles.headerButtons}>
+          {currentUserData.facilityCode ? (
+            <TouchableOpacity
+              onPress={() => setShowLayoutMap(true)}
+              style={styles.headerButton}
+              accessibilityLabel="Lageplan anzeigen">
+              <MaterialCommunityIcons name="map-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             onPress={() => setShowProfile(true)}
             style={styles.headerButton}>
@@ -1479,6 +1490,18 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           }
         }}
       />
+
+      <Modal
+        visible={showLayoutMap}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowLayoutMap(false)}>
+        <FacilityLayoutViewer
+          facilityCode={currentUserData.facilityCode}
+          highlightSpotIds={mySpots}
+          onClose={() => setShowLayoutMap(false)}
+        />
+      </Modal>
       </View>
     </WatermarkBackground>
   );

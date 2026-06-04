@@ -19,6 +19,7 @@ import FirestoreService from '../services/FirestoreService';
 import KeyboardAwareScreen from '../components/KeyboardAwareScreen';
 import QRCodeGenerator from '../components/QRCodeGenerator';
 import {getColors} from '../theme/colors';
+import {FacilityLayoutEditor} from '../facilityLayout';
 
 interface Props {
   userData: UserData;
@@ -47,6 +48,7 @@ const ProfileScreen: React.FC<Props> = ({
   const [showChangeEmail, setShowChangeEmail] = useState(false);
   const [newEmail, setNewEmail] = useState(userData.email);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [showLayoutEditor, setShowLayoutEditor] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [facilityName, setFacilityName] = useState<string | undefined>(undefined);
 
@@ -432,6 +434,16 @@ const ProfileScreen: React.FC<Props> = ({
               <MaterialCommunityIcons name="qrcode" size={20} color="#007AFF" style={styles.qrIcon} />
               <Text style={styles.qrButtonText}>QR-Code anzeigen</Text>
             </TouchableOpacity>
+            <Text style={[styles.hint, {marginTop: 16}]}>
+              Erstelle den Lageplan der Anlage offline und lade ihn anschließend in die Cloud hoch.
+            </Text>
+            <TouchableOpacity
+              style={[styles.qrButton, {marginTop: 8}]}
+              onPress={() => setShowLayoutEditor(true)}
+              disabled={loading}>
+              <MaterialCommunityIcons name="map-marker-path" size={20} color="#007AFF" style={styles.qrIcon} />
+              <Text style={styles.qrButtonText}>Lageplan bearbeiten</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -558,6 +570,18 @@ const ProfileScreen: React.FC<Props> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      <Modal
+        visible={showLayoutEditor}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowLayoutEditor(false)}>
+        <FacilityLayoutEditor
+          facilityCode={userData.facilityCode}
+          userId={userData.uid}
+          onClose={() => setShowLayoutEditor(false)}
+        />
+      </Modal>
 
       <Modal
         visible={showQRCode}
