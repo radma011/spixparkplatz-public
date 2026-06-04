@@ -1286,6 +1286,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
           }}
           renderItem={({item, section}) => (
             <RequestCard
+              facilityCode={currentUserData.facilityCode}
               request={item}
               currentUserId={currentUserId}
               mySpots={mySpots}
@@ -1498,7 +1499,6 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
         onRequestClose={() => setShowLayoutMap(false)}>
         <FacilityLayoutViewer
           facilityCode={currentUserData.facilityCode}
-          highlightSpotIds={mySpots}
           onClose={() => setShowLayoutMap(false)}
         />
       </Modal>

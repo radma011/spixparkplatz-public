@@ -6,11 +6,21 @@ import {
   GRID_ROWS,
   LayoutElement,
   LayoutSpot,
+  LayoutStreet,
   SpotRotation,
   SymbolRotation,
   SYMBOL_CELLS,
   isSpot,
+  isStreet,
+  isSymbol,
 } from './types';
+
+export type GridPoint = {x: number; y: number};
+
+export function elementFootprint(el: LayoutElement): {width: number; height: number} {
+  if (isSpot(el)) return {width: el.width, height: el.height};
+  return {width: SYMBOL_CELLS, height: SYMBOL_CELLS};
+}
 
 const SYMBOL_ROTATION_CYCLE: SymbolRotation[] = [0, 90, 180, 270];
 
@@ -67,8 +77,7 @@ export function canPlace(
   if (x < 0 || y < 0 || x + w > GRID_COLS || y + h > GRID_ROWS) return false;
   for (const el of elements) {
     if (exclude?.has(el.id)) continue;
-    const ew = isSpot(el) ? el.width : SYMBOL_CELLS;
-    const eh = isSpot(el) ? el.height : SYMBOL_CELLS;
+    const {width: ew, height: eh} = elementFootprint(el);
     if (rectsOverlap(x, y, w, h, el.x, el.y, ew, eh)) return false;
   }
   return true;
@@ -99,8 +108,9 @@ export function idsInRect(
   const bottom = Math.max(y1, y2);
   return elements
     .filter((el) => {
-      const w = (isSpot(el) ? el.width : SYMBOL_CELLS) * cellPx;
-      const h = (isSpot(el) ? el.height : SYMBOL_CELLS) * cellPx;
+      const {width: fw, height: fh} = elementFootprint(el);
+      const w = fw * cellPx;
+      const h = fh * cellPx;
       const ex = el.x * cellPx;
       const ey = el.y * cellPx;
       return ex < right && ex + w > left && ey < bottom && ey + h > top;
@@ -117,8 +127,7 @@ export function moveBy(
   if (dx === 0 && dy === 0) return elements;
   const moving = elements.filter((e) => ids.has(e.id));
   for (const el of moving) {
-    const w = isSpot(el) ? el.width : SYMBOL_CELLS;
-    const h = isSpot(el) ? el.height : SYMBOL_CELLS;
+    const {width: w, height: h} = elementFootprint(el);
     if (!canPlace(elements, el.x + dx, el.y + dy, w, h, ids)) return null;
   }
   return elements.map((el) =>
@@ -138,7 +147,7 @@ export function rotateSelectedElements(
       const rot = nextSpotRotation(el.rotation);
       const {width, height} = spotSize(rot);
       updates.set(el.id, {...el, rotation: rot, width, height});
-    } else {
+    } else if (isSymbol(el)) {
       const rot = nextSymbolRotation(el.rotation);
       updates.set(el.id, {...el, rotation: rot});
     }
@@ -165,6 +174,14 @@ export function normalizeSpot(spot: LayoutSpot): LayoutSpot {
 }
 
 export type NumberingOrder = 'row' | 'column';
+export type NumberingDirection = 'asc' | 'desc';
+
+/** Kurztext für die UI — feste Sortierreihenfolge auf dem Raster. */
+export function numberingOrderHint(order: NumberingOrder): string {
+  return order === 'row'
+    ? 'Reihenfolge: oben → unten, pro Zeile links → rechts'
+    : 'Reihenfolge: links → rechts, pro Spalte oben → unten';
+}
 export type NumberingScope = 'single' | 'selection' | 'neighbors';
 
 function spotTouches(a: LayoutSpot, b: LayoutSpot): boolean {
@@ -228,6 +245,7 @@ export function applyNumbering(
   start: string,
   increment: number,
   order: NumberingOrder,
+  direction: NumberingDirection = 'asc',
   duplex?: {floorFrom: number; floorTo: number},
 ): Record<string, {number: string; floorFrom?: number; floorTo?: number}> {
   const sorted = sortSpots(spots, order);
@@ -235,9 +253,10 @@ export function applyNumbering(
   const base = parseInt(start.replace(/\D/g, ''), 10);
   const numeric = Number.isNaN(base) ? 1 : base;
   const pad = Math.max(4, start.trim().length);
+  const step = (direction === 'asc' ? 1 : -1) * (increment || 0);
 
   sorted.forEach((s, i) => {
-    const n = numeric + i * increment;
+    const n = numeric + i * step;
     const number = String(n).padStart(pad, '0').slice(-pad);
     if (duplex) {
       out[s.id] = {number, floorFrom: duplex.floorFrom, floorTo: duplex.floorTo};
@@ -268,8 +287,7 @@ export function elementsBoundsPx(
   let maxX = 0;
   let maxY = 0;
   for (const el of elements) {
-    const w = isSpot(el) ? el.width : SYMBOL_CELLS;
-    const h = isSpot(el) ? el.height : SYMBOL_CELLS;
+    const {width: w, height: h} = elementFootprint(el);
     minX = Math.min(minX, el.x);
     minY = Math.min(minY, el.y);
     maxX = Math.max(maxX, el.x + w);
@@ -293,19 +311,133 @@ export function defaultViewBoundsPx(cells = DEFAULT_VIEW_CELLS): PxBounds {
   return {x: 0, y: 0, width: size, height: size};
 }
 
-export function viewBoundsPx(elements: LayoutElement[]): PxBounds {
-  return elementsBoundsPx(elements) ?? defaultViewBoundsPx();
+export function viewBoundsPx(elements: LayoutElement[], padCells = 2): PxBounds {
+  return elementsBoundsPx(elements, padCells) ?? defaultViewBoundsPx();
 }
+
+/** Minimal inset between content bounds and viewport edge when fitting. */
+export const LAYOUT_FIT_EDGE_PX = 6;
+
+export type ZoomFitOptions = {
+  /** 1 = maximal fill; values below 1 shrink (legacy default was 0.9). */
+  margin?: number;
+  edgePaddingPx?: number;
+};
 
 export function zoomToFitBounds(
   viewportW: number,
   viewportH: number,
   bounds: PxBounds,
-  margin = 0.9,
+  options: ZoomFitOptions = {},
 ): number {
   if (viewportW <= 0 || viewportH <= 0 || bounds.width <= 0 || bounds.height <= 0) {
     return 1;
   }
-  const fit = Math.min(viewportW / bounds.width, viewportH / bounds.height) * margin;
+  const margin = options.margin ?? 1;
+  const edge = options.edgePaddingPx ?? LAYOUT_FIT_EDGE_PX;
+  const availW = Math.max(1, viewportW - edge * 2);
+  const availH = Math.max(1, viewportH - edge * 2);
+  const fit = Math.min(availW / bounds.width, availH / bounds.height) * margin;
   return Math.max(MIN_LAYOUT_ZOOM, Math.min(MAX_LAYOUT_ZOOM, fit));
+}
+
+function streetKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+export function hasStreetAt(elements: LayoutElement[], x: number, y: number): boolean {
+  return elements.some((el) => isStreet(el) && el.x === x && el.y === y);
+}
+
+export function isGridAdjacent4(a: GridPoint, b: GridPoint): boolean {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
+}
+
+/** Orthogonal path from `from` toward `to` (horizontal first, then vertical), including `to`. */
+export function manhattanPathCells(from: GridPoint, to: GridPoint): GridPoint[] {
+  const cells: GridPoint[] = [];
+  let x = from.x;
+  let y = from.y;
+  while (x !== to.x) {
+    x += Math.sign(to.x - x);
+    cells.push({x, y});
+  }
+  while (y !== to.y) {
+    y += Math.sign(to.y - y);
+    cells.push({x, y});
+  }
+  return cells;
+}
+
+export function streetsConnected(
+  a: GridPoint,
+  b: GridPoint,
+  elements: LayoutElement[],
+): boolean {
+  if (a.x === b.x && a.y === b.y) return true;
+  const start = streetKey(a.x, a.y);
+  const goal = streetKey(b.x, b.y);
+  const grid = new Set<string>();
+  for (const el of elements) {
+    if (isStreet(el)) grid.add(streetKey(el.x, el.y));
+  }
+  if (!grid.has(start) || !grid.has(goal)) return false;
+  const q = [start];
+  const seen = new Set([start]);
+  while (q.length > 0) {
+    const k = q.shift()!;
+    if (k === goal) return true;
+    const [sx, sy] = k.split(',').map(Number);
+    for (const [nx, ny] of [
+      [sx + 1, sy],
+      [sx - 1, sy],
+      [sx, sy + 1],
+      [sx, sy - 1],
+    ]) {
+      const nk = streetKey(nx, ny);
+      if (grid.has(nk) && !seen.has(nk)) {
+        seen.add(nk);
+        q.push(nk);
+      }
+    }
+  }
+  return false;
+}
+
+export function shouldFillStreetBetween(
+  from: GridPoint | null,
+  to: GridPoint,
+  elements: LayoutElement[],
+): from is GridPoint {
+  if (!from) return false;
+  if (from.x === to.x && from.y === to.y) return false;
+  if (isGridAdjacent4(from, to)) return false;
+  return !streetsConnected(from, to, elements);
+}
+
+export function appendStreetsAlongPath(
+  elements: LayoutElement[],
+  from: GridPoint,
+  to: GridPoint,
+): {elements: LayoutElement[]; added: number; blocked: number} {
+  const path = manhattanPathCells(from, to);
+  let els = elements;
+  let added = 0;
+  let blocked = 0;
+  const streetAt = new Set(
+    elements.filter(isStreet).map((el) => streetKey(el.x, el.y)),
+  );
+  for (const {x, y} of path) {
+    const k = streetKey(x, y);
+    if (streetAt.has(k)) continue;
+    if (!canPlace(els, x, y, SYMBOL_CELLS, SYMBOL_CELLS)) {
+      blocked += 1;
+      continue;
+    }
+    const el: LayoutStreet = {id: newId(), type: 'street', x, y};
+    els = [...els, el];
+    streetAt.add(k);
+    added += 1;
+  }
+  return {elements: els, added, blocked};
 }

@@ -12,18 +12,24 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import {getColors} from '../../theme/colors';
 import FacilityLayoutService from '../FacilityLayoutService';
 import LayoutSurface, {type LayoutSurfaceHandle} from './LayoutSurface';
+import {SPOT_HIGHLIGHT_GREEN} from './FacilityLayoutMapModal';
 import {MAX_LAYOUT_ZOOM, MIN_LAYOUT_ZOOM} from '../gridMath';
 import type {FacilityLayout} from '../types';
 
 type Props = {
   facilityCode: string;
   highlightSpotIds?: string[];
+  highlightColor?: string;
+  /** Slightly fade everything except highlighted spots (spot map from offer card). */
+  dimNonHighlighted?: boolean;
   onClose: () => void;
 };
 
 const FacilityLayoutViewer: React.FC<Props> = ({
   facilityCode,
   highlightSpotIds = [],
+  highlightColor = SPOT_HIGHLIGHT_GREEN,
+  dimNonHighlighted = false,
   onClose,
 }) => {
   const insets = useSafeAreaInsets();
@@ -32,7 +38,6 @@ const FacilityLayoutViewer: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
   const surfaceRef = useRef<LayoutSurfaceHandle>(null);
-  const didInitialFitRef = useRef(false);
 
   const highlights = useMemo(
     () => new Set(highlightSpotIds.map((s) => s.trim()).filter(Boolean)),
@@ -40,7 +45,6 @@ const FacilityLayoutViewer: React.FC<Props> = ({
   );
 
   useEffect(() => {
-    didInitialFitRef.current = false;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -54,14 +58,6 @@ const FacilityLayoutViewer: React.FC<Props> = ({
       cancelled = true;
     };
   }, [facilityCode]);
-
-  useEffect(() => {
-    if (loading || !layout) return;
-    if (didInitialFitRef.current) return;
-    didInitialFitRef.current = true;
-    const t = setTimeout(() => surfaceRef.current?.fitToContent(), 80);
-    return () => clearTimeout(t);
-  }, [loading, layout]);
 
   if (loading) {
     return (
@@ -104,10 +100,13 @@ const FacilityLayoutViewer: React.FC<Props> = ({
       <LayoutSurface
         ref={surfaceRef}
         layout={layout}
+        autoFitOnLayout
         readOnly
         zoom={zoom}
         onZoomChange={setZoom}
         highlightNumbers={highlights}
+        highlightColor={highlightColor}
+        dimNonHighlighted={dimNonHighlighted}
       />
       <View style={[styles.zoomBar, {paddingBottom: insets.bottom + 8, borderTopColor: colors.border}]}>
         <TouchableOpacity onPress={() => surfaceRef.current?.fitToContent()}>

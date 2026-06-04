@@ -10,6 +10,14 @@ export interface LayoutSymbol {
   rotation?: SymbolRotation;
 }
 
+/** Dunkelgraue Straßen-Fläche (1×1), ohne Icon/Beschriftung — nur Editor/Anzeige. */
+export interface LayoutStreet {
+  id: string;
+  type: 'street';
+  x: number;
+  y: number;
+}
+
 export interface LayoutSpot {
   id: string;
   type: 'spot';
@@ -25,7 +33,7 @@ export interface LayoutSpot {
   note?: string;
 }
 
-export type LayoutElement = LayoutSymbol | LayoutSpot;
+export type LayoutElement = LayoutSymbol | LayoutSpot | LayoutStreet;
 
 export interface FacilityLayout {
   facilityCode: string;
@@ -38,10 +46,22 @@ export interface FacilityLayout {
 
 export type LayoutSyncStatus = 'synced' | 'pending' | 'local_only';
 
-export type EditorTool = 'select' | SymbolKind | 'spot';
+export type EditorTool = 'select' | SymbolKind | 'spot' | 'street';
 
 export function isSpot(el: LayoutElement): el is LayoutSpot {
   return el.type === 'spot';
+}
+
+export function isSymbol(el: LayoutElement): el is LayoutSymbol {
+  return el.type === 'entrance' || el.type === 'exit' || el.type === 'door';
+}
+
+export function isStreet(el: LayoutElement): el is LayoutStreet {
+  return el.type === 'street';
+}
+
+export function isSymbolTool(tool: EditorTool): tool is SymbolKind {
+  return tool === 'entrance' || tool === 'exit' || tool === 'door';
 }
 
 export function createEmptyLayout(facilityCode: string, userId: string): FacilityLayout {

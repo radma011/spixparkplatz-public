@@ -13,8 +13,10 @@ import {buttonStyles} from '../styles/buttons';
 import {cardStyles} from '../styles/cards';
 import {chipStyles} from '../styles/chips';
 import {showContactOptions} from '../utils/contactUtils';
+import {SpotLayoutMapButton} from '../facilityLayout';
 
 interface Props {
+  facilityCode: string;
   request: ParkingRequest;
   currentUserId: string;
   mySpots: string[];
@@ -36,6 +38,7 @@ interface Props {
 }
 
 const RequestCard: React.FC<Props> = ({
+  facilityCode,
   request,
   currentUserId,
   mySpots,
@@ -495,9 +498,15 @@ const RequestCard: React.FC<Props> = ({
                         </View>
                       )}
                     </View>
-                    <Text style={[styles.offerDetails, {color: colors.text}]}>
-                      P {myActiveOffer.spotId} · {formatDateRange(myActiveOffer.from, myActiveOffer.until)}
-                    </Text>
+                    <View style={styles.offerSpotRow}>
+                      <Text style={[styles.offerDetails, {color: colors.text}]}>
+                        P {myActiveOffer.spotId}
+                      </Text>
+                      <SpotLayoutMapButton facilityCode={facilityCode} spotId={myActiveOffer.spotId} iconColor={colors.brand} />
+                      <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                        · {formatDateRange(myActiveOffer.from, myActiveOffer.until)}
+                      </Text>
+                    </View>
                     {myActiveOffer.status === 'standby' && (
                       <Text style={[styles.standbyText, {color: colors.subtext}]}>
                         Ein vollständiges Angebot eines anderen Users liegt vor.{'\n'}Warten auf Entscheidung
@@ -550,9 +559,15 @@ const RequestCard: React.FC<Props> = ({
                     <Text style={[styles.offerLabel, {color: colors.subtext}]}>
                       {isFullOffer ? 'Vollständig' : 'Teilweise'}
                     </Text>
-                    <Text style={[styles.offerDetails, {color: colors.text}]}>
-                      P {offerToDisplay.spotId} ({offererName}) · {formatDateRange(offerToDisplay.from, offerToDisplay.until)}
-                    </Text>
+                    <View style={styles.offerSpotRow}>
+                      <Text style={[styles.offerDetails, {color: colors.text}]}>
+                        P {offerToDisplay.spotId}
+                      </Text>
+                      <SpotLayoutMapButton facilityCode={facilityCode} spotId={offerToDisplay.spotId} iconColor={colors.brand} />
+                      <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                        ({offererName}) · {formatDateRange(offerToDisplay.from, offerToDisplay.until)}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               );
@@ -585,9 +600,15 @@ const RequestCard: React.FC<Props> = ({
                 {renderCoverageDetails()}
                 <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border, marginTop: 8, marginBottom: 8}]}>
                   <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angebot</Text>
-                  <Text style={[styles.offerDetails, {color: colors.text}]}>
-                    P {request.offeredSpotId} ({offererName}) · {formatDateRange(displayFrom, displayUntil)}
-                  </Text>
+                  <View style={styles.offerSpotRow}>
+                    <Text style={[styles.offerDetails, {color: colors.text}]}>
+                      P {request.offeredSpotId}
+                    </Text>
+                    <SpotLayoutMapButton facilityCode={facilityCode} spotId={request.offeredSpotId} iconColor={colors.brand} />
+                    <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                      ({offererName}) · {formatDateRange(displayFrom, displayUntil)}
+                    </Text>
+                  </View>
                 </View>
               </View>
             );
@@ -655,9 +676,12 @@ const RequestCard: React.FC<Props> = ({
                   <Text style={[styles.dateText, {color: colors.text}]} numberOfLines={1}>
                     {formatDateRange(displayFrom, displayUntil)}
                   </Text>
-                  <Text style={styles.spotText} numberOfLines={1}>
-                    P {request.offeredSpotId}
-                  </Text>
+                  <View style={styles.spotRow}>
+                    <Text style={styles.spotText} numberOfLines={1}>
+                      P {request.offeredSpotId}
+                    </Text>
+                    <SpotLayoutMapButton facilityCode={facilityCode} spotId={request.offeredSpotId} iconColor={colors.brand} />
+                  </View>
                 </View>
                 {onOpenComments && (
                   <TouchableOpacity
@@ -759,9 +783,12 @@ const RequestCard: React.FC<Props> = ({
                     <Text style={[styles.fulfilledTime, {color: colors.text}]} numberOfLines={1}>
                       {formatDateRange(request.from, request.until)}
                     </Text>
-                    <Text style={styles.fulfilledSpot} numberOfLines={1}>
-                      P {spotId}
-                    </Text>
+                    <View style={styles.fulfilledSpotCol}>
+                      <Text style={styles.fulfilledSpot} numberOfLines={1}>
+                        P {spotId}
+                      </Text>
+                      <SpotLayoutMapButton facilityCode={facilityCode} spotId={spotId} iconColor={colors.brand} />
+                    </View>
                     <Text style={[styles.fulfilledUser, {color: colors.text}]} numberOfLines={1}>
                       {publicUsers?.[offererIds[idx] ?? request.offeredBy ?? '']?.username ??
                         request.offeredByUsername ??
@@ -789,9 +816,12 @@ const RequestCard: React.FC<Props> = ({
                   <Text style={[styles.fulfilledTime, {color: colors.text}]} numberOfLines={1}>
                     {formatDateRange(o.from, o.until)}
                   </Text>
-                  <Text style={styles.fulfilledSpot} numberOfLines={1}>
-                    P {o.spotId}
-                  </Text>
+                  <View style={styles.fulfilledSpotCol}>
+                    <Text style={styles.fulfilledSpot} numberOfLines={1}>
+                      P {o.spotId}
+                    </Text>
+                    <SpotLayoutMapButton facilityCode={facilityCode} spotId={o.spotId} iconColor={colors.brand} />
+                  </View>
                   <Text style={[styles.fulfilledUser, {color: colors.text}]} numberOfLines={1}>
                     {publicUsers?.[o.offererId]?.username ?? (o as any).offererUsername ?? 'Unbekannt'}
                   </Text>
@@ -831,9 +861,15 @@ const RequestCard: React.FC<Props> = ({
                     <Text style={[styles.offerLabel, {color: colors.subtext}]}>
                       {isAccepted ? 'Angenommen' : full ? 'Vollständig' : 'Teilweise'}
                     </Text>
-                    <Text style={[styles.offerDetails, {color: colors.text}]}>
-                      P {o.spotId} ({offererName}) · {formatDateRange(o.from, o.until)}
-                    </Text>
+                    <View style={styles.offerSpotRow}>
+                      <Text style={[styles.offerDetails, {color: colors.text}]}>
+                        P {o.spotId}
+                      </Text>
+                      <SpotLayoutMapButton facilityCode={facilityCode} spotId={o.spotId} iconColor={colors.brand} />
+                      <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                        ({offererName}) · {formatDateRange(o.from, o.until)}
+                      </Text>
+                    </View>
                   </View>
                   {!isAccepted && (
                     <ActionButton
@@ -999,10 +1035,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111',
   },
+  spotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
   spotText: {
     fontSize: 13,
     fontWeight: '900',
     color: '#16A34A',
+  },
+  offerSpotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  offerDetailsRest: {
+    flex: 1,
+    minWidth: 120,
+  },
+  fulfilledSpotCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   offersBox: {
     marginTop: 8,

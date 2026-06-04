@@ -1,16 +1,24 @@
 import React from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {ELEMENT_COLORS, SYMBOL_ICONS, SYMBOL_LABELS} from '../constants';
-import {formatSpotLabel, spotFontSize} from '../spotLabel';
-import {normalizeSymbolRotation} from '../gridMath';
-import {LayoutElement, isSpot} from '../types';
+import {
+  ELEMENT_COLORS,
+  SYMBOL_ICONS,
+  SYMBOL_LABELS,
+  symbolShowsTextLabel,
+} from '../constants';
+import {formatSpotLabelForZoom, spotFontSize, spotFontSizeVertical} from '../spotLabel';
+import {elementFootprint, normalizeSymbolRotation} from '../gridMath';
+import {CELL_PX, LayoutElement, isSpot, isStreet, isSymbol} from '../types';
 
 type Props = {
   el: LayoutElement;
   cellPx: number;
   selected: boolean;
   highlighted: boolean;
+  highlightColor?: string;
+  /** De-emphasize when another spot is focused (viewer highlight mode). */
+  dimmed?: boolean;
   dragDx: number;
   dragDy: number;
   readOnly: boolean;
@@ -24,6 +32,8 @@ const LayoutElementView: React.FC<Props> = ({
   cellPx,
   selected,
   highlighted,
+  highlightColor = '#FBBF24',
+  dimmed = false,
   dragDx,
   dragDy,
   readOnly,
@@ -31,9 +41,48 @@ const LayoutElementView: React.FC<Props> = ({
   onPressIn,
   onLongPress,
 }) => {
-  const w = (isSpot(el) ? el.width : 1) * cellPx;
-  const h = (isSpot(el) ? el.height : 1) * cellPx;
-  const symbolRot = !isSpot(el) ? normalizeSymbolRotation(el.rotation) : 0;
+  const {width: fw, height: fh} = elementFootprint(el);
+  const w = fw * cellPx;
+  const h = fh * cellPx;
+  const symbolRot = isSymbol(el) ? normalizeSymbolRotation(el.rotation) : 0;
+  const baseColor = ELEMENT_COLORS[isSpot(el) ? 'spot' : el.type];
+  const spotBg = highlighted && isSpot(el) ? highlightColor : baseColor;
+  const showSymbolLabel = isSymbol(el) && symbolShowsTextLabel(cellPx);
+  const symbolIconSize = Math.min(w, h) * (showSymbolLabel ? 0.55 : 0.72);
+
+  const spotLabelNode = (() => {
+    if (!isSpot(el)) return null;
+    const zoom = cellPx / CELL_PX;
+    const label = formatSpotLabelForZoom(el.number, el.floorFrom, el.floorTo, zoom);
+    // 0° = 1×2 (hoch), 90° = 2×1 (breit) — nur bei hohen Plätzen Schrift drehen
+    const isVerticalSpot = h > w;
+    const fontSize = isVerticalSpot
+      ? spotFontSizeVertical(h, w, label.length)
+      : spotFontSize(w, h, label.length);
+    const textProps = {
+      numberOfLines: 1 as const,
+      adjustsFontSizeToFit: true,
+      minimumFontScale: 0.35,
+      children: label,
+    };
+    if (isVerticalSpot) {
+      return (
+        <View style={styles.spotLabelRotWrap}>
+          <Text
+            {...textProps}
+            style={[
+              styles.spotLabel,
+              styles.spotLabelRotated,
+              {fontSize, width: Math.max(1, h - 4)},
+            ]}
+          />
+        </View>
+      );
+    }
+    return (
+      <Text {...textProps} style={[styles.spotLabel, {fontSize}]} />
+    );
+  })();
 
   return (
     <View
@@ -44,54 +93,58 @@ const LayoutElementView: React.FC<Props> = ({
           top: (el.y + dragDy) * cellPx,
           width: w,
           height: h,
-          zIndex: dragDx || dragDy ? 30 : selected ? 20 : 10,
+          opacity: dimmed ? 0.48 : 1,
+          zIndex: dragDx || dragDy
+            ? 30
+            : highlighted
+              ? 25
+              : selected
+                ? 20
+                : isStreet(el)
+                  ? 1
+                  : dimmed
+                    ? 5
+                    : 10,
         },
       ]}>
-      {selected && <View style={styles.ring} pointerEvents="none" />}
+      {selected && (
+        <View
+          style={[styles.ring, isStreet(el) && styles.ringStreet]}
+          pointerEvents="none"
+        />
+      )}
       <Pressable
         disabled={readOnly}
         delayLongPress={380}
         style={[
           styles.body,
+          isStreet(el) ? styles.bodyStreet : styles.bodyRounded,
           {
-            backgroundColor: ELEMENT_COLORS[isSpot(el) ? 'spot' : el.type],
-            borderWidth: highlighted ? 2 : 0,
-            borderColor: '#FBBF24',
+            backgroundColor: spotBg,
+            borderWidth: highlighted ? 3 : 0,
+            borderColor: highlighted ? highlightColor : 'transparent',
           },
         ]}
         onPress={onPress}
         onPressIn={(e) => onPressIn(e.nativeEvent.pageX, e.nativeEvent.pageY)}
         onLongPress={readOnly ? undefined : onLongPress}>
-        {isSpot(el) ? (
-          <Text
-            style={[
-              styles.spotLabel,
-              {
-                fontSize: spotFontSize(
-                  w,
-                  h,
-                  formatSpotLabel(el.number, el.floorFrom, el.floorTo).length,
-                ),
-              },
-            ]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.4}>
-            {formatSpotLabel(el.number, el.floorFrom, el.floorTo)}
-          </Text>
-        ) : (
+        {isStreet(el) ? null : isSpot(el) ? (
+          spotLabelNode
+        ) : isSymbol(el) ? (
           <View style={styles.symbolInner}>
             <MaterialCommunityIcons
               name={SYMBOL_ICONS[el.type]}
-              size={Math.min(w, h) * 0.55}
+              size={symbolIconSize}
               color="#fff"
               style={{transform: [{rotate: `${symbolRot}deg`}]}}
             />
-            <Text style={styles.symbolText} numberOfLines={1}>
-              {SYMBOL_LABELS[el.type]}
-            </Text>
+            {showSymbolLabel ? (
+              <Text style={styles.symbolText} numberOfLines={1}>
+                {SYMBOL_LABELS[el.type]}
+              </Text>
+            ) : null}
           </View>
-        )}
+        ) : null}
       </Pressable>
     </View>
   );
@@ -106,14 +159,30 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     margin: -2,
   },
+  ringStreet: {
+    borderRadius: 0,
+  },
   body: {
     flex: 1,
-    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  bodyRounded: {
+    borderRadius: 6,
+  },
+  bodyStreet: {
+    borderRadius: 0,
+  },
   spotLabel: {color: '#fff', fontWeight: '700', textAlign: 'center', paddingHorizontal: 2},
+  spotLabelRotWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spotLabelRotated: {
+    transform: [{rotate: '-90deg'}],
+  },
   symbolInner: {alignItems: 'center', justifyContent: 'center'},
   symbolText: {color: '#fff', fontSize: 8, fontWeight: '600', marginTop: 1},
 });

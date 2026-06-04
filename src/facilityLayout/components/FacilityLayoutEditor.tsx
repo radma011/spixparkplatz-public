@@ -22,17 +22,23 @@ import PlacementPreview, {TOOL_PREVIEW_HEIGHT} from './PlacementPreview';
 import {
   EditorTool,
   LayoutSpot,
+  LayoutStreet,
   LayoutSymbol,
   MAX_SPOT_NUMBER_LEN,
   SYMBOL_CELLS,
   isSpot,
+  isSymbolTool,
 } from '../types';
 import {
+  appendStreetsAlongPath,
   applyNumbering,
   canPlace,
+  GridPoint,
+  hasStreetAt,
   moveBy,
   newId,
   nextSpotRotation,
+  shouldFillStreetBetween,
   nextSymbolRotation,
   normalizeSpot,
   normalizeSpotRotation,
@@ -42,6 +48,8 @@ import {
   spotsForNumbering,
   MIN_LAYOUT_ZOOM,
   MAX_LAYOUT_ZOOM,
+  numberingOrderHint,
+  type NumberingDirection,
   type NumberingOrder,
   type NumberingScope,
 } from '../gridMath';
@@ -59,6 +67,7 @@ const TOOLS: {id: EditorTool; icon: string; label: string}[] = [
   {id: 'entrance', icon: 'login', label: 'Ein'},
   {id: 'exit', icon: 'logout', label: 'Aus'},
   {id: 'door', icon: 'door', label: 'Tür'},
+  {id: 'street', icon: 'texture-box', label: 'Straße'},
 ];
 
 const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) => {
@@ -83,23 +92,19 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
   const [zoom, setZoom] = useState(1);
   const [multiSelect, setMultiSelect] = useState(true);
   const surfaceRef = useRef<LayoutSurfaceHandle>(null);
-  const didInitialFitRef = useRef(false);
+  const lastStreetEndpointsRef = useRef<GridPoint[]>([]);
+  /** An = beim Setzen automatisch Zwischenfelder verbinden; aus = nur Einzelkacheln. */
+  const [streetAutoFill, setStreetAutoFill] = useState(false);
 
   useEffect(() => {
-    didInitialFitRef.current = false;
-  }, [facilityCode]);
-
-  useEffect(() => {
-    if (tool !== 'select') setPlaceRotation(0);
+    if (tool !== 'select' && tool !== 'street') setPlaceRotation(0);
+    if (tool !== 'street') lastStreetEndpointsRef.current = [];
   }, [tool]);
 
-  useEffect(() => {
-    if (loading || !layout) return;
-    if (didInitialFitRef.current) return;
-    didInitialFitRef.current = true;
-    const t = setTimeout(() => surfaceRef.current?.fitToContent(), 80);
-    return () => clearTimeout(t);
-  }, [loading, layout]);
+  const rememberStreetEndpoint = (point: GridPoint) => {
+    const prev = lastStreetEndpointsRef.current[0] ?? null;
+    lastStreetEndpointsRef.current = [point, ...(prev ? [prev] : [])].slice(0, 2);
+  };
 
   const [spotModal, setSpotModal] = useState(false);
   const [bulkModal, setBulkModal] = useState(false);
@@ -112,6 +117,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
   const [bulkFloorFrom, setBulkFloorFrom] = useState('0');
   const [bulkFloorTo, setBulkFloorTo] = useState('3');
   const [bulkOrder, setBulkOrder] = useState<NumberingOrder>('row');
+  const [bulkDirection, setBulkDirection] = useState<NumberingDirection>('asc');
   const [bulkScope, setBulkScope] = useState<NumberingScope>('selection');
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferTargetCode, setTransferTargetCode] = useState('');
@@ -152,6 +158,33 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
 
   const placeAt = (x: number, y: number) => {
     if (!layout || tool === 'select') return;
+    if (tool === 'street') {
+      const point = {x, y};
+      const prev = lastStreetEndpointsRef.current[0] ?? null;
+
+      if (hasStreetAt(layout.elements, x, y)) {
+        rememberStreetEndpoint(point);
+        return;
+      }
+      if (!canPlace(layout.elements, x, y, SYMBOL_CELLS, SYMBOL_CELLS)) {
+        showAlert('Hinweis', 'Straßenfeld passt hier nicht.');
+        return;
+      }
+
+      const autoConnect =
+        streetAutoFill && shouldFillStreetBetween(prev, point, layout.elements);
+
+      if (autoConnect) {
+        const res = appendStreetsAlongPath(layout.elements, prev!, point);
+        patch((p) => ({...p, elements: res.elements}));
+        rememberStreetEndpoint(point);
+      } else {
+        const el: LayoutStreet = {id: newId(), type: 'street', x, y};
+        patch((p) => ({...p, elements: [...p.elements, el]}));
+        rememberStreetEndpoint(point);
+      }
+      return;
+    }
     if (tool === 'spot') {
       const rot = normalizeSpotRotation(placeRotation);
       const {width, height} = spotSize(rot);
@@ -171,6 +204,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
       patch((p) => ({...p, elements: [...p.elements, el]}));
       return;
     }
+    if (!isSymbolTool(tool)) return;
     if (!canPlace(layout.elements, x, y, SYMBOL_CELLS, SYMBOL_CELLS)) {
       showAlert('Hinweis', 'Symbol passt hier nicht.');
       return;
@@ -188,7 +222,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
   const cyclePlaceRotation = () => {
     if (tool === 'spot') {
       setPlaceRotation((r) => nextSpotRotation(r));
-    } else if (tool !== 'select') {
+    } else if (isSymbolTool(tool)) {
       setPlaceRotation((r) => nextSymbolRotation(r));
     }
   };
@@ -287,7 +321,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
             ),
           }
         : undefined;
-    const mapping = applyNumbering(targets, bulkStart, inc, bulkOrder, duplex);
+    const mapping = applyNumbering(targets, bulkStart, inc, bulkOrder, bulkDirection, duplex);
     patch((p) => ({
       ...p,
       elements: p.elements.map((e) => {
@@ -439,8 +473,9 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
         {TOOLS.map((t) => {
           const active = tool === t.id;
           const isPlace = t.id !== 'select';
+          const canRotate = isPlace && t.id !== 'street';
           const handlePress = () => {
-            if (active && isPlace) {
+            if (active && canRotate) {
               cyclePlaceRotation();
             } else {
               setTool(t.id);
@@ -460,10 +495,8 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
               ]}
               onPress={handlePress}
               accessibilityLabel={
-                isPlace
-                  ? active
-                    ? `${t.label}, erneut tippen zum Drehen`
-                    : t.label
+                canRotate && active
+                  ? `${t.label}, erneut tippen zum Drehen`
                   : t.label
               }>
               {isPlace ? (
@@ -494,6 +527,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
         <LayoutSurface
           ref={surfaceRef}
           layout={layout}
+          autoFitOnLayout={!loading && !!layout}
           tool={tool}
           placeRotation={placeRotation}
           selectedIds={selectedIds}
@@ -519,6 +553,35 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
         <TouchableOpacity onPress={() => setZoom((z) => Math.min(MAX_LAYOUT_ZOOM, z + 0.2))}>
           <MaterialCommunityIcons name="plus" size={22} color={colors.text} />
         </TouchableOpacity>
+        {tool === 'street' && (
+          <TouchableOpacity
+            onPress={() => setStreetAutoFill((v) => !v)}
+            accessibilityLabel={
+              streetAutoFill
+                ? 'Automatisch verbinden: an — tippen zum Ausschalten'
+                : 'Automatisch verbinden: aus — nur Einzelkacheln'
+            }
+            style={[
+              styles.streetAutoToggle,
+              {
+                backgroundColor: streetAutoFill ? colors.brand : colors.surface2,
+                borderColor: colors.border,
+              },
+            ]}>
+            <MaterialCommunityIcons
+              name="vector-line"
+              size={20}
+              color={streetAutoFill ? '#fff' : colors.text}
+            />
+            <Text
+              style={[
+                styles.streetAutoToggleText,
+                {color: streetAutoFill ? '#fff' : colors.text},
+              ]}>
+              Auto
+            </Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.divider} />
         <TouchableOpacity onPress={() => void undo()} disabled={!canUndo}>
           <MaterialCommunityIcons
@@ -697,6 +760,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                     onChangeText={setBulkInc}
                     keyboardType="number-pad"
                   />
+                  <Text style={[styles.lbl, {color: colors.subtext}]}>Laufrichtung auf dem Plan</Text>
                   <View style={styles.chipRow}>
                     <TouchableOpacity
                       style={[styles.chip, bulkOrder === 'row' && {backgroundColor: colors.brand}]}
@@ -709,6 +773,31 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                       <Text style={{color: bulkOrder === 'column' ? '#fff' : colors.text}}>Spalten</Text>
                     </TouchableOpacity>
                   </View>
+                  <Text style={[styles.orderHint, {color: colors.subtext}]}>
+                    {numberingOrderHint(bulkOrder)}
+                  </Text>
+                  <Text style={[styles.lbl, {color: colors.subtext}]}>Nummern</Text>
+                  <View style={styles.chipRow}>
+                    <TouchableOpacity
+                      style={[styles.chip, bulkDirection === 'asc' && {backgroundColor: colors.brand}]}
+                      onPress={() => setBulkDirection('asc')}>
+                      <Text style={{color: bulkDirection === 'asc' ? '#fff' : colors.text}}>
+                        Aufsteigend
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.chip, bulkDirection === 'desc' && {backgroundColor: colors.brand}]}
+                      onPress={() => setBulkDirection('desc')}>
+                      <Text style={{color: bulkDirection === 'desc' ? '#fff' : colors.text}}>
+                        Absteigend
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.orderHint, {color: colors.subtext}]}>
+                    {bulkDirection === 'asc'
+                      ? 'Erster Platz in der Laufrichtung = Startnummer, dann + Schrittweite'
+                      : 'Erster Platz in der Laufrichtung = Startnummer, dann − Schrittweite'}
+                  </Text>
                 </>
               )}
               <View style={styles.duplexRow}>
@@ -806,6 +895,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   multiToggleText: {fontSize: 12, fontWeight: '700'},
+  streetAutoToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  streetAutoToggleText: {fontSize: 11, fontWeight: '800'},
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -824,6 +923,7 @@ const styles = StyleSheet.create({
   },
   chipRow: {flexDirection: 'row', gap: 8, marginTop: 8},
   chip: {paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#eee'},
+  orderHint: {fontSize: 12, marginTop: 6, marginBottom: 4, lineHeight: 17},
   duplexRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

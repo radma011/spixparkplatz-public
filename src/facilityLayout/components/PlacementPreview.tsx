@@ -25,6 +25,24 @@ const PlacementPreview: React.FC<Props> = ({
   opacity = 1,
 }) => {
   const content = useMemo(() => {
+    if (tool === 'street') {
+      return (
+        <View style={styles.fill}>
+          <View
+            style={[
+              styles.streetShape,
+              {
+                backgroundColor: ELEMENT_COLORS.street,
+                width: '88%',
+                aspectRatio: 1,
+                maxHeight: '88%',
+              },
+            ]}
+          />
+        </View>
+      );
+    }
+
     if (tool === 'spot') {
       const rot = normalizeSpotRotation(spotRotation);
       const {width, height} = spotSize(rot);
@@ -49,7 +67,7 @@ const PlacementPreview: React.FC<Props> = ({
       );
     }
 
-    const kind = tool as SymbolKind;
+    const kind = tool as SymbolKind; // entrance | exit | door
     const rot = normalizeSymbolRotation(symbolRotation);
     return (
       <View style={styles.fill}>
@@ -92,6 +110,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  streetShape: {
+    borderRadius: 0,
   },
   symbolLabel: {
     color: '#fff',

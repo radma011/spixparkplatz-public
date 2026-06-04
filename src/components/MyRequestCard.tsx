@@ -11,8 +11,10 @@ import DayBadge from './common/DayBadge';
 import {cardStyles} from '../styles/cards';
 import {chipStyles} from '../styles/chips';
 import {showContactOptions} from '../utils/contactUtils';
+import {SpotLayoutMapButton} from '../facilityLayout';
 
 interface Props {
+  facilityCode: string;
   request: ParkingRequest & {section?: string};
   onDelete?: (requestId: string) => void;
   offers?: RequestOffer[];
@@ -21,7 +23,15 @@ interface Props {
   onAcceptOffer?: (offer: RequestOffer) => void;
 }
 
-const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicUsers, currentUserId, onAcceptOffer}) => {
+const MyRequestCard: React.FC<Props> = ({
+  facilityCode,
+  request,
+  onDelete,
+  offers = [],
+  publicUsers,
+  currentUserId,
+  onAcceptOffer,
+}) => {
   const colors = getColors(useColorScheme());
   const hasOffer = !!request.offeredSpotId && !request.isFulfilled;
   const canDelete = !request.isFulfilled;
@@ -183,9 +193,15 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
                   <Text style={[styles.offerLabel, {color: colors.subtext}]}>
                     {isFullOffer ? 'Vollständig' : 'Teilweise'}
                   </Text>
-                  <Text style={[styles.offerDetails, {color: colors.text}]}>
-                    P {activeOfferForDisplay.spotId} ({offererName}) · {formatDateRange(activeOfferForDisplay.from, activeOfferForDisplay.until)}
-                  </Text>
+                  <View style={styles.offerSpotRow}>
+                    <Text style={[styles.offerDetails, {color: colors.text}]}>
+                      P {activeOfferForDisplay.spotId}
+                    </Text>
+                    <SpotLayoutMapButton facilityCode={facilityCode} spotId={activeOfferForDisplay.spotId} iconColor={colors.brand} />
+                    <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                      ({offererName}) · {formatDateRange(activeOfferForDisplay.from, activeOfferForDisplay.until)}
+                    </Text>
+                  </View>
                 </View>
               </View>
             );
@@ -213,9 +229,15 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
               )}
               <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
                 <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angebot</Text>
-                <Text style={[styles.offerDetails, {color: colors.text}]}>
-                  P {request.offeredSpotId} ({offererName}) · {formatDateRange(request.from, request.until)}
-                </Text>
+                <View style={styles.offerSpotRow}>
+                  <Text style={[styles.offerDetails, {color: colors.text}]}>
+                    P {request.offeredSpotId}
+                  </Text>
+                  <SpotLayoutMapButton facilityCode={facilityCode} spotId={request.offeredSpotId} iconColor={colors.brand} />
+                  <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                    ({offererName}) · {formatDateRange(request.from, request.until)}
+                  </Text>
+                </View>
               </View>
             </View>
           );
@@ -228,9 +250,12 @@ const MyRequestCard: React.FC<Props> = ({request, onDelete, offers = [], publicU
               <Text style={[styles.dateText, {color: colors.text}]} numberOfLines={1}>
                 {formatDateRange(request.from, request.until)}
               </Text>
-              <Text style={styles.spotText} numberOfLines={1}>
-                P {request.offeredSpotId}
-              </Text>
+              <View style={styles.spotRow}>
+                <Text style={styles.spotText} numberOfLines={1}>
+                  P {request.offeredSpotId}
+                </Text>
+                <SpotLayoutMapButton facilityCode={facilityCode} spotId={request.offeredSpotId} iconColor={colors.brand} />
+              </View>
             </View>
           );
         }
@@ -291,7 +316,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   dateText: {flex: 1, fontSize: 12, fontWeight: '600'},
+  spotRow: {flexDirection: 'row', alignItems: 'center', gap: 2},
   spotText: {fontSize: 13, fontWeight: '900', color: '#16A34A'},
+  offerSpotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  offerDetailsRest: {flex: 1, minWidth: 120},
   commentPreview: {fontSize: 12, marginTop: 2, fontWeight: '600'},
   actionsRow: {
     flexDirection: 'row',

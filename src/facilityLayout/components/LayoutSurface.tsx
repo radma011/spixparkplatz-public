@@ -1,6 +1,7 @@
 import React, {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -19,17 +20,21 @@ import {
   EditorTool,
   FacilityLayout,
   isSpot,
+  isStreet,
 } from '../types';
 import {
   canvasPx,
   cellFromTouch,
+  defaultViewBoundsPx,
+  elementsBoundsPx,
   idsInRect,
   moveBy,
-  viewBoundsPx,
   zoomToFitBounds,
   MIN_LAYOUT_ZOOM,
   MAX_LAYOUT_ZOOM,
 } from '../gridMath';
+
+const FIT_PAD_CELLS = 1;
 
 const MARQUEE_THRESHOLD = 10;
 
@@ -44,12 +49,17 @@ type Props = {
   placeRotation?: number;
   selectedIds?: Set<string>;
   highlightNumbers?: Set<string>;
+  highlightColor?: string;
+  /** Fade non-highlighted elements when specific spots are focused (card map link). */
+  dimNonHighlighted?: boolean;
   multiSelect?: boolean;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
   onSelectionChange?: (ids: Set<string>) => void;
   onPlace?: (x: number, y: number) => void;
   onMove?: (ids: Set<string>, dx: number, dy: number) => void;
+  /** Run fit-to-content once when the canvas viewport gets a real size (e.g. on open). */
+  autoFitOnLayout?: boolean;
 };
 
 function touchDistance(touches: ReadonlyArray<{pageX: number; pageY: number}>): number {
@@ -67,16 +77,24 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
     placeRotation = 0,
     selectedIds = new Set(),
     highlightNumbers = new Set(),
+    highlightColor,
+    dimNonHighlighted = false,
     multiSelect = true,
     zoom = 1,
     onZoomChange,
     onSelectionChange,
     onPlace,
     onMove,
+    autoFitOnLayout = false,
   },
   ref,
 ) {
   const cellPx = CELL_PX * zoom;
+  const drawOrder = useMemo(() => {
+    const streets = layout.elements.filter(isStreet);
+    const rest = layout.elements.filter((e) => !isStreet(e));
+    return [...streets, ...rest];
+  }, [layout.elements]);
   const {width, height} = useMemo(() => {
     const base = canvasPx();
     return {width: base.width * zoom, height: base.height * zoom};
@@ -100,19 +118,33 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
 
   const clampZoom = (z: number) => Math.max(MIN_LAYOUT_ZOOM, Math.min(MAX_LAYOUT_ZOOM, z));
 
+  const autoFitPendingRef = useRef(autoFitOnLayout);
+
+  useEffect(() => {
+    autoFitPendingRef.current = autoFitOnLayout;
+  }, [autoFitOnLayout, layout.facilityCode, layout.elements.length]);
+
   const fitToContent = useCallback(() => {
     const {width: vw, height: vh} = viewportRef.current;
     if (vw <= 0 || vh <= 0) return;
-    const bounds = viewBoundsPx(layout.elements);
+    const bounds =
+      elementsBoundsPx(layout.elements, FIT_PAD_CELLS) ?? defaultViewBoundsPx();
     const nextZoom = zoomToFitBounds(vw, vh, bounds);
     onZoomChange?.(nextZoom);
-    const scrollX = Math.max(0, bounds.x * nextZoom - vw * 0.05);
-    const scrollY = Math.max(0, bounds.y * nextZoom - vh * 0.05);
+    const base = canvasPx();
+    const canvasW = base.width * nextZoom;
+    const canvasH = base.height * nextZoom;
+    const scaledW = bounds.width * nextZoom;
+    const scaledH = bounds.height * nextZoom;
+    let scrollX = bounds.x * nextZoom + (scaledW - vw) / 2;
+    let scrollY = bounds.y * nextZoom + (scaledH - vh) / 2;
+    scrollX = Math.max(0, Math.min(Math.max(0, canvasW - vw), scrollX));
+    scrollY = Math.max(0, Math.min(Math.max(0, canvasH - vh), scrollY));
     requestAnimationFrame(() => {
       scrollHRef.current?.scrollTo({x: scrollX, y: 0, animated: false});
       scrollVRef.current?.scrollTo({x: 0, y: scrollY, animated: false});
     });
-  }, [layout.elements, onZoomChange]);
+  }, [layout.elements, layout.facilityCode, onZoomChange]);
 
   useImperativeHandle(ref, () => ({fitToContent}), [fitToContent]);
 
@@ -266,10 +298,14 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
     <View
       style={styles.flex}
       onLayout={(e) => {
-        viewportRef.current = {
-          width: e.nativeEvent.layout.width,
-          height: e.nativeEvent.layout.height,
-        };
+        const w = e.nativeEvent.layout.width;
+        const h = e.nativeEvent.layout.height;
+        const hadSize = viewportRef.current.width > 0 && viewportRef.current.height > 0;
+        viewportRef.current = {width: w, height: h};
+        if (!hadSize && w > 0 && h > 0 && autoFitPendingRef.current) {
+          autoFitPendingRef.current = false;
+          requestAnimationFrame(() => fitToContent());
+        }
       }}
       {...panResponder.panHandlers}>
       <ScrollView
@@ -310,10 +346,12 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
               />
             )}
 
-            {layout.elements.map((el) => {
+            {drawOrder.map((el) => {
               const selected = selectedIds.has(el.id);
               const highlighted =
                 isSpot(el) && !!el.number && highlightNumbers.has(el.number.trim());
+              const focusMode = dimNonHighlighted && highlightNumbers.size > 0;
+              const dimmed = focusMode && !highlighted;
               const isDragged = drag?.ids.has(el.id) ?? false;
               return (
                 <LayoutElementView
@@ -322,6 +360,8 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
                   cellPx={cellPx}
                   selected={selected}
                   highlighted={highlighted}
+                  highlightColor={highlightColor}
+                  dimmed={dimmed}
                   dragDx={isDragged ? (drag?.dx ?? 0) : 0}
                   dragDy={isDragged ? (drag?.dy ?? 0) : 0}
                   readOnly={readOnly}

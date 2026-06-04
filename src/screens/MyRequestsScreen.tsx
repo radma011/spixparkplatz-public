@@ -252,8 +252,9 @@ const MyRequestsScreen: React.FC<Props> = ({currentUserId, facilityCode, onBack}
         ]}
         keyExtractor={(item) => item.id}
         renderItem={({item}) => (
-          <MyRequestCard 
-            request={item} 
+          <MyRequestCard
+            facilityCode={facilityCode}
+            request={item}
             onDelete={handleDeleteRequest}
             offers={offersByRequestId[item.id] ?? []}
             publicUsers={publicUsers}
