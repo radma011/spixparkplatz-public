@@ -1293,6 +1293,50 @@ class FirestoreService {
    * Ruft die Anzahl der für diese Parkanlage registrierten Nutzer ab (per HTTP Function).
    * Gibt bei Fehler oder ohne Auth null zurück.
    */
+  /**
+   * Alle in der Anlage vergebenen Parkplatz-IDs (Vereinigung users.parkingSpots).
+   * Gibt bei Fehler oder ohne Auth null zurück.
+   */
+  async getFacilityAssignedSpots(facilityCode: string): Promise<string[] | null> {
+    if (!facilityCode || !facilityCode.trim()) return null;
+    const normalizedCode = facilityCode.trim().toUpperCase();
+    const auth = getAuth(getApp());
+    const user = auth.currentUser;
+    if (!user) return null;
+    try {
+      const token = await getIdToken(user, false);
+      const projectId = getApp().options.projectId;
+      if (!projectId) return null;
+      const region = 'europe-west3';
+      const url = `https://${region}-${projectId}.cloudfunctions.net/getFacilityAssignedSpotsHttp`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({data: {facilityCode: normalizedCode}}),
+      });
+      const text = await res.text().catch(() => '');
+      const json: {result?: {spotIds?: string[]}; error?: {message?: string}} = (() => {
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch {
+          return {};
+        }
+      })();
+      if (!res.ok) return null;
+      const spotIds = json?.result?.spotIds;
+      if (!Array.isArray(spotIds)) return null;
+      return spotIds
+        .map((s) => String(s).trim().toUpperCase())
+        .filter((s) => s.length > 0);
+    } catch {
+      return null;
+    }
+  }
+
   async getFacilityMemberCount(facilityCode: string): Promise<number | null> {
     if (!facilityCode || !facilityCode.trim()) return null;
     const normalizedCode = facilityCode.trim().toUpperCase();

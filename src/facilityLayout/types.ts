@@ -8,6 +8,8 @@ export interface LayoutSymbol {
   x: number;
   y: number;
   rotation?: SymbolRotation;
+  /** Eigene Beschriftung statt Standard-Icon (nur Tür/Ausfahrt). */
+  label?: string;
 }
 
 /** Dunkelgraue Straßen-Fläche (1×1), ohne Icon/Beschriftung — nur Editor/Anzeige. */
@@ -26,7 +28,7 @@ export interface LayoutSpot {
   width: number;
   height: number;
   rotation?: SpotRotation;
-  /** Vierstellige Parkplatz-ID — entspricht spotId in Anfragen/Angeboten */
+  /** Parkplatz-ID (z. B. 2140 oder 2140L) — entspricht spotId in Anfragen/Angeboten */
   number?: string;
   floorFrom?: number;
   floorTo?: number;
@@ -64,6 +66,14 @@ export function isSymbolTool(tool: EditorTool): tool is SymbolKind {
   return tool === 'entrance' || tool === 'exit' || tool === 'door';
 }
 
+export type LabelEditableSymbolKind = 'exit' | 'door';
+
+export function isLabelEditableSymbol(
+  el: LayoutElement,
+): el is LayoutSymbol & {type: LabelEditableSymbolKind} {
+  return el.type === 'exit' || el.type === 'door';
+}
+
 export function createEmptyLayout(facilityCode: string, userId: string): FacilityLayout {
   const code = facilityCode.trim().toUpperCase();
   return {
@@ -80,6 +90,6 @@ export const GRID_COLS = 240;
 export const GRID_ROWS = 240;
 export const CELL_PX = 42;
 export const SYMBOL_CELLS = 1;
-export const MAX_SPOT_NUMBER_LEN = 4;
+export {MAX_SPOT_NUMBER_DIGITS, MAX_SPOT_NUMBER_LEN} from './spotNumber';
 export const DEFAULT_SPOT_W = 1;
 export const DEFAULT_SPOT_H = 2;

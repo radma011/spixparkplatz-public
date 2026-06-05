@@ -1,4 +1,6 @@
-/** Ab diesem Zoom (1 = 100 %) Duplex-Etagen in der Kartenbeschriftung anzeigen. */
+import {hasSpotNumberSuffix, splitSpotNumber} from './spotNumber';
+
+/** Ab diesem Zoom (1 = 100 %): Duplex-Etagen und L/R-Suffix in der Beschriftung. */
 export const DUPLEX_FLOOR_MIN_ZOOM = 0.7;
 
 export function isDuplexSpot(floorFrom?: number, floorTo?: number): boolean {
@@ -23,15 +25,23 @@ export function formatSpotLabel(
   return `${base} (${floorFrom}-${to})`;
 }
 
-/** Duplex: Etagen nur bei Zoom über 70 %, sonst nur die Nummer. */
+/** Kompakte Beschriftung: nur Ziffern (ohne L/R und ohne Duplex-Etagen). */
+export function formatSpotLabelCompact(number?: string): string {
+  return splitSpotNumber(number).digits;
+}
+
+/** Duplex-Etagen und Buchstabe (z. B. L/R) nur bei Zoom über 70 %. */
 export function formatSpotLabelForZoom(
   number: string | undefined,
   floorFrom: number | undefined,
   floorTo: number | undefined,
   zoom: number,
 ): string {
-  if (isDuplexSpot(floorFrom, floorTo) && zoom <= DUPLEX_FLOOR_MIN_ZOOM) {
-    return number?.trim() || '—';
+  const hideExtra =
+    zoom <= DUPLEX_FLOOR_MIN_ZOOM &&
+    (isDuplexSpot(floorFrom, floorTo) || hasSpotNumberSuffix(number));
+  if (hideExtra) {
+    return formatSpotLabelCompact(number);
   }
   return formatSpotLabel(number, floorFrom, floorTo);
 }
@@ -60,21 +70,28 @@ export function formatFloorInput(floorFrom?: number, floorTo?: number): string {
   return to === floorFrom ? String(floorFrom) : `${floorFrom}-${to}`;
 }
 
-export function spotFontSize(cellW: number, cellH: number, labelLen: number): number {
-  const minSide = Math.min(cellW, cellH);
-  if (labelLen > 10) return Math.max(7, minSide * 0.22);
-  if (labelLen > 7) return Math.max(8, minSide * 0.26);
-  return Math.max(9, minSide * 0.32);
+/** Geschätzte Zeichenbreite / fontSize (fette Ziffern). */
+const CHAR_WIDTH_RATIO = 0.58;
+
+/** Innenabstand der Beschriftung im Parkplatz (px). */
+export const SPOT_LABEL_PAD_PX = 3;
+
+/** Maximale Start-Schriftgröße für horizontale Beschriftung (adjustsFontSizeToFit verkleinert bei Bedarf). */
+export function maxSpotLabelFontSize(boxW: number, boxH: number, labelLen: number): number {
+  const len = Math.max(1, labelLen);
+  const byHeight = boxH * 0.92;
+  const byWidth = boxW / (len * CHAR_WIDTH_RATIO);
+  return Math.max(5, Math.min(byHeight, byWidth));
 }
 
-/** Hoher Parkplatz (Schrift −90°): Schrift darf schmale Seite nicht überschreiten. */
-export function spotFontSizeVertical(
+/** Hoher Parkplatz (Schrift −90°): longSide = Zeilenbreite, narrowSide = maximaler fontSize. */
+export function maxSpotLabelFontSizeVertical(
   longSidePx: number,
   narrowSidePx: number,
   labelLen: number,
 ): number {
-  const base = spotFontSize(longSidePx, narrowSidePx, labelLen);
-  const capByNarrow = narrowSidePx * 0.82;
-  const capByLong = longSidePx / (Math.max(1, labelLen) * 0.58);
-  return Math.max(6, Math.min(base, capByNarrow, capByLong));
+  const len = Math.max(1, labelLen);
+  const byNarrow = narrowSidePx * 0.9;
+  const byLong = longSidePx / (len * CHAR_WIDTH_RATIO);
+  return Math.max(5, Math.min(byNarrow, byLong));
 }

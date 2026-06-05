@@ -313,6 +313,62 @@ exports.getFacilityMemberCountHttp = onRequest({invoker: 'public', region: REGIO
 });
 
 /**
+ * Returns all parking spot IDs assigned by users in the given facility (union of users.parkingSpots).
+ * Caller must be authenticated; may only request spots for their own facility.
+ */
+exports.getFacilityAssignedSpotsHttp = onRequest({invoker: 'public', region: REGION, cors: true}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  const decoded = await requireAuth(admin, req, res);
+  if (!decoded) return;
+
+  const data = req.body?.data ?? req.body ?? {};
+  const facilityCode = typeof data?.facilityCode === 'string' ? data.facilityCode.trim().toUpperCase() : '';
+  if (!facilityCode) {
+    res.status(400).json({error: {status: 'INVALID_ARGUMENT', message: 'facilityCode required'}});
+    return;
+  }
+
+  const db = admin.firestore();
+  const uid = decoded.uid;
+
+  try {
+    const userSnap = await db.collection('users').doc(uid).get();
+    if (!userSnap.exists) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'User document not found'}});
+      return;
+    }
+    const userFacilityCode = (userSnap.data().facilityCode || '').trim().toUpperCase();
+    if (userFacilityCode !== facilityCode) {
+      res.status(403).json({error: {status: 'PERMISSION_DENIED', message: 'Can only request spots for own facility'}});
+      return;
+    }
+
+    const usersSnap = await db.collection('users').where('facilityCode', '==', facilityCode).get();
+    const spotIds = new Set();
+    usersSnap.forEach((doc) => {
+      const spots = doc.data().parkingSpots;
+      if (!Array.isArray(spots)) return;
+      for (const s of spots) {
+        const t = String(s ?? '').trim().toUpperCase();
+        if (t) spotIds.add(t);
+      }
+    });
+
+    res.status(200).json({result: {spotIds: [...spotIds]}});
+  } catch (e) {
+    res.status(500).json({error: {status: 'UNKNOWN', message: e?.message ?? String(e)}});
+  }
+});
+
+/**
  * Returns fulfilled request stats for the given facility.
  * Bereits erfüllt: total fulfilled ever in facility
  * Zukünftig: fulfilled with until >= now (current + future)

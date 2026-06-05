@@ -2,20 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getFirestore,
   doc,
-  getDoc,
+  getDocFromCache,
+  getDocFromServer,
   setDoc,
   deleteDoc,
   Timestamp,
 } from '@react-native-firebase/firestore';
+import {devWarn} from '../utils/devLog';
 import {getAuth} from '@react-native-firebase/auth';
-import {
-  createEmptyLayout,
-  FacilityLayout,
-  LayoutElement,
-  isSpot,
-  GRID_COLS,
-  GRID_ROWS,
-} from './types';
+import {createEmptyLayout, FacilityLayout, LayoutElement, isSpot, isSymbol, GRID_COLS, GRID_ROWS} from './types';
+import {normalizeSymbolLabel} from './symbolLabel';
 import FirestoreService from '../services/FirestoreService';
 import {normalizeSpot} from './gridMath';
 
@@ -32,7 +28,9 @@ function docRef(code: string) {
 }
 
 function normalizeElement(el: LayoutElement): LayoutElement {
-  return isSpot(el) ? normalizeSpot(el) : el;
+  if (isSpot(el)) return normalizeSpot(el);
+  if (isSymbol(el)) return normalizeSymbolLabel(el);
+  return el;
 }
 
 function toFirestore(layout: FacilityLayout): Record<string, unknown> {
@@ -58,6 +56,9 @@ function toFirestore(layout: FacilityLayout): Record<string, unknown> {
           base.floorFrom = s.floorFrom;
           base.floorTo = s.floorTo ?? s.floorFrom;
         }
+      } else if (isSymbol(el)) {
+        const s = normalizeSymbolLabel(el);
+        if (s.label) base.label = s.label;
       }
       return base;
     }),
@@ -134,29 +135,70 @@ class FacilityLayoutService {
     );
   }
 
-  async loadRemote(code: string): Promise<FacilityLayout | null> {
+  private parseRemoteSnapshot(
+    code: string,
+    snap: {exists: () => boolean; data: () => Record<string, unknown> | undefined},
+  ): FacilityLayout | null {
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return data ? fromFirestore(code, data) : null;
+  }
+
+  /** Firestore-Persistenz-Cache — kein Netzwerk. */
+  private async loadRemoteFromCache(code: string): Promise<FacilityLayout | null> {
     try {
-      const snap = await getDoc(docRef(code));
-      if (!snap.exists()) return null;
-      const data = snap.data();
-      return data ? fromFirestore(code, data as Record<string, unknown>) : null;
-    } catch (e) {
-      console.warn('[FacilityLayoutService] loadRemote', e);
+      const snap = await getDocFromCache(docRef(code));
+      return this.parseRemoteSnapshot(code, snap);
+    } catch {
       return null;
     }
   }
 
-  /** Verhindert, dass Offline-Laden am Netzwerk hängen bleibt. */
-  private loadRemoteWithTimeout(code: string, timeoutMs = 5000): Promise<FacilityLayout | null> {
+  async loadRemote(code: string): Promise<FacilityLayout | null> {
+    try {
+      const snap = await getDocFromServer(docRef(code));
+      return this.parseRemoteSnapshot(code, snap);
+    } catch (e) {
+      devWarn('[FacilityLayoutService] loadRemote', e);
+      return null;
+    }
+  }
+
+  /** Verhindert, dass Server-Laden am Netzwerk hängen bleibt. */
+  private loadRemoteWithTimeout(
+    code: string,
+    timeoutMs = 8000,
+    silent = false,
+  ): Promise<FacilityLayout | null> {
     return Promise.race([
       this.loadRemote(code),
       new Promise<null>((resolve) => {
         setTimeout(() => {
-          console.warn('[FacilityLayoutService] loadRemote timeout');
+          if (!silent) {
+            devWarn('[FacilityLayoutService] loadRemote timeout');
+          }
           resolve(null);
         }, timeoutMs);
       }),
     ]);
+  }
+
+  /** Aktualisiert AsyncStorage im Hintergrund, blockiert den Viewer/Editor nicht. */
+  private refreshRemoteCache(code: string, local: Stored | null): void {
+    void (async () => {
+      if (local?.pendingSync) return;
+      const remote = await this.loadRemoteWithTimeout(code, 8000, true);
+      if (!remote) return;
+      if (!local) {
+        await this.saveLocal(remote, false);
+        return;
+      }
+      const lt = new Date(local.layout.updatedAt).getTime();
+      const rt = new Date(remote.updatedAt).getTime();
+      if (rt > lt) {
+        await this.saveLocal(remote, false);
+      }
+    })();
   }
 
   /**
@@ -238,18 +280,24 @@ class FacilityLayoutService {
   }> {
     const normalized = code.trim().toUpperCase();
     const local = await this.loadLocal(normalized);
-    const remote = await this.loadRemoteWithTimeout(normalized);
+
+    if (local?.pendingSync) {
+      return {layout: local.layout, syncStatus: 'pending'};
+    }
+
+    if (local?.layout) {
+      this.refreshRemoteCache(normalized, local);
+      return {layout: local.layout, syncStatus: 'synced'};
+    }
+
+    let remote = await this.loadRemoteFromCache(normalized);
+    if (!remote) {
+      remote = await this.loadRemoteWithTimeout(normalized);
+    }
 
     const {layout, syncStatus} = this.mergeOnLoad(local, remote, normalized, userId);
-
-    if (!local && remote) {
+    if (remote) {
       await this.saveLocal(layout, false);
-    } else if (local && remote) {
-      const lt = new Date(local.layout.updatedAt).getTime();
-      const rt = new Date(remote.updatedAt).getTime();
-      if (!local.pendingSync && lt < rt) {
-        await this.saveLocal(remote, false);
-      }
     }
 
     return {layout, syncStatus};
@@ -334,25 +382,24 @@ class FacilityLayoutService {
     });
   }
 
-  /** Liest lokalen Cache; Remote nur wenn kein ausstehendes lokales Update. */
+  /** Liest lokalen Cache sofort; Remote-Aktualisierung läuft im Hintergrund. */
   async loadForViewer(code: string): Promise<FacilityLayout | null> {
     const normalized = code.trim().toUpperCase();
     const local = await this.loadLocal(normalized);
-    const remote = await this.loadRemoteWithTimeout(normalized);
 
-    if (!local && !remote) return null;
-    if (!local && remote) {
-      await this.saveLocal(remote, false);
-      return remote;
+    if (local?.layout) {
+      this.refreshRemoteCache(normalized, local);
+      return local.layout;
     }
-    if (local && !remote) return local.layout;
-    if (local!.pendingSync) return local.layout;
 
-    const lt = new Date(local!.layout.updatedAt).getTime();
-    const rt = new Date(remote!.updatedAt).getTime();
-    if (lt >= rt) return local!.layout;
+    let remote = await this.loadRemoteFromCache(normalized);
+    if (!remote) {
+      remote = await this.loadRemoteWithTimeout(normalized);
+    }
+    if (!remote) return null;
 
-    await this.saveLocal(remote!, false);
+    await this.saveLocal(remote, false);
+    this.refreshRemoteCache(normalized, {layout: remote, pendingSync: false});
     return remote;
   }
 }

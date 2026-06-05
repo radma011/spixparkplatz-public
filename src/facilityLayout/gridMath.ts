@@ -14,6 +14,7 @@ import {
   isStreet,
   isSymbol,
 } from './types';
+import {formatSpotNumber, parseSpotNumberStart} from './spotNumber';
 
 export type GridPoint = {x: number; y: number};
 
@@ -45,6 +46,21 @@ export function spotSize(rotation: SpotRotation): {width: number; height: number
   return rotation === 90
     ? {width: DEFAULT_SPOT_H, height: DEFAULT_SPOT_W}
     : {width: DEFAULT_SPOT_W, height: DEFAULT_SPOT_H};
+}
+
+/** Breiter Parkplatz: doppelte Breite → 2×2 Zellen (quadratisch). */
+export const SQUARE_SPOT_CELLS = 2;
+
+export function isSquareSpot(spot: LayoutSpot): boolean {
+  return spot.width === SQUARE_SPOT_CELLS && spot.height === SQUARE_SPOT_CELLS;
+}
+
+export function squareSpotSize(): {width: number; height: number} {
+  return {width: SQUARE_SPOT_CELLS, height: SQUARE_SPOT_CELLS};
+}
+
+export function spotSizeForSpot(spot: LayoutSpot): {width: number; height: number} {
+  return isSquareSpot(spot) ? squareSpotSize() : spotSize(normalizeSpotRotation(spot.rotation));
 }
 
 export function normalizeSpotRotation(r?: number): SpotRotation {
@@ -145,7 +161,7 @@ export function rotateSelectedElements(
     if (!ids.has(el.id)) continue;
     if (isSpot(el)) {
       const rot = nextSpotRotation(el.rotation);
-      const {width, height} = spotSize(rot);
+      const {width, height} = isSquareSpot(el) ? squareSpotSize() : spotSize(rot);
       updates.set(el.id, {...el, rotation: rot, width, height});
     } else if (isSymbol(el)) {
       const rot = nextSymbolRotation(el.rotation);
@@ -250,14 +266,12 @@ export function applyNumbering(
 ): Record<string, {number: string; floorFrom?: number; floorTo?: number}> {
   const sorted = sortSpots(spots, order);
   const out: Record<string, {number: string; floorFrom?: number; floorTo?: number}> = {};
-  const base = parseInt(start.replace(/\D/g, ''), 10);
-  const numeric = Number.isNaN(base) ? 1 : base;
-  const pad = Math.max(4, start.trim().length);
+  const {numeric, letter, digitPad} = parseSpotNumberStart(start);
   const step = (direction === 'asc' ? 1 : -1) * (increment || 0);
 
   sorted.forEach((s, i) => {
     const n = numeric + i * step;
-    const number = String(n).padStart(pad, '0').slice(-pad);
+    const number = formatSpotNumber(n, letter, digitPad);
     if (duplex) {
       out[s.id] = {number, floorFrom: duplex.floorFrom, floorTo: duplex.floorTo};
     } else {

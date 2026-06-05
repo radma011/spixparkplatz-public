@@ -6,9 +6,16 @@ import {
   SYMBOL_ICONS,
   SYMBOL_LABELS,
   symbolShowsTextLabel,
+  UNOWNED_SPOT_OPACITY,
 } from '../constants';
-import {formatSpotLabelForZoom, spotFontSize, spotFontSizeVertical} from '../spotLabel';
+import {
+  formatSpotLabelForZoom,
+  maxSpotLabelFontSize,
+  maxSpotLabelFontSizeVertical,
+  SPOT_LABEL_PAD_PX,
+} from '../spotLabel';
 import {elementFootprint, normalizeSymbolRotation} from '../gridMath';
+import {symbolUsesCustomLabel, maxCustomSymbolLabelFontSize} from '../symbolLabel';
 import {CELL_PX, LayoutElement, isSpot, isStreet, isSymbol} from '../types';
 
 type Props = {
@@ -19,6 +26,8 @@ type Props = {
   highlightColor?: string;
   /** De-emphasize when another spot is focused (viewer highlight mode). */
   dimmed?: boolean;
+  /** Viewer: no user in facility has this spot in their profile. */
+  unownedSpot?: boolean;
   dragDx: number;
   dragDy: number;
   readOnly: boolean;
@@ -34,6 +43,7 @@ const LayoutElementView: React.FC<Props> = ({
   highlighted,
   highlightColor = '#FBBF24',
   dimmed = false,
+  unownedSpot = false,
   dragDx,
   dragDy,
   readOnly,
@@ -49,6 +59,7 @@ const LayoutElementView: React.FC<Props> = ({
   const spotBg = highlighted && isSpot(el) ? highlightColor : baseColor;
   const showSymbolLabel = isSymbol(el) && symbolShowsTextLabel(cellPx);
   const symbolIconSize = Math.min(w, h) * (showSymbolLabel ? 0.55 : 0.72);
+  const customSymbolLabel = isSymbol(el) && symbolUsesCustomLabel(el) ? el.label!.trim() : '';
 
   const spotLabelNode = (() => {
     if (!isSpot(el)) return null;
@@ -56,31 +67,73 @@ const LayoutElementView: React.FC<Props> = ({
     const label = formatSpotLabelForZoom(el.number, el.floorFrom, el.floorTo, zoom);
     // 0° = 1×2 (hoch), 90° = 2×1 (breit) — nur bei hohen Plätzen Schrift drehen
     const isVerticalSpot = h > w;
-    const fontSize = isVerticalSpot
-      ? spotFontSizeVertical(h, w, label.length)
-      : spotFontSize(w, h, label.length);
+    const pad = SPOT_LABEL_PAD_PX;
+    const innerW = Math.max(1, w - pad * 2);
+    const innerH = Math.max(1, h - pad * 2);
     const textProps = {
       numberOfLines: 1 as const,
       adjustsFontSizeToFit: true,
-      minimumFontScale: 0.35,
+      minimumFontScale: 0.25,
+      allowFontScaling: false,
       children: label,
     };
     if (isVerticalSpot) {
+      const fontSize = maxSpotLabelFontSizeVertical(innerH, innerW, label.length);
       return (
-        <View style={styles.spotLabelRotWrap}>
+        <View style={[styles.spotLabelRotWrap, {width: innerW, height: innerH}]}>
           <Text
             {...textProps}
             style={[
               styles.spotLabel,
               styles.spotLabelRotated,
-              {fontSize, width: Math.max(1, h - 4)},
+              {fontSize, width: innerH, height: innerW},
             ]}
           />
         </View>
       );
     }
+    const fontSize = maxSpotLabelFontSize(innerW, innerH, label.length);
     return (
-      <Text {...textProps} style={[styles.spotLabel, {fontSize}]} />
+      <Text
+        {...textProps}
+        style={[
+          styles.spotLabel,
+          {
+            fontSize,
+            width: innerW,
+            height: innerH,
+            lineHeight: innerH,
+          },
+        ]}
+      />
+    );
+  })();
+
+  const symbolCustomLabelNode = (() => {
+    if (!customSymbolLabel) return null;
+    const pad = SPOT_LABEL_PAD_PX;
+    const innerW = Math.max(1, w - pad * 2);
+    const innerH = Math.max(1, h - pad * 2);
+    const shortLabel = customSymbolLabel.length <= 8;
+    const maxLines = shortLabel ? 1 : 3;
+    const fontSize = maxCustomSymbolLabelFontSize(innerW, innerH, customSymbolLabel);
+    return (
+      <Text
+        style={[
+          styles.spotLabel,
+          {
+            fontSize,
+            width: innerW,
+            height: innerH,
+            lineHeight: shortLabel ? innerH : innerH / maxLines,
+          },
+        ]}
+        numberOfLines={maxLines}
+        adjustsFontSizeToFit
+        minimumFontScale={0.25}
+        allowFontScaling={false}>
+        {customSymbolLabel}
+      </Text>
     );
   })();
 
@@ -93,7 +146,13 @@ const LayoutElementView: React.FC<Props> = ({
           top: (el.y + dragDy) * cellPx,
           width: w,
           height: h,
-          opacity: dimmed ? 0.48 : 1,
+          opacity: dimmed
+            ? 0.48
+            : highlighted
+              ? 1
+              : unownedSpot
+                ? UNOWNED_SPOT_OPACITY
+                : 1,
           zIndex: dragDx || dragDy
             ? 30
             : highlighted
@@ -131,19 +190,23 @@ const LayoutElementView: React.FC<Props> = ({
         {isStreet(el) ? null : isSpot(el) ? (
           spotLabelNode
         ) : isSymbol(el) ? (
-          <View style={styles.symbolInner}>
-            <MaterialCommunityIcons
-              name={SYMBOL_ICONS[el.type]}
-              size={symbolIconSize}
-              color="#fff"
-              style={{transform: [{rotate: `${symbolRot}deg`}]}}
-            />
-            {showSymbolLabel ? (
-              <Text style={styles.symbolText} numberOfLines={1}>
-                {SYMBOL_LABELS[el.type]}
-              </Text>
-            ) : null}
-          </View>
+          customSymbolLabel ? (
+            symbolCustomLabelNode
+          ) : (
+            <View style={styles.symbolInner}>
+              <MaterialCommunityIcons
+                name={SYMBOL_ICONS[el.type]}
+                size={symbolIconSize}
+                color="#fff"
+                style={{transform: [{rotate: `${symbolRot}deg`}]}}
+              />
+              {showSymbolLabel ? (
+                <Text style={styles.symbolText} numberOfLines={1}>
+                  {SYMBOL_LABELS[el.type]}
+                </Text>
+              ) : null}
+            </View>
+          )
         ) : null}
       </Pressable>
     </View>
@@ -174,7 +237,13 @@ const styles = StyleSheet.create({
   bodyStreet: {
     borderRadius: 0,
   },
-  spotLabel: {color: '#fff', fontWeight: '700', textAlign: 'center', paddingHorizontal: 2},
+  spotLabel: {
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+  },
   spotLabelRotWrap: {
     flex: 1,
     alignItems: 'center',

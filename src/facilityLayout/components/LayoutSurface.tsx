@@ -52,6 +52,8 @@ type Props = {
   highlightColor?: string;
   /** Fade non-highlighted elements when specific spots are focused (card map link). */
   dimNonHighlighted?: boolean;
+  /** Viewer: spot numbers with a registered owner in the facility (full color). */
+  assignedSpotNumbers?: Set<string> | null;
   multiSelect?: boolean;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
@@ -69,6 +71,28 @@ function touchDistance(touches: ReadonlyArray<{pageX: number; pageY: number}>): 
   return Math.hypot(b.pageX - a.pageX, b.pageY - a.pageY);
 }
 
+function touchMidpoint(touches: ReadonlyArray<{pageX: number; pageY: number}>): {
+  pageX: number;
+  pageY: number;
+} {
+  if (touches.length < 2) {
+    return {pageX: touches[0]?.pageX ?? 0, pageY: touches[0]?.pageY ?? 0};
+  }
+  return {
+    pageX: (touches[0].pageX + touches[1].pageX) / 2,
+    pageY: (touches[0].pageY + touches[1].pageY) / 2,
+  };
+}
+
+type ReadOnlyGesture = {
+  mode: 'idle' | 'pan' | 'pinch';
+  panBase: {x: number; y: number};
+  pinchStartDist: number;
+  pinchStartZoom: number;
+  pinchStartPan: {x: number; y: number};
+  pinchFocal: {x: number; y: number};
+};
+
 const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurface(
   {
     layout,
@@ -79,6 +103,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
     highlightNumbers = new Set(),
     highlightColor,
     dimNonHighlighted = false,
+    assignedSpotNumbers = null,
     multiSelect = true,
     zoom = 1,
     onZoomChange,
@@ -102,7 +127,21 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
 
   const scrollHRef = useRef<ScrollView>(null);
   const scrollVRef = useRef<ScrollView>(null);
+  const viewportContainerRef = useRef<View>(null);
   const viewportRef = useRef({width: 0, height: 0});
+  const viewportOriginRef = useRef({x: 0, y: 0});
+  const [panOffset, setPanOffset] = useState({x: 0, y: 0});
+  const panOffsetRef = useRef({x: 0, y: 0});
+  const readOnlyGestureRef = useRef<ReadOnlyGesture>({
+    mode: 'idle',
+    panBase: {x: 0, y: 0},
+    pinchStartDist: 0,
+    pinchStartZoom: 1,
+    pinchStartPan: {x: 0, y: 0},
+    pinchFocal: {x: 0, y: 0},
+  });
+  const skipZoomPanSyncRef = useRef(false);
+  const prevZoomForPanRef = useRef(zoom);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [marquee, setMarquee] = useState<{x1: number; y1: number; x2: number; y2: number} | null>(
     null,
@@ -118,6 +157,25 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
 
   const clampZoom = (z: number) => Math.max(MIN_LAYOUT_ZOOM, Math.min(MAX_LAYOUT_ZOOM, z));
 
+  const clampPan = useCallback((panX: number, panY: number, z: number) => {
+    const {width: vw, height: vh} = viewportRef.current;
+    const base = canvasPx();
+    const cw = base.width * z;
+    const ch = base.height * z;
+    let x = panX;
+    let y = panY;
+    if (cw <= vw) x = (vw - cw) / 2;
+    else x = Math.max(vw - cw, Math.min(0, x));
+    if (ch <= vh) y = (vh - ch) / 2;
+    else y = Math.max(vh - ch, Math.min(0, y));
+    return {x, y};
+  }, []);
+
+  const applyPan = useCallback((next: {x: number; y: number}) => {
+    panOffsetRef.current = next;
+    setPanOffset(next);
+  }, []);
+
   const autoFitPendingRef = useRef(autoFitOnLayout);
 
   useEffect(() => {
@@ -130,12 +188,23 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
     const bounds =
       elementsBoundsPx(layout.elements, FIT_PAD_CELLS) ?? defaultViewBoundsPx();
     const nextZoom = zoomToFitBounds(vw, vh, bounds);
+    const scaledW = bounds.width * nextZoom;
+    const scaledH = bounds.height * nextZoom;
+    const panX = (vw - scaledW) / 2 - bounds.x * nextZoom;
+    const panY = (vh - scaledH) / 2 - bounds.y * nextZoom;
+
+    if (readOnly) {
+      skipZoomPanSyncRef.current = true;
+      onZoomChange?.(nextZoom);
+      applyPan(clampPan(panX, panY, nextZoom));
+      prevZoomForPanRef.current = nextZoom;
+      return;
+    }
+
     onZoomChange?.(nextZoom);
     const base = canvasPx();
     const canvasW = base.width * nextZoom;
     const canvasH = base.height * nextZoom;
-    const scaledW = bounds.width * nextZoom;
-    const scaledH = bounds.height * nextZoom;
     let scrollX = bounds.x * nextZoom + (scaledW - vw) / 2;
     let scrollY = bounds.y * nextZoom + (scaledH - vh) / 2;
     scrollX = Math.max(0, Math.min(Math.max(0, canvasW - vw), scrollX));
@@ -144,7 +213,33 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
       scrollHRef.current?.scrollTo({x: scrollX, y: 0, animated: false});
       scrollVRef.current?.scrollTo({x: 0, y: scrollY, animated: false});
     });
-  }, [layout.elements, layout.facilityCode, onZoomChange]);
+  }, [applyPan, clampPan, layout.elements, layout.facilityCode, onZoomChange, readOnly]);
+
+  useEffect(() => {
+    if (!readOnly) {
+      prevZoomForPanRef.current = zoom;
+      return;
+    }
+    if (skipZoomPanSyncRef.current) {
+      skipZoomPanSyncRef.current = false;
+      prevZoomForPanRef.current = zoom;
+      return;
+    }
+    const prevZ = prevZoomForPanRef.current;
+    if (prevZ === zoom) return;
+    const {width: vw, height: vh} = viewportRef.current;
+    if (vw <= 0 || vh <= 0) {
+      prevZoomForPanRef.current = zoom;
+      return;
+    }
+    const focalX = vw / 2;
+    const focalY = vh / 2;
+    const p = panOffsetRef.current;
+    const cx = (focalX - p.x) / prevZ;
+    const cy = (focalY - p.y) / prevZ;
+    applyPan(clampPan(focalX - cx * zoom, focalY - cy * zoom, zoom));
+    prevZoomForPanRef.current = zoom;
+  }, [applyPan, clampPan, readOnly, zoom]);
 
   useImperativeHandle(ref, () => ({fitToContent}), [fitToContent]);
 
@@ -179,6 +274,96 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
         onPanResponderTerminate: endPinch,
       }),
     [endPinch, onZoomChange],
+  );
+
+  const beginReadOnlyPinch = useCallback(
+    (touches: ReadonlyArray<{pageX: number; pageY: number}>) => {
+      const g = readOnlyGestureRef.current;
+      g.mode = 'pinch';
+      g.pinchStartDist = touchDistance(touches);
+      g.pinchStartZoom = zoomRef.current;
+      g.pinchStartPan = {...panOffsetRef.current};
+      const mid = touchMidpoint(touches);
+      const origin = viewportOriginRef.current;
+      g.pinchFocal = {x: mid.pageX - origin.x, y: mid.pageY - origin.y};
+    },
+    [],
+  );
+
+  const readOnlyPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => readOnly,
+        onMoveShouldSetPanResponder: () => readOnly,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (evt) => {
+          if (!readOnly) return;
+          const touches = evt.nativeEvent.touches;
+          const g = readOnlyGestureRef.current;
+          if (touches.length >= 2) {
+            beginReadOnlyPinch(touches);
+          } else {
+            g.mode = 'pan';
+            g.panBase = {...panOffsetRef.current};
+          }
+        },
+        onPanResponderMove: (evt, gestureState) => {
+          if (!readOnly) return;
+          const touches = evt.nativeEvent.touches;
+          const g = readOnlyGestureRef.current;
+          if (touches.length >= 2) {
+            if (g.mode !== 'pinch') beginReadOnlyPinch(touches);
+            const dist = touchDistance(touches);
+            if (g.pinchStartDist <= 0) return;
+            const ratio = dist / g.pinchStartDist;
+            const newZoom = clampZoom(g.pinchStartZoom * ratio);
+            const cx = (g.pinchFocal.x - g.pinchStartPan.x) / g.pinchStartZoom;
+            const cy = (g.pinchFocal.y - g.pinchStartPan.y) / g.pinchStartZoom;
+            skipZoomPanSyncRef.current = true;
+            applyPan(
+              clampPan(
+                g.pinchFocal.x - cx * newZoom,
+                g.pinchFocal.y - cy * newZoom,
+                newZoom,
+              ),
+            );
+            prevZoomForPanRef.current = newZoom;
+            onZoomChange?.(newZoom);
+          } else if (g.mode === 'pan') {
+            applyPan(
+              clampPan(
+                g.panBase.x + gestureState.dx,
+                g.panBase.y + gestureState.dy,
+                zoomRef.current,
+              ),
+            );
+          }
+        },
+        onPanResponderRelease: () => {
+          readOnlyGestureRef.current.mode = 'idle';
+        },
+        onPanResponderTerminate: () => {
+          readOnlyGestureRef.current.mode = 'idle';
+        },
+      }),
+    [applyPan, beginReadOnlyPinch, clampPan, onZoomChange, readOnly],
+  );
+
+  const onViewportLayout = useCallback(
+    (e: {nativeEvent: {layout: {width: number; height: number}}}) => {
+      const w = e.nativeEvent.layout.width;
+      const h = e.nativeEvent.layout.height;
+      const hadSize = viewportRef.current.width > 0 && viewportRef.current.height > 0;
+      viewportRef.current = {width: w, height: h};
+      viewportContainerRef.current?.measureInWindow((x, y) => {
+        viewportOriginRef.current = {x, y};
+      });
+      if (!hadSize && w > 0 && h > 0 && autoFitPendingRef.current) {
+        autoFitPendingRef.current = false;
+        requestAnimationFrame(() => fitToContent());
+      }
+    },
+    [fitToContent],
   );
 
   const toggleSelect = useCallback(
@@ -294,19 +479,85 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
     if (!pinchRef.current.active) setScrollEnabled(true);
   };
 
+  const elementViews = useMemo(
+    () =>
+      drawOrder.map((el) => {
+        const selected = selectedIds.has(el.id);
+        const highlighted =
+          isSpot(el) && !!el.number && highlightNumbers.has(el.number.trim());
+        const focusMode = dimNonHighlighted && highlightNumbers.size > 0;
+        const dimmed = focusMode && !highlighted;
+        const spotNumber = isSpot(el) && el.number ? el.number.trim().toUpperCase() : '';
+        const unownedSpot =
+          readOnly &&
+          assignedSpotNumbers != null &&
+          isSpot(el) &&
+          (!spotNumber || !assignedSpotNumbers.has(spotNumber));
+        const isDragged = drag?.ids.has(el.id) ?? false;
+        return (
+          <LayoutElementView
+            key={el.id}
+            el={el}
+            cellPx={cellPx}
+            selected={selected}
+            highlighted={highlighted}
+            highlightColor={highlightColor}
+            dimmed={dimmed}
+            unownedSpot={unownedSpot}
+            dragDx={isDragged ? (drag?.dx ?? 0) : 0}
+            dragDy={isDragged ? (drag?.dy ?? 0) : 0}
+            readOnly={readOnly}
+            onPress={() => {
+              elementTouched.current = true;
+              if (!readOnly) toggleSelect(el.id);
+            }}
+            onPressIn={(px, py) => {
+              elementTouched.current = true;
+              dragStartPage.current = {x: px, y: py};
+            }}
+            onLongPress={() => startDrag(el.id, dragStartPage.current.x, dragStartPage.current.y)}
+          />
+        );
+      }),
+    [
+      assignedSpotNumbers,
+      cellPx,
+      dimNonHighlighted,
+      drag,
+      drawOrder,
+      highlightColor,
+      highlightNumbers,
+      readOnly,
+      selectedIds,
+      toggleSelect,
+    ],
+  );
+
+  if (readOnly) {
+    return (
+      <View
+        ref={viewportContainerRef}
+        style={styles.viewerViewport}
+        onLayout={onViewportLayout}
+        {...readOnlyPanResponder.panHandlers}>
+        <View
+          style={{
+            width,
+            height,
+            transform: [{translateX: panOffset.x}, {translateY: panOffset.y}],
+          }}>
+          <View style={{width, height, backgroundColor: '#E8ECF0'}} pointerEvents="none">
+            {elementViews}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View
       style={styles.flex}
-      onLayout={(e) => {
-        const w = e.nativeEvent.layout.width;
-        const h = e.nativeEvent.layout.height;
-        const hadSize = viewportRef.current.width > 0 && viewportRef.current.height > 0;
-        viewportRef.current = {width: w, height: h};
-        if (!hadSize && w > 0 && h > 0 && autoFitPendingRef.current) {
-          autoFitPendingRef.current = false;
-          requestAnimationFrame(() => fitToContent());
-        }
-      }}
+      onLayout={onViewportLayout}
       {...panResponder.panHandlers}>
       <ScrollView
         ref={scrollHRef}
@@ -346,39 +597,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
               />
             )}
 
-            {drawOrder.map((el) => {
-              const selected = selectedIds.has(el.id);
-              const highlighted =
-                isSpot(el) && !!el.number && highlightNumbers.has(el.number.trim());
-              const focusMode = dimNonHighlighted && highlightNumbers.size > 0;
-              const dimmed = focusMode && !highlighted;
-              const isDragged = drag?.ids.has(el.id) ?? false;
-              return (
-                <LayoutElementView
-                  key={el.id}
-                  el={el}
-                  cellPx={cellPx}
-                  selected={selected}
-                  highlighted={highlighted}
-                  highlightColor={highlightColor}
-                  dimmed={dimmed}
-                  dragDx={isDragged ? (drag?.dx ?? 0) : 0}
-                  dragDy={isDragged ? (drag?.dy ?? 0) : 0}
-                  readOnly={readOnly}
-                  onPress={() => {
-                    elementTouched.current = true;
-                    if (!readOnly) toggleSelect(el.id);
-                  }}
-                  onPressIn={(px, py) => {
-                    elementTouched.current = true;
-                    dragStartPage.current = {x: px, y: py};
-                  }}
-                  onLongPress={() =>
-                    startDrag(el.id, dragStartPage.current.x, dragStartPage.current.y)
-                  }
-                />
-              );
-            })}
+            {elementViews}
           </View>
         </ScrollView>
       </ScrollView>
@@ -397,6 +616,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
 
 const styles = StyleSheet.create({
   flex: {flex: 1},
+  viewerViewport: {flex: 1, overflow: 'hidden'},
   marquee: {
     position: 'absolute',
     borderWidth: 2,

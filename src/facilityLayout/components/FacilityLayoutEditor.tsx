@@ -24,17 +24,19 @@ import {
   LayoutSpot,
   LayoutStreet,
   LayoutSymbol,
-  MAX_SPOT_NUMBER_LEN,
   SYMBOL_CELLS,
+  isLabelEditableSymbol,
   isSpot,
   isSymbolTool,
 } from '../types';
+import {ELEMENT_COLORS, SYMBOL_LABELS} from '../constants';
 import {
   appendStreetsAlongPath,
   applyNumbering,
   canPlace,
   GridPoint,
   hasStreetAt,
+  isSquareSpot,
   moveBy,
   newId,
   nextSpotRotation,
@@ -45,6 +47,7 @@ import {
   normalizeSymbolRotation,
   rotateSelectedElements,
   spotSize,
+  squareSpotSize,
   spotsForNumbering,
   MIN_LAYOUT_ZOOM,
   MAX_LAYOUT_ZOOM,
@@ -53,7 +56,18 @@ import {
   type NumberingOrder,
   type NumberingScope,
 } from '../gridMath';
-import {formatFloorInput, formatSpotLabel, parseFloorInput} from '../spotLabel';
+import {formatFloorInput, formatSpotLabel, parseFloorInput, SPOT_LABEL_PAD_PX} from '../spotLabel';
+import {
+  MAX_SPOT_NUMBER_LEN,
+  normalizeSpotNumberInput,
+  sanitizeSpotNumber,
+} from '../spotNumber';
+import {
+  MAX_SYMBOL_LABEL_LEN,
+  maxCustomSymbolLabelFontSize,
+  sanitizeSymbolLabel,
+  symbolDisplayLabel,
+} from '../symbolLabel';
 
 type Props = {
   facilityCode: string;
@@ -107,10 +121,13 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
   };
 
   const [spotModal, setSpotModal] = useState(false);
+  const [symbolLabelModal, setSymbolLabelModal] = useState(false);
   const [bulkModal, setBulkModal] = useState(false);
   const [editNumber, setEditNumber] = useState('');
   const [editFloor, setEditFloor] = useState('');
   const [editNote, setEditNote] = useState('');
+  const [editSpotWide, setEditSpotWide] = useState(false);
+  const [editSymbolLabel, setEditSymbolLabel] = useState('');
   const [bulkStart, setBulkStart] = useState('1001');
   const [bulkInc, setBulkInc] = useState('1');
   const [bulkDuplex, setBulkDuplex] = useState(false);
@@ -132,6 +149,12 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
     () => (selected.length === 1 && isSpot(selected[0]) ? selected[0] : null),
     [selected],
   );
+  const singleLabelSymbol = useMemo(
+    () =>
+      selected.length === 1 && isLabelEditableSymbol(selected[0]) ? selected[0] : null,
+    [selected],
+  );
+  const canEditSelection = !!singleSpot || !!singleLabelSymbol;
   const allSpots = useMemo(
     () => (layout?.elements.filter(isSpot) as LayoutSpot[]) ?? [],
     [layout],
@@ -270,19 +293,70 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
     setEditNumber(singleSpot.number ?? '');
     setEditFloor(formatFloorInput(singleSpot.floorFrom, singleSpot.floorTo));
     setEditNote(singleSpot.note ?? '');
+    setEditSpotWide(isSquareSpot(singleSpot));
     setSpotModal(true);
+  };
+
+  const openSymbolLabelEdit = () => {
+    if (!singleLabelSymbol) return;
+    setEditSymbolLabel(singleLabelSymbol.label ?? '');
+    setSymbolLabelModal(true);
+  };
+
+  const openSelectionEdit = () => {
+    if (singleSpot) openSpotEdit();
+    else if (singleLabelSymbol) openSymbolLabelEdit();
+  };
+
+  const saveSymbolLabelEdit = () => {
+    if (!layout || !singleLabelSymbol) return;
+    const label = sanitizeSymbolLabel(editSymbolLabel);
+    patch((p) => ({
+      ...p,
+      elements: p.elements.map((e) => {
+        if (e.id !== singleLabelSymbol.id || !isLabelEditableSymbol(e)) return e;
+        const next: LayoutSymbol = {...e};
+        if (label) next.label = label;
+        else delete next.label;
+        return next;
+      }),
+    }));
+    setSymbolLabelModal(false);
   };
 
   const saveSpotEdit = () => {
     if (!layout || !singleSpot) return;
     const {floorFrom, floorTo} = parseFloorInput(editFloor);
+    const targetSize = editSpotWide
+      ? squareSpotSize()
+      : spotSize(normalizeSpotRotation(singleSpot.rotation));
+    if (
+      !canPlace(
+        layout.elements,
+        singleSpot.x,
+        singleSpot.y,
+        targetSize.width,
+        targetSize.height,
+        new Set([singleSpot.id]),
+      )
+    ) {
+      showAlert(
+        'Hinweis',
+        editSpotWide
+          ? 'Quadratischer Parkplatz passt hier nicht (Kollision oder Rand).'
+          : 'Schmaler Parkplatz passt in dieser Größe nicht mehr.',
+      );
+      return;
+    }
     patch((p) => ({
       ...p,
       elements: p.elements.map((e) => {
         if (e.id !== singleSpot.id || !isSpot(e)) return e;
         const next: LayoutSpot = {
           ...e,
-          number: editNumber.trim().slice(0, MAX_SPOT_NUMBER_LEN) || undefined,
+          width: targetSize.width,
+          height: targetSize.height,
+          number: sanitizeSpotNumber(editNumber),
           note: editNote.trim() || undefined,
         };
         if (floorFrom == null) {
@@ -603,11 +677,11 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
         <TouchableOpacity onPress={() => setBulkModal(true)}>
           <MaterialCommunityIcons name="numeric" size={22} color={colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={openSpotEdit} disabled={!singleSpot}>
+        <TouchableOpacity onPress={openSelectionEdit} disabled={!canEditSelection}>
           <MaterialCommunityIcons
             name="pencil-outline"
             size={22}
-            color={singleSpot ? colors.text : colors.border}
+            color={canEditSelection ? colors.text : colors.border}
           />
         </TouchableOpacity>
         <TouchableOpacity
@@ -638,12 +712,15 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                 </Text>
               );
             })()}
-            <Text style={[styles.lbl, {color: colors.subtext}]}>Nummer (4-stellig)</Text>
+            <Text style={[styles.lbl, {color: colors.subtext}]}>
+              Nummer (4 Ziffern, optional 1 Buchstabe z. B. L/R)
+            </Text>
             <TextInput
               style={[styles.inp, {color: colors.text, borderColor: colors.border}]}
               value={editNumber}
-              onChangeText={(t) => setEditNumber(t.replace(/\D/g, '').slice(0, MAX_SPOT_NUMBER_LEN))}
-              keyboardType="number-pad"
+              onChangeText={(t) => setEditNumber(normalizeSpotNumberInput(t))}
+              autoCapitalize="characters"
+              autoCorrect={false}
               maxLength={MAX_SPOT_NUMBER_LEN}
             />
             <Text style={[styles.lbl, {color: colors.subtext}]}>Duplex-Etagen (z. B. 0-3)</Text>
@@ -659,11 +736,93 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
               value={editNote}
               onChangeText={setEditNote}
             />
+            <View style={styles.duplexRow}>
+              <View style={{flex: 1}}>
+                <Text style={{color: colors.text, fontWeight: '600'}}>Breit (2×2)</Text>
+                <Text style={{color: colors.subtext, fontSize: 12, marginTop: 2}}>
+                  Doppelte Breite, quadratischer Parkplatz
+                </Text>
+              </View>
+              <Switch value={editSpotWide} onValueChange={setEditSpotWide} />
+            </View>
             <View style={styles.modalRow}>
               <TouchableOpacity onPress={() => setSpotModal(false)}>
                 <Text style={{color: colors.subtext}}>Abbrechen</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={saveSpotEdit}>
+                <Text style={{color: colors.brand, fontWeight: '700'}}>Speichern</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={symbolLabelModal} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={[styles.modal, {backgroundColor: colors.surface}]}>
+            <Text style={[styles.modalTitle, {color: colors.text}]}>
+              {singleLabelSymbol ? SYMBOL_LABELS[singleLabelSymbol.type] : 'Symbol'}
+            </Text>
+            {singleLabelSymbol && (
+              <>
+                <Text style={{color: colors.subtext, marginBottom: 10, fontSize: 13}}>
+                  Eigenes Label ersetzt Icon und Standard-Text. Leer lassen für Standard.
+                </Text>
+                <View
+                  style={[
+                    styles.symbolPreview,
+                    {backgroundColor: ELEMENT_COLORS[singleLabelSymbol.type]},
+                  ]}>
+                  {(() => {
+                    const previewLabel =
+                      sanitizeSymbolLabel(editSymbolLabel) ??
+                      SYMBOL_LABELS[singleLabelSymbol.type];
+                    const pad = SPOT_LABEL_PAD_PX;
+                    const inner = 56 - pad * 2;
+                    const shortLabel = previewLabel.length <= 8;
+                    const maxLines = shortLabel ? 1 : 3;
+                    const fontSize = maxCustomSymbolLabelFontSize(inner, inner, previewLabel);
+                    return (
+                      <Text
+                        style={[
+                          styles.symbolPreviewText,
+                          {
+                            fontSize,
+                            width: inner,
+                            height: inner,
+                            lineHeight: shortLabel ? inner : inner / maxLines,
+                          },
+                        ]}
+                        numberOfLines={maxLines}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.25}
+                        allowFontScaling={false}>
+                        {previewLabel}
+                      </Text>
+                    );
+                  })()}
+                </View>
+                <Text style={[styles.lbl, {color: colors.subtext}]}>Eigenes Label</Text>
+                <TextInput
+                  style={[styles.inp, {color: colors.text, borderColor: colors.border}]}
+                  value={editSymbolLabel}
+                  onChangeText={(t) => setEditSymbolLabel(t.slice(0, MAX_SYMBOL_LABEL_LEN))}
+                  placeholder={`Standard: ${SYMBOL_LABELS[singleLabelSymbol.type]}`}
+                  placeholderTextColor={colors.subtext}
+                  autoCapitalize="sentences"
+                  autoCorrect={false}
+                  maxLength={MAX_SYMBOL_LABEL_LEN}
+                />
+                <Text style={{color: colors.subtext, fontSize: 12, marginTop: 4}}>
+                  Vorschau: {symbolDisplayLabel({...singleLabelSymbol, label: editSymbolLabel})}
+                </Text>
+              </>
+            )}
+            <View style={styles.modalRow}>
+              <TouchableOpacity onPress={() => setSymbolLabelModal(false)}>
+                <Text style={{color: colors.subtext}}>Abbrechen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={saveSymbolLabelEdit}>
                 <Text style={{color: colors.brand, fontWeight: '700'}}>Speichern</Text>
               </TouchableOpacity>
             </View>
@@ -729,11 +888,16 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
           <ScrollView contentContainerStyle={styles.overlayScroll}>
             <View style={[styles.modal, {backgroundColor: colors.surface}]}>
               <Text style={[styles.modalTitle, {color: colors.text}]}>Durchnummerieren</Text>
-              <Text style={[styles.lbl, {color: colors.subtext}]}>Startnummer</Text>
+              <Text style={[styles.lbl, {color: colors.subtext}]}>
+                Startnummer (z. B. 2140 oder 2140L)
+              </Text>
               <TextInput
                 style={[styles.inp, {color: colors.text, borderColor: colors.border}]}
                 value={bulkStart}
-                onChangeText={setBulkStart}
+                onChangeText={(t) => setBulkStart(normalizeSpotNumberInput(t))}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={MAX_SPOT_NUMBER_LEN}
               />
               <View style={styles.chipRow}>
                 {(
@@ -929,6 +1093,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 12,
+  },
+  symbolPreview: {
+    width: 56,
+    height: 56,
+    borderRadius: 6,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+    marginBottom: 8,
+  },
+  symbolPreviewText: {
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+    maxWidth: '100%',
+    maxHeight: '100%',
   },
 });
 

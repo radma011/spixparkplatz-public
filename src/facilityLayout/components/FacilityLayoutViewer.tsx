@@ -11,6 +11,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {getColors} from '../../theme/colors';
 import FacilityLayoutService from '../FacilityLayoutService';
+import FirestoreService from '../../services/FirestoreService';
 import LayoutSurface, {type LayoutSurfaceHandle} from './LayoutSurface';
 import {SPOT_HIGHLIGHT_GREEN} from './FacilityLayoutMapModal';
 import {MAX_LAYOUT_ZOOM, MIN_LAYOUT_ZOOM} from '../gridMath';
@@ -37,6 +38,7 @@ const FacilityLayoutViewer: React.FC<Props> = ({
   const [layout, setLayout] = useState<FacilityLayout | null>(null);
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
+  const [assignedSpotNumbers, setAssignedSpotNumbers] = useState<Set<string> | null>(null);
   const surfaceRef = useRef<LayoutSurfaceHandle>(null);
 
   const highlights = useMemo(
@@ -46,11 +48,18 @@ const FacilityLayoutViewer: React.FC<Props> = ({
 
   useEffect(() => {
     let cancelled = false;
+    setAssignedSpotNumbers(null);
     (async () => {
       setLoading(true);
-      const doc = await FacilityLayoutService.loadForViewer(facilityCode);
+      const [doc, spotIds] = await Promise.all([
+        FacilityLayoutService.loadForViewer(facilityCode),
+        FirestoreService.getFacilityAssignedSpots(facilityCode),
+      ]);
       if (!cancelled) {
         setLayout(doc);
+        setAssignedSpotNumbers(
+          spotIds != null ? new Set(spotIds.map((s) => s.trim().toUpperCase())) : null,
+        );
         setLoading(false);
       }
     })();
@@ -107,6 +116,7 @@ const FacilityLayoutViewer: React.FC<Props> = ({
         highlightNumbers={highlights}
         highlightColor={highlightColor}
         dimNonHighlighted={dimNonHighlighted}
+        assignedSpotNumbers={assignedSpotNumbers}
       />
       <View style={[styles.zoomBar, {paddingBottom: insets.bottom + 8, borderTopColor: colors.border}]}>
         <TouchableOpacity onPress={() => surfaceRef.current?.fitToContent()}>

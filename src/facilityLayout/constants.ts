@@ -8,6 +8,9 @@ export const ELEMENT_COLORS: Record<SymbolKind | 'spot' | 'street', string> = {
   street: '#4B5563',
 };
 
+/** Viewer: Parkplätze ohne registrierten Besitzer in der Anlage. */
+export const UNOWNED_SPOT_OPACITY = 0.5;
+
 export const SYMBOL_ICONS: Record<SymbolKind, string> = {
   entrance: 'login',
   exit: 'logout',
