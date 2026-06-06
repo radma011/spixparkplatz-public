@@ -18,6 +18,8 @@ import {
   limit as webLimit,
   getDocs as webGetDocs,
   getDoc as webGetDoc,
+  getDocFromServer as webGetDocFromServer,
+  getDocFromCache as webGetDocFromCache,
   setDoc as webSetDoc,
   updateDoc as webUpdateDoc,
   deleteDoc as webDeleteDoc,
@@ -174,6 +176,14 @@ export const getDocs = (queryOrCollection: any): Promise<QuerySnapshot> => {
 
 export const getDoc = (docRef: DocumentReference): Promise<DocumentSnapshot> => {
   return webGetDoc(docRef);
+};
+
+export const getDocFromServer = (docRef: DocumentReference): Promise<DocumentSnapshot> => {
+  return webGetDocFromServer(docRef);
+};
+
+export const getDocFromCache = (docRef: DocumentReference): Promise<DocumentSnapshot> => {
+  return webGetDocFromCache(docRef);
 };
 
 export const setDoc = (docRef: DocumentReference, data: any, options?: {merge?: boolean}) => {

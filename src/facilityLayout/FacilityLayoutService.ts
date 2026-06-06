@@ -17,6 +17,9 @@ import {normalizeSpot} from './gridMath';
 
 const db = getFirestore();
 
+/** Viewer: zuerst Server, danach lokaler Fallback. */
+const VIEWER_ONLINE_TIMEOUT_MS = 5000;
+
 type Stored = {layout: FacilityLayout; pendingSync: boolean};
 
 function storageKey(code: string): string {
@@ -382,25 +385,30 @@ class FacilityLayoutService {
     });
   }
 
-  /** Liest lokalen Cache sofort; Remote-Aktualisierung läuft im Hintergrund. */
+  /**
+   * Viewer: zuerst aktuelle Version vom Server (Spinner bis zu 5 s),
+   * nur bei Fehler/Timeout Fallback auf lokal gespeicherten Lageplan.
+   */
   async loadForViewer(code: string): Promise<FacilityLayout | null> {
     const normalized = code.trim().toUpperCase();
-    const local = await this.loadLocal(normalized);
 
+    const remote = await this.loadRemoteWithTimeout(
+      normalized,
+      VIEWER_ONLINE_TIMEOUT_MS,
+      true,
+    );
+    if (remote) {
+      await this.saveLocal(remote, false);
+      return remote;
+    }
+
+    const local = await this.loadLocal(normalized);
     if (local?.layout) {
-      this.refreshRemoteCache(normalized, local);
       return local.layout;
     }
 
-    let remote = await this.loadRemoteFromCache(normalized);
-    if (!remote) {
-      remote = await this.loadRemoteWithTimeout(normalized);
-    }
-    if (!remote) return null;
-
-    await this.saveLocal(remote, false);
-    this.refreshRemoteCache(normalized, {layout: remote, pendingSync: false});
-    return remote;
+    devWarn('[FacilityLayoutService] loadForViewer: weder Server noch lokaler Cache');
+    return null;
   }
 }
 

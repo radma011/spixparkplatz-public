@@ -326,9 +326,16 @@ const ProfileScreen: React.FC<Props> = ({
     );
   };
 
+  const inputStyle = [
+    styles.input,
+    {backgroundColor: colors.surface, borderColor: colors.border, color: colors.text},
+  ];
+
   return (
-    <KeyboardAwareScreen contentContainerStyle={styles.container} keyboardVerticalOffset={0}>
-      <View style={[styles.header, {paddingTop: 16 + insets.top}]}>
+    <KeyboardAwareScreen
+      contentContainerStyle={[styles.container, {backgroundColor: colors.screenBg}]}
+      keyboardVerticalOffset={0}>
+      <View style={[styles.header, {paddingTop: 16 + insets.top, backgroundColor: colors.brand}]}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Zurück</Text>
         </TouchableOpacity>
@@ -345,62 +352,71 @@ const ProfileScreen: React.FC<Props> = ({
       </View>
 
       <View style={styles.content}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Persönliche Informationen</Text>
+        <View style={[styles.section, {backgroundColor: colors.surface}]}>
+          <Text style={[styles.sectionTitle, {color: colors.text}]}>Persönliche Informationen</Text>
 
-          <Text style={styles.label}>Benutzername *</Text>
+          <Text style={[styles.label, {color: colors.text}]}>Benutzername *</Text>
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             placeholder="Dein Benutzername"
+            placeholderTextColor={colors.subtext}
             value={username}
             onChangeText={setUsername}
             editable={!loading}
           />
-          <Text style={styles.hint}>Andere Nutzer:innen sehen Dich unter diesem Namen</Text>
+          <Text style={[styles.hint, {color: colors.subtext}]}>
+            Andere Nutzer:innen sehen Dich unter diesem Namen
+          </Text>
 
-          <Text style={styles.label}>E-Mail</Text>
+          <Text style={[styles.label, {color: colors.text}]}>E-Mail</Text>
           <TextInput
-            style={[styles.input, styles.inputDisabled]}
+            style={[
+              inputStyle,
+              {backgroundColor: colors.surface2, color: colors.subtext},
+            ]}
             value={userData.email}
             editable={false}
           />
 
-          <Text style={styles.label}>Telefon (optional)</Text>
+          <Text style={[styles.label, {color: colors.text}]}>Telefon (optional)</Text>
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             placeholder="+49 123 456789"
+            placeholderTextColor={colors.subtext}
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
             editable={!loading}
           />
 
-          <Text style={styles.label}>Parkanlagen-Code *</Text>
+          <Text style={[styles.label, {color: colors.text}]}>Parkanlagen-Code *</Text>
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             placeholder="z.B. PARK01"
+            placeholderTextColor={colors.subtext}
             value={facilityCode}
             onChangeText={(text) => setFacilityCode(text.toUpperCase())}
             autoCapitalize="characters"
             editable={!loading}
           />
-          <Text style={styles.hint}>
+          <Text style={[styles.hint, {color: colors.subtext}]}>
             {facilityCode.trim().toUpperCase() !== userData.facilityCode.trim().toUpperCase()
               ? '⚠️ Achtung: Du wirst die Gruppe wechseln, wenn du speicherst!'
               : 'Dieser Code ordnet Dich einer Parkanlage zu'}
           </Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Parkplätze (bis zu 3)</Text>
+        <View style={[styles.section, {backgroundColor: colors.surface}]}>
+          <Text style={[styles.sectionTitle, {color: colors.text}]}>Parkplätze (bis zu 3)</Text>
           {[0, 1, 2].map((index) => (
             <View key={index}>
-              <Text style={styles.label}>
+              <Text style={[styles.label, {color: colors.text}]}>
                 Parkplatz {index + 1} (optional)
               </Text>
               <TextInput
-                style={styles.input}
+                style={inputStyle}
                 placeholder={`Parkplatz ${index + 1}`}
+                placeholderTextColor={colors.subtext}
                 value={parkingSpots[index]}
                 onChangeText={(value) => handleParkingSpotChange(index, value)}
                 editable={!loading}
@@ -410,7 +426,11 @@ const ProfileScreen: React.FC<Props> = ({
         </View>
 
         <TouchableOpacity
-          style={[styles.saveButton, loading && styles.buttonDisabled]}
+          style={[
+            styles.saveButton,
+            {backgroundColor: colors.brand},
+            loading && {backgroundColor: colors.border},
+          ]}
           onPress={handleSave}
           disabled={loading}>
           {loading ? (
@@ -421,47 +441,51 @@ const ProfileScreen: React.FC<Props> = ({
         </TouchableOpacity>
 
         {isAdmin && userData.facilityCode && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>QR-Code für Registrierung</Text>
-            <Text style={styles.hint}>
+          <View style={[styles.section, {backgroundColor: colors.surface}]}>
+            <Text style={[styles.sectionTitle, {color: colors.text}]}>QR-Code für Registrierung</Text>
+            <Text style={[styles.hint, {color: colors.subtext}]}>
               Generiere einen QR-Code, den neue Nutzer scannen können, um sich mit dem Code{' '}
               {userData.facilityCode} zu registrieren.
             </Text>
             <TouchableOpacity
-              style={styles.qrButton}
+              style={[styles.qrButton, {backgroundColor: colors.surface2}]}
               onPress={() => setShowQRCode(true)}
               disabled={loading}>
-              <MaterialCommunityIcons name="qrcode" size={20} color="#007AFF" style={styles.qrIcon} />
-              <Text style={styles.qrButtonText}>QR-Code anzeigen</Text>
+              <MaterialCommunityIcons name="qrcode" size={20} color={colors.brand} style={styles.qrIcon} />
+              <Text style={[styles.qrButtonText, {color: colors.brand}]}>QR-Code anzeigen</Text>
             </TouchableOpacity>
-            <Text style={[styles.hint, {marginTop: 16}]}>
+            <Text style={[styles.hint, {marginTop: 16, color: colors.subtext}]}>
               Erstelle den Lageplan der Anlage offline und lade ihn anschließend in die Cloud hoch.
             </Text>
             <TouchableOpacity
-              style={[styles.qrButton, {marginTop: 8}]}
+              style={[styles.qrButton, {marginTop: 8, backgroundColor: colors.surface2}]}
               onPress={() => setShowLayoutEditor(true)}
               disabled={loading}>
-              <MaterialCommunityIcons name="map-marker-path" size={20} color="#007AFF" style={styles.qrIcon} />
-              <Text style={styles.qrButtonText}>Lageplan bearbeiten</Text>
+              <MaterialCommunityIcons name="map-marker-path" size={20} color={colors.brand} style={styles.qrIcon} />
+              <Text style={[styles.qrButtonText, {color: colors.brand}]}>Lageplan bearbeiten</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sicherheit</Text>
+        <View style={[styles.section, {backgroundColor: colors.surface}]}>
+          <Text style={[styles.sectionTitle, {color: colors.text}]}>Sicherheit</Text>
           {!showChangeEmail ? (
             <TouchableOpacity
-              style={styles.resetPasswordButton}
+              style={[
+                styles.resetPasswordButton,
+                {backgroundColor: colors.surface2, borderColor: colors.border},
+              ]}
               onPress={() => setShowChangeEmail(true)}
               disabled={loading}>
-              <Text style={styles.resetPasswordButtonText}>E-Mail ändern</Text>
+              <Text style={[styles.resetPasswordButtonText, {color: colors.brand}]}>E-Mail ändern</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.resetPasswordContainer}>
-              <Text style={styles.label}>Neue E-Mail-Adresse</Text>
+              <Text style={[styles.label, {color: colors.text}]}>Neue E-Mail-Adresse</Text>
               <TextInput
-                style={styles.input}
+                style={inputStyle}
                 placeholder="neu@email.de"
+                placeholderTextColor={colors.subtext}
                 value={newEmail}
                 onChangeText={setNewEmail}
                 keyboardType="email-address"
@@ -470,16 +494,19 @@ const ProfileScreen: React.FC<Props> = ({
               />
               <View style={styles.resetPasswordActions}>
                 <TouchableOpacity
-                  style={styles.cancelButton}
+                  style={[
+                    styles.cancelButton,
+                    {backgroundColor: colors.surface2, borderColor: colors.border},
+                  ]}
                   onPress={() => {
                     setShowChangeEmail(false);
                     setNewEmail(userData.email);
                   }}
                   disabled={loading}>
-                  <Text style={styles.cancelButtonText}>Abbrechen</Text>
+                  <Text style={[styles.cancelButtonText, {color: colors.text}]}>Abbrechen</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.sendButton}
+                  style={[styles.sendButton, {backgroundColor: colors.brand}]}
                   onPress={handleChangeEmail}
                   disabled={loading}>
                   {loading ? (
@@ -494,19 +521,24 @@ const ProfileScreen: React.FC<Props> = ({
 
           {!showResetPassword ? (
             <TouchableOpacity
-              style={[styles.resetPasswordButton, styles.resetPasswordButtonSpacing]}
+              style={[
+                styles.resetPasswordButton,
+                styles.resetPasswordButtonSpacing,
+                {backgroundColor: colors.surface2, borderColor: colors.border},
+              ]}
               onPress={() => setShowResetPassword(true)}
               disabled={loading}>
-              <Text style={styles.resetPasswordButtonText}>
+              <Text style={[styles.resetPasswordButtonText, {color: colors.brand}]}>
                 Passwort zurücksetzen
               </Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.resetPasswordContainer}>
-              <Text style={styles.label}>E-Mail-Adresse</Text>
+              <Text style={[styles.label, {color: colors.text}]}>E-Mail-Adresse</Text>
               <TextInput
-                style={styles.input}
+                style={inputStyle}
                 placeholder="deine@email.de"
+                placeholderTextColor={colors.subtext}
                 value={resetEmail}
                 onChangeText={setResetEmail}
                 keyboardType="email-address"
@@ -515,16 +547,19 @@ const ProfileScreen: React.FC<Props> = ({
               />
               <View style={styles.resetPasswordActions}>
                 <TouchableOpacity
-                  style={styles.cancelButton}
+                  style={[
+                    styles.cancelButton,
+                    {backgroundColor: colors.surface2, borderColor: colors.border},
+                  ]}
                   onPress={() => {
                     setShowResetPassword(false);
                     setResetEmail(userData.email);
                   }}
                   disabled={loading}>
-                  <Text style={styles.cancelButtonText}>Abbrechen</Text>
+                  <Text style={[styles.cancelButtonText, {color: colors.text}]}>Abbrechen</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.sendButton}
+                  style={[styles.sendButton, {backgroundColor: colors.brand}]}
                   onPress={handleResetPassword}
                   disabled={loading}>
                   {loading ? (
@@ -550,9 +585,9 @@ const ProfileScreen: React.FC<Props> = ({
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account löschen</Text>
-          <Text style={styles.hint}>
+        <View style={[styles.section, {backgroundColor: colors.surface}]}>
+          <Text style={[styles.sectionTitle, {color: colors.text}]}>Account löschen</Text>
+          <Text style={[styles.hint, {color: colors.subtext}]}>
             Wenn du deinen Account löschst, werden alle deine Daten unwiderruflich gelöscht:
             {'\n'}• Dein Profil und alle persönlichen Informationen
             {'\n'}• Alle deine Parkplatz-Anfragen
@@ -608,14 +643,12 @@ const ProfileScreen: React.FC<Props> = ({
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: '#f5f5f5',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#007AFF',
   },
   backButton: {
     width: 80,
@@ -637,7 +670,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   section: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,
     marginBottom: 20,
@@ -645,43 +677,30 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
     marginBottom: 16,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 8,
     marginTop: 12,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    backgroundColor: '#fff',
-  },
-  inputDisabled: {
-    backgroundColor: '#f5f5f5',
-    color: '#666',
   },
   hint: {
     textAlign: 'left',
     fontSize: 12,
-    color: '#666',
     marginTop: 4,
   },
   saveButton: {
-    backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 20,
-  },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
   },
   saveButtonText: {
     color: '#fff',
@@ -689,18 +708,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   resetPasswordButton: {
-    backgroundColor: '#f5f5f5',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
   },
   resetPasswordButtonSpacing: {
     marginTop: 12,
   },
   resetPasswordButtonText: {
-    color: '#007AFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -744,21 +760,17 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
   },
   cancelButtonText: {
-    color: '#666',
     fontSize: 14,
     fontWeight: '600',
   },
   sendButton: {
     flex: 1,
-    backgroundColor: '#007AFF',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -772,7 +784,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
-    backgroundColor: '#F0F0F0',
     borderRadius: 8,
     marginTop: 10,
   },
@@ -781,7 +792,6 @@ const styles = StyleSheet.create({
   },
   qrButtonText: {
     fontSize: 16,
-    color: '#007AFF',
     fontWeight: '500',
   },
   modalContainer: {

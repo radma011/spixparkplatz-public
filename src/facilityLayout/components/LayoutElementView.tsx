@@ -1,5 +1,5 @@
 import React from 'react';
-import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {View, Text, Pressable, StyleSheet, Platform} from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   ELEMENT_COLORS,
@@ -60,6 +60,7 @@ const LayoutElementView: React.FC<Props> = ({
   const showSymbolLabel = isSymbol(el) && symbolShowsTextLabel(cellPx);
   const symbolIconSize = Math.min(w, h) * (showSymbolLabel ? 0.55 : 0.72);
   const customSymbolLabel = isSymbol(el) && symbolUsesCustomLabel(el) ? el.label!.trim() : '';
+  const isWeb = Platform.OS === 'web';
 
   const spotLabelNode = (() => {
     if (!isSpot(el)) return null;
@@ -70,13 +71,18 @@ const LayoutElementView: React.FC<Props> = ({
     const pad = SPOT_LABEL_PAD_PX;
     const innerW = Math.max(1, w - pad * 2);
     const innerH = Math.max(1, h - pad * 2);
-    const textProps = {
-      numberOfLines: 1 as const,
-      adjustsFontSizeToFit: true,
-      minimumFontScale: 0.25,
-      allowFontScaling: false,
-      children: label,
-    };
+    const textProps = isWeb
+      ? {allowFontScaling: false as const, children: label}
+      : {
+          numberOfLines: 1 as const,
+          adjustsFontSizeToFit: true,
+          minimumFontScale: 0.25,
+          allowFontScaling: false as const,
+          children: label,
+        };
+    const webLabelStyle = isWeb
+      ? ({whiteSpace: 'nowrap', textOverflow: 'clip'} as const)
+      : null;
     if (isVerticalSpot) {
       const fontSize = maxSpotLabelFontSizeVertical(innerH, innerW, label.length);
       return (
@@ -87,6 +93,7 @@ const LayoutElementView: React.FC<Props> = ({
               styles.spotLabel,
               styles.spotLabelRotated,
               {fontSize, width: innerH, height: innerW},
+              webLabelStyle,
             ]}
           />
         </View>
@@ -104,6 +111,7 @@ const LayoutElementView: React.FC<Props> = ({
             height: innerH,
             lineHeight: innerH,
           },
+          webLabelStyle,
         ]}
       />
     );
@@ -127,11 +135,16 @@ const LayoutElementView: React.FC<Props> = ({
             height: innerH,
             lineHeight: shortLabel ? innerH : innerH / maxLines,
           },
+          isWeb ? {whiteSpace: 'nowrap', textOverflow: 'clip'} : null,
         ]}
-        numberOfLines={maxLines}
-        adjustsFontSizeToFit
-        minimumFontScale={0.25}
-        allowFontScaling={false}>
+        {...(isWeb
+          ? {allowFontScaling: false}
+          : {
+              numberOfLines: maxLines,
+              adjustsFontSizeToFit: true,
+              minimumFontScale: 0.25,
+              allowFontScaling: false,
+            })}>
         {customSymbolLabel}
       </Text>
     );

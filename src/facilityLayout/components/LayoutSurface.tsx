@@ -12,8 +12,10 @@ import {
   ScrollView,
   StyleSheet,
   PanResponder,
+  useColorScheme,
   type GestureResponderEvent,
 } from 'react-native';
+import {getColors} from '../../theme/colors';
 import LayoutElementView from './LayoutElementView';
 import {
   CELL_PX,
@@ -25,10 +27,13 @@ import {
 import {
   canvasPx,
   cellFromTouch,
-  defaultViewBoundsPx,
+  clampPanToContent,
   elementsBoundsPx,
   idsInRect,
   moveBy,
+  panToCenterContent,
+  scrollToCenterContent,
+  viewBoundsPx,
   zoomToFitBounds,
   MIN_LAYOUT_ZOOM,
   MAX_LAYOUT_ZOOM,
@@ -114,7 +119,13 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
   },
   ref,
 ) {
+  const colors = getColors(useColorScheme());
+  const canvasBg = colors.isDark ? colors.screenBg : colors.surface;
   const cellPx = CELL_PX * zoom;
+  const contentBounds = useMemo(
+    () => viewBoundsPx(layout.elements, FIT_PAD_CELLS),
+    [layout.elements],
+  );
   const drawOrder = useMemo(() => {
     const streets = layout.elements.filter(isStreet);
     const rest = layout.elements.filter((e) => !isStreet(e));
@@ -157,19 +168,13 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
 
   const clampZoom = (z: number) => Math.max(MIN_LAYOUT_ZOOM, Math.min(MAX_LAYOUT_ZOOM, z));
 
-  const clampPan = useCallback((panX: number, panY: number, z: number) => {
-    const {width: vw, height: vh} = viewportRef.current;
-    const base = canvasPx();
-    const cw = base.width * z;
-    const ch = base.height * z;
-    let x = panX;
-    let y = panY;
-    if (cw <= vw) x = (vw - cw) / 2;
-    else x = Math.max(vw - cw, Math.min(0, x));
-    if (ch <= vh) y = (vh - ch) / 2;
-    else y = Math.max(vh - ch, Math.min(0, y));
-    return {x, y};
-  }, []);
+  const clampPan = useCallback(
+    (panX: number, panY: number, z: number) => {
+      const {width: vw, height: vh} = viewportRef.current;
+      return clampPanToContent(panX, panY, vw, vh, contentBounds, z);
+    },
+    [contentBounds],
+  );
 
   const applyPan = useCallback((next: {x: number; y: number}) => {
     panOffsetRef.current = next;
@@ -177,6 +182,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
   }, []);
 
   const autoFitPendingRef = useRef(autoFitOnLayout);
+  const skipEditorScrollSyncRef = useRef(false);
 
   useEffect(() => {
     autoFitPendingRef.current = autoFitOnLayout;
@@ -185,35 +191,29 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
   const fitToContent = useCallback(() => {
     const {width: vw, height: vh} = viewportRef.current;
     if (vw <= 0 || vh <= 0) return;
-    const bounds =
-      elementsBoundsPx(layout.elements, FIT_PAD_CELLS) ?? defaultViewBoundsPx();
+    const bounds = contentBounds;
     const nextZoom = zoomToFitBounds(vw, vh, bounds);
-    const scaledW = bounds.width * nextZoom;
-    const scaledH = bounds.height * nextZoom;
-    const panX = (vw - scaledW) / 2 - bounds.x * nextZoom;
-    const panY = (vh - scaledH) / 2 - bounds.y * nextZoom;
+    const pan = panToCenterContent(vw, vh, bounds, nextZoom);
 
     if (readOnly) {
       skipZoomPanSyncRef.current = true;
       onZoomChange?.(nextZoom);
-      applyPan(clampPan(panX, panY, nextZoom));
+      applyPan(clampPan(pan.x, pan.y, nextZoom));
       prevZoomForPanRef.current = nextZoom;
       return;
     }
 
+    skipEditorScrollSyncRef.current = true;
     onZoomChange?.(nextZoom);
     const base = canvasPx();
     const canvasW = base.width * nextZoom;
     const canvasH = base.height * nextZoom;
-    let scrollX = bounds.x * nextZoom + (scaledW - vw) / 2;
-    let scrollY = bounds.y * nextZoom + (scaledH - vh) / 2;
-    scrollX = Math.max(0, Math.min(Math.max(0, canvasW - vw), scrollX));
-    scrollY = Math.max(0, Math.min(Math.max(0, canvasH - vh), scrollY));
+    const {scrollX, scrollY} = scrollToCenterContent(vw, vh, bounds, nextZoom, canvasW, canvasH);
     requestAnimationFrame(() => {
       scrollHRef.current?.scrollTo({x: scrollX, y: 0, animated: false});
       scrollVRef.current?.scrollTo({x: 0, y: scrollY, animated: false});
     });
-  }, [applyPan, clampPan, layout.elements, layout.facilityCode, onZoomChange, readOnly]);
+  }, [applyPan, clampPan, contentBounds, layout.facilityCode, onZoomChange, readOnly]);
 
   useEffect(() => {
     if (!readOnly) {
@@ -232,14 +232,35 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
       prevZoomForPanRef.current = zoom;
       return;
     }
-    const focalX = vw / 2;
-    const focalY = vh / 2;
-    const p = panOffsetRef.current;
-    const cx = (focalX - p.x) / prevZ;
-    const cy = (focalY - p.y) / prevZ;
-    applyPan(clampPan(focalX - cx * zoom, focalY - cy * zoom, zoom));
+    const pan = panToCenterContent(vw, vh, contentBounds, zoom);
+    applyPan(clampPan(pan.x, pan.y, zoom));
     prevZoomForPanRef.current = zoom;
-  }, [applyPan, clampPan, readOnly, zoom]);
+  }, [applyPan, clampPan, contentBounds, readOnly, zoom]);
+
+  useEffect(() => {
+    if (readOnly) return;
+    if (skipEditorScrollSyncRef.current) {
+      skipEditorScrollSyncRef.current = false;
+      return;
+    }
+    const {width: vw, height: vh} = viewportRef.current;
+    if (vw <= 0 || vh <= 0) return;
+    const base = canvasPx();
+    const canvasW = base.width * zoom;
+    const canvasH = base.height * zoom;
+    const {scrollX, scrollY} = scrollToCenterContent(
+      vw,
+      vh,
+      contentBounds,
+      zoom,
+      canvasW,
+      canvasH,
+    );
+    requestAnimationFrame(() => {
+      scrollHRef.current?.scrollTo({x: scrollX, y: 0, animated: false});
+      scrollVRef.current?.scrollTo({x: 0, y: scrollY, animated: false});
+    });
+  }, [contentBounds, readOnly, zoom]);
 
   useImperativeHandle(ref, () => ({fitToContent}), [fitToContent]);
 
@@ -537,7 +558,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
     return (
       <View
         ref={viewportContainerRef}
-        style={styles.viewerViewport}
+        style={[styles.viewerViewport, {backgroundColor: canvasBg}]}
         onLayout={onViewportLayout}
         {...readOnlyPanResponder.panHandlers}>
         <View
@@ -546,7 +567,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
             height,
             transform: [{translateX: panOffset.x}, {translateY: panOffset.y}],
           }}>
-          <View style={{width, height, backgroundColor: '#E8ECF0'}} pointerEvents="none">
+          <View style={{width, height, backgroundColor: canvasBg}} pointerEvents="none">
             {elementViews}
           </View>
         </View>
@@ -556,7 +577,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
 
   return (
     <View
-      style={styles.flex}
+      style={[styles.flex, {backgroundColor: canvasBg}]}
       onLayout={onViewportLayout}
       {...panResponder.panHandlers}>
       <ScrollView
@@ -575,7 +596,7 @@ const LayoutSurface = forwardRef<LayoutSurfaceHandle, Props>(function LayoutSurf
           contentContainerStyle={{width, height}}
           showsVerticalScrollIndicator={false}>
           <View
-            style={{width, height, backgroundColor: '#E8ECF0'}}
+            style={{width, height, backgroundColor: canvasBg}}
             onStartShouldSetResponder={() => !readOnly && tool !== undefined}
             onMoveShouldSetResponder={() => marqueeActive.current}
             onTouchStart={onGridTouchStart}

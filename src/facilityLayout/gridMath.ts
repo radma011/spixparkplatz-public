@@ -355,6 +355,77 @@ export function zoomToFitBounds(
   return Math.max(MIN_LAYOUT_ZOOM, Math.min(MAX_LAYOUT_ZOOM, fit));
 }
 
+/** Pan offset so the center of all layout objects sits in the viewport center. */
+export function panToCenterContent(
+  viewportW: number,
+  viewportH: number,
+  bounds: PxBounds,
+  zoom: number,
+): {x: number; y: number} {
+  const contentL = bounds.x * zoom;
+  const contentT = bounds.y * zoom;
+  const contentW = bounds.width * zoom;
+  const contentH = bounds.height * zoom;
+  return {
+    x: viewportW / 2 - (contentL + contentW / 2),
+    y: viewportH / 2 - (contentT + contentH / 2),
+  };
+}
+
+/** Keep pan within range so the viewport never shows only empty canvas. */
+export function clampPanToContent(
+  panX: number,
+  panY: number,
+  viewportW: number,
+  viewportH: number,
+  bounds: PxBounds,
+  zoom: number,
+): {x: number; y: number} {
+  const contentL = bounds.x * zoom;
+  const contentT = bounds.y * zoom;
+  const contentW = bounds.width * zoom;
+  const contentH = bounds.height * zoom;
+  const contentR = contentL + contentW;
+  const contentB = contentT + contentH;
+
+  let x = panX;
+  let y = panY;
+
+  if (contentW <= viewportW) {
+    x = (viewportW - contentW) / 2 - contentL;
+  } else {
+    x = Math.max(viewportW - contentR, Math.min(contentL, x));
+  }
+
+  if (contentH <= viewportH) {
+    y = (viewportH - contentH) / 2 - contentT;
+  } else {
+    y = Math.max(viewportH - contentB, Math.min(contentT, y));
+  }
+
+  return {x, y};
+}
+
+/** Scroll offsets for editor mode — center on object bounds, not empty grid. */
+export function scrollToCenterContent(
+  viewportW: number,
+  viewportH: number,
+  bounds: PxBounds,
+  zoom: number,
+  canvasW: number,
+  canvasH: number,
+): {scrollX: number; scrollY: number} {
+  const contentL = bounds.x * zoom;
+  const contentT = bounds.y * zoom;
+  const contentW = bounds.width * zoom;
+  const contentH = bounds.height * zoom;
+  let scrollX = contentL + (contentW - viewportW) / 2;
+  let scrollY = contentT + (contentH - viewportH) / 2;
+  scrollX = Math.max(0, Math.min(Math.max(0, canvasW - viewportW), scrollX));
+  scrollY = Math.max(0, Math.min(Math.max(0, canvasH - viewportH), scrollY));
+  return {scrollX, scrollY};
+}
+
 function streetKey(x: number, y: number): string {
   return `${x},${y}`;
 }

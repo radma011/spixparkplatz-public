@@ -87,6 +87,8 @@ const TOOLS: {id: EditorTool; icon: string; label: string}[] = [
 const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) => {
   const insets = useSafeAreaInsets();
   const colors = getColors(useColorScheme());
+  const inactiveToolBg = colors.isDark ? colors.surface : colors.surface2;
+  const inactiveChipBg = colors.isDark ? colors.surface2 : '#E5E7EB';
   const {
     layout,
     loading,
@@ -542,7 +544,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={[styles.toolStrip, {borderBottomColor: colors.border}]}
+        style={[styles.toolStrip, {borderBottomColor: colors.border, backgroundColor: colors.screenBg}]}
         contentContainerStyle={styles.toolStripInner}>
         {TOOLS.map((t) => {
           const active = tool === t.id;
@@ -555,6 +557,8 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
               setTool(t.id);
             }
           };
+          const isSelectActive = !isPlace && active;
+          const isPlaceActive = isPlace && active;
           return (
             <TouchableOpacity
               key={t.id}
@@ -562,10 +566,11 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                 styles.toolBtn,
                 {
                   height: TOOL_PREVIEW_HEIGHT,
-                  backgroundColor: isPlace ? colors.surface2 : active ? colors.brand : colors.surface2,
+                  backgroundColor: isSelectActive ? colors.brand : inactiveToolBg,
+                  borderColor: isPlaceActive || isSelectActive ? colors.brand : colors.border,
+                  borderWidth: isPlaceActive || isSelectActive ? 2 : 1,
                 },
                 isPlace && styles.toolBtnPlace,
-                active && isPlace && {borderColor: colors.brand, borderWidth: 2},
               ]}
               onPress={handlePress}
               accessibilityLabel={
@@ -585,9 +590,9 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                   <MaterialCommunityIcons
                     name={t.icon}
                     size={26}
-                    color={active ? '#fff' : colors.text}
+                    color={isSelectActive ? '#fff' : colors.text}
                   />
-                  <Text style={[styles.toolLbl, {color: active ? '#fff' : colors.text}]}>
+                  <Text style={[styles.toolLbl, {color: isSelectActive ? '#fff' : colors.text}]}>
                     {t.label}
                   </Text>
                 </View>
@@ -638,8 +643,8 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
             style={[
               styles.streetAutoToggle,
               {
-                backgroundColor: streetAutoFill ? colors.brand : colors.surface2,
-                borderColor: colors.border,
+                backgroundColor: streetAutoFill ? colors.brand : inactiveToolBg,
+                borderColor: streetAutoFill ? colors.brand : colors.border,
               },
             ]}>
             <MaterialCommunityIcons
@@ -656,7 +661,7 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
             </Text>
           </TouchableOpacity>
         )}
-        <View style={styles.divider} />
+        <View style={[styles.divider, {backgroundColor: colors.border}]} />
         <TouchableOpacity onPress={() => void undo()} disabled={!canUndo}>
           <MaterialCommunityIcons
             name="undo"
@@ -690,8 +695,8 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
           style={[
             styles.multiToggle,
             {
-              backgroundColor: multiSelect ? colors.brand : colors.surface2,
-              borderColor: colors.border,
+              backgroundColor: multiSelect ? colors.brand : inactiveToolBg,
+              borderColor: multiSelect ? colors.brand : colors.border,
             },
           ]}>
           <Text style={[styles.multiToggleText, {color: multiSelect ? '#fff' : colors.text}]}>
@@ -850,13 +855,27 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
             <Text style={[styles.lbl, {color: colors.subtext}]}>Aktion</Text>
             <View style={styles.chipRow}>
               <TouchableOpacity
-                style={[styles.chip, transferMode === 'copy' && {backgroundColor: colors.brand}]}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: transferMode === 'copy' ? colors.brand : inactiveChipBg,
+                    borderColor: colors.border,
+                    borderWidth: transferMode === 'copy' ? 0 : 1,
+                  },
+                ]}
                 onPress={() => setTransferMode('copy')}
                 disabled={transferBusy}>
                 <Text style={{color: transferMode === 'copy' ? '#fff' : colors.text}}>Kopieren</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.chip, transferMode === 'move' && {backgroundColor: colors.brand}]}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: transferMode === 'move' ? colors.brand : inactiveChipBg,
+                    borderColor: colors.border,
+                    borderWidth: transferMode === 'move' ? 0 : 1,
+                  },
+                ]}
                 onPress={() => setTransferMode('move')}
                 disabled={transferBusy}>
                 <Text style={{color: transferMode === 'move' ? '#fff' : colors.text}}>Verschieben</Text>
@@ -909,7 +928,14 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                 ).map(([id, label]) => (
                   <TouchableOpacity
                     key={id}
-                    style={[styles.chip, bulkScope === id && {backgroundColor: colors.brand}]}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: bulkScope === id ? colors.brand : inactiveChipBg,
+                        borderColor: colors.border,
+                        borderWidth: bulkScope === id ? 0 : 1,
+                      },
+                    ]}
                     onPress={() => setBulkScope(id)}>
                     <Text style={{color: bulkScope === id ? '#fff' : colors.text}}>{label}</Text>
                   </TouchableOpacity>
@@ -927,12 +953,26 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                   <Text style={[styles.lbl, {color: colors.subtext}]}>Laufrichtung auf dem Plan</Text>
                   <View style={styles.chipRow}>
                     <TouchableOpacity
-                      style={[styles.chip, bulkOrder === 'row' && {backgroundColor: colors.brand}]}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: bulkOrder === 'row' ? colors.brand : inactiveChipBg,
+                          borderColor: colors.border,
+                          borderWidth: bulkOrder === 'row' ? 0 : 1,
+                        },
+                      ]}
                       onPress={() => setBulkOrder('row')}>
                       <Text style={{color: bulkOrder === 'row' ? '#fff' : colors.text}}>Zeilen</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.chip, bulkOrder === 'column' && {backgroundColor: colors.brand}]}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: bulkOrder === 'column' ? colors.brand : inactiveChipBg,
+                          borderColor: colors.border,
+                          borderWidth: bulkOrder === 'column' ? 0 : 1,
+                        },
+                      ]}
                       onPress={() => setBulkOrder('column')}>
                       <Text style={{color: bulkOrder === 'column' ? '#fff' : colors.text}}>Spalten</Text>
                     </TouchableOpacity>
@@ -943,14 +983,28 @@ const FacilityLayoutEditor: React.FC<Props> = ({facilityCode, userId, onClose}) 
                   <Text style={[styles.lbl, {color: colors.subtext}]}>Nummern</Text>
                   <View style={styles.chipRow}>
                     <TouchableOpacity
-                      style={[styles.chip, bulkDirection === 'asc' && {backgroundColor: colors.brand}]}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: bulkDirection === 'asc' ? colors.brand : inactiveChipBg,
+                          borderColor: colors.border,
+                          borderWidth: bulkDirection === 'asc' ? 0 : 1,
+                        },
+                      ]}
                       onPress={() => setBulkDirection('asc')}>
                       <Text style={{color: bulkDirection === 'asc' ? '#fff' : colors.text}}>
                         Aufsteigend
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.chip, bulkDirection === 'desc' && {backgroundColor: colors.brand}]}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: bulkDirection === 'desc' ? colors.brand : inactiveChipBg,
+                          borderColor: colors.border,
+                          borderWidth: bulkDirection === 'desc' ? 0 : 1,
+                        },
+                      ]}
                       onPress={() => setBulkDirection('desc')}>
                       <Text style={{color: bulkDirection === 'desc' ? '#fff' : colors.text}}>
                         Absteigend
@@ -1049,7 +1103,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderTopWidth: 1,
   },
-  divider: {width: 1, height: 24, backgroundColor: '#ccc'},
+  divider: {width: 1, height: 24},
   multiToggle: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -1086,7 +1140,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   chipRow: {flexDirection: 'row', gap: 8, marginTop: 8},
-  chip: {paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#eee'},
+  chip: {paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8},
   orderHint: {fontSize: 12, marginTop: 6, marginBottom: 4, lineHeight: 17},
   duplexRow: {
     flexDirection: 'row',
