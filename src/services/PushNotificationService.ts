@@ -9,7 +9,7 @@ import {
   requestPermission,
   subscribeToTopic,
 } from '@react-native-firebase/messaging';
-import {Platform} from 'react-native';
+import {Platform, PermissionsAndroid} from 'react-native';
 import FirestoreService from './FirestoreService';
 
 class PushNotificationService {
@@ -78,35 +78,41 @@ class PushNotificationService {
         return null;
       }
 
-      // Berechtigung anfordern (muss zuerst erfolgen)
-      const authStatus = await requestPermission(this.messaging);
-      const enabled =
-        authStatus === AuthorizationStatus.AUTHORIZED ||
-        authStatus === AuthorizationStatus.PROVISIONAL;
+      // Android 13+: RN Firebase requestPermission() ist ein No-Op – explizit anfragen
+      if (Platform.OS === 'android') {
+        if (Platform.Version >= 33) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            console.log('Push-Berechtigung nicht erteilt (Android 13+)');
+            return null;
+          }
+        }
+      } else {
+        // Berechtigung anfordern (iOS)
+        const authStatus = await requestPermission(this.messaging);
+        const enabled =
+          authStatus === AuthorizationStatus.AUTHORIZED ||
+          authStatus === AuthorizationStatus.PROVISIONAL;
 
-      if (!enabled) {
-        console.log('Push-Berechtigung nicht erteilt');
-        return null;
-      }
+        if (!enabled) {
+          console.log('Push-Berechtigung nicht erteilt');
+          return null;
+        }
 
-      // Für iOS: Gerät für Remote Messages registrieren (falls Methode existiert)
-      if (Platform.OS === 'ios') {
+        // Für iOS: Gerät für Remote Messages registrieren (falls Methode existiert)
         try {
           await registerDeviceForRemoteMessages(this.messaging);
         } catch (registerError: any) {
           const msg = String(registerError?.message ?? registerError ?? '');
-          // If the app isn't signed with a Push-enabled provisioning profile / entitlement,
-          // iOS will refuse registration. Retrying token fetch won't help and just spams logs.
           if (msg.includes('aps-environment')) {
             console.log(
               'APNs Registrierung fehlgeschlagen (aps-environment fehlt) – Push Tokens werden übersprungen.',
             );
             return null;
           }
-          // Wenn die Registrierung fehlschlägt (z.B. im Simulator oder ohne Capability), 
-          // versuchen wir trotzdem, den Token abzurufen
           console.log('Registrierung für Remote Messages fehlgeschlagen:', registerError.message);
-          // Nicht abbrechen, sondern weitermachen
         }
       }
 

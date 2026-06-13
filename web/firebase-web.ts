@@ -98,20 +98,33 @@ if (typeof window !== 'undefined') {
 // Firestore API wrapper to match React Native Firebase API
 export const getFirestore = () => db;
 
+const isFirestoreInstance = (arg: unknown): arg is Firestore => {
+  return (
+    !!arg &&
+    typeof arg === 'object' &&
+    ((arg as {type?: string}).type === 'firestore' ||
+      '_delegate' in arg ||
+      '_settings' in arg ||
+      (arg as {constructor?: {name?: string}}).constructor?.name === 'Firestore')
+  );
+};
+
+const isDocumentReference = (arg: unknown): arg is DocumentReference => {
+  return !!arg && typeof arg === 'object' && (arg as {type?: string}).type === 'document';
+};
+
 export const collection = (dbOrRef: Firestore | DocumentReference, ...pathSegments: string[]) => {
   if (pathSegments.length === 0) {
     throw new Error('collection() requires at least one path segment');
   }
-  
-  // If dbOrRef is a DocumentReference, use it as parent
-  if ('id' in dbOrRef && 'path' in dbOrRef && !('get' in dbOrRef)) {
-    // It's a DocumentReference, create subcollection
-    const path = pathSegments.join('/');
-    return webCollection(dbOrRef as DocumentReference, path);
-  }
-  
-  // It's a Firestore instance
+
   const path = pathSegments.join('/');
+
+  // Firebase Web SDK DocumentReference has `.get()` — do not use absence of `get` as a type check.
+  if (isDocumentReference(dbOrRef)) {
+    return webCollection(dbOrRef, path);
+  }
+
   return webCollection(dbOrRef as Firestore, path);
 };
 
@@ -122,34 +135,23 @@ export const collectionGroup = (firestore: Firestore, collectionId: string) => {
 
 export const doc = (collectionOrRef: Firestore | CollectionReference | DocumentReference, ...pathSegments: string[]) => {
   let docRef: DocumentReference;
-  
-  // Check if first argument is Firestore instance (has _delegate or _settings property)
-  const isFirestoreInstance = (arg: any): arg is Firestore => {
-    return arg && typeof arg === 'object' && ('_delegate' in arg || '_settings' in arg || arg.constructor?.name === 'Firestore');
-  };
-  
-  // If first argument is Firestore instance (db), create collection reference first
+
   // Pattern: doc(db, 'collection', 'docId')
   if (pathSegments.length >= 2 && isFirestoreInstance(collectionOrRef)) {
     const collectionPath = pathSegments[0];
     const docId = pathSegments[1];
-    const collRef = webCollection(collectionOrRef as Firestore, collectionPath);
+    const collRef = webCollection(collectionOrRef, collectionPath);
     docRef = webDoc(collRef, docId);
   } else if (pathSegments.length === 0) {
-    // Generate a new doc ID
     docRef = webDoc(collectionOrRef as CollectionReference);
+  } else if (isDocumentReference(collectionOrRef)) {
+    const id = pathSegments[pathSegments.length - 1];
+    docRef = webDoc(collectionOrRef, id);
   } else {
-    // If collectionOrRef is a DocumentReference, it's a subcollection
-    if ('id' in collectionOrRef && 'path' in collectionOrRef && !('get' in collectionOrRef)) {
-      const id = pathSegments[pathSegments.length - 1];
-      docRef = webDoc(collectionOrRef as DocumentReference, id);
-    } else {
-      // It's a CollectionReference
-      const id = pathSegments[pathSegments.length - 1];
-      docRef = webDoc(collectionOrRef as CollectionReference, id);
-    }
+    const id = pathSegments[pathSegments.length - 1];
+    docRef = webDoc(collectionOrRef as CollectionReference, id);
   }
-  
+
   return addOnSnapshotToDoc(docRef);
 };
 

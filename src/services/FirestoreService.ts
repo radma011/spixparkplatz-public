@@ -468,102 +468,14 @@ class FirestoreService {
   }
 
   /**
-   * Load offers on a spot by scanning facility requests (no collection-group index).
-   */
-  private async loadOffersOnSpotFromRequestDocs(
-    requestDocs: FirebaseFirestoreTypes.QueryDocumentSnapshot[],
-    spotId: string,
-    facilityCode?: string,
-  ): Promise<OfferFromAvailability[]> {
-    const normalized = facilityCode?.trim().toUpperCase();
-    const items: OfferFromAvailability[] = [];
-
-    for (const reqDoc of requestDocs) {
-      const reqData = reqDoc.data();
-      if (normalized && String(reqData.facilityCode || '').trim().toUpperCase() !== normalized) {
-        continue;
-      }
-      if (reqData.isArchived === true) continue;
-
-      const offersSnap = await getDocs(
-        query(this.offersCollection(reqDoc.id), where('spotId', '==', spotId)),
-      );
-      for (const offerDoc of offersSnap.docs) {
-        const data = offerDoc.data();
-        const status = (data?.status ?? 'active') as RequestOffer['status'];
-        if (!isOfferBlockingOccupancy(status)) continue;
-        items.push({
-          offer: {
-            id: offerDoc.id,
-            requestId: reqDoc.id,
-            offererId: data?.offererId ?? '',
-            spotId: data?.spotId ?? spotId,
-            from: (data?.from as Timestamp)?.toDate?.() ?? new Date(0),
-            until: (data?.until as Timestamp)?.toDate?.() ?? new Date(0),
-            status,
-            createdAt: (data?.createdAt as Timestamp)?.toDate?.() ?? undefined,
-          },
-          requestId: reqDoc.id,
-          requestedBy: reqData.requestedBy as string | undefined,
-          requestedByUsername: reqData.requestedByUsername as string | undefined,
-          requestFrom: (reqData.from as Timestamp)?.toDate?.() ?? undefined,
-          requestUntil: (reqData.until as Timestamp)?.toDate?.() ?? undefined,
-          isFulfilled: reqData.isFulfilled === true,
-        });
-      }
-    }
-    return items;
-  }
-
-  private watchOffersBySpotViaFacilityRequests(
-    spotId: string,
-    callback: (items: OfferFromAvailability[]) => void,
-    facilityCode: string,
-  ): () => void {
-    // Index-free: filter facilityCode client-side (same as watchRelevantRequests).
-    const q = query(
-      this.requestsCollection,
-      where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
-      orderBy('until', 'asc'),
-      limit(200),
-    );
-    return onSnapshot(
-      q,
-      async (snap) => {
-        try {
-          const items = await this.loadOffersOnSpotFromRequestDocs(snap.docs, spotId, facilityCode);
-          if (typeof __DEV__ !== 'undefined' && __DEV__) {
-            console.log(
-              `[FirestoreService] watchOffersBySpot ${spotId}: ${items.length} blocking offers (facility scan)`,
-            );
-          }
-          callback(items);
-        } catch (e) {
-          console.error('[FirestoreService] watchOffersBySpot facility scan map error:', e);
-          callback([]);
-        }
-      },
-      (err: any) => {
-        console.error('[FirestoreService] watchOffersBySpot facility scan error:', err);
-        callback([]);
-      },
-    );
-  }
-
-  /**
    * Watch all offers on a spot (any offerer). Used by calendar for real occupancy on the spot.
-   * With facilityCode: scans recent requests (reliable, matches server diagnose).
-   * Without: collection group on spotId.
+   * Collection group on spotId (field override index); optional facility filter client-side.
    */
   watchOffersBySpot(
     spotId: string,
     callback: (items: OfferFromAvailability[]) => void,
     facilityCode?: string,
   ): () => void {
-    if (facilityCode?.trim()) {
-      return this.watchOffersBySpotViaFacilityRequests(spotId, callback, facilityCode);
-    }
-
     const q = query(collectionGroup(db, 'offers'), where('spotId', '==', spotId));
     return onSnapshot(
       q,

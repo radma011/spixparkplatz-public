@@ -91,6 +91,103 @@ const AvailabilityCard: React.FC<Props> = ({
     return { from: availability.from, until: availability.until };
   }, [availability.from, availability.until, availability.recurrence, isRecurringAvailability]);
 
+  const deduplicatedOffers = React.useMemo(() => {
+    const active = offersFromAvailability.filter(
+      (x) => x.offer.status === 'active' || x.offer.status === 'accepted',
+    );
+    const byRequest = new Map<string, typeof active[0]>();
+    for (const item of active) {
+      const existing = byRequest.get(item.requestId);
+      if (!existing) {
+        byRequest.set(item.requestId, item);
+        continue;
+      }
+      const itemFull =
+        item.requestFrom &&
+        item.requestUntil &&
+        item.offer.from.getTime() <= item.requestFrom.getTime() &&
+        item.offer.until.getTime() >= item.requestUntil.getTime();
+      const existingFull =
+        existing.requestFrom &&
+        existing.requestUntil &&
+        existing.offer.from.getTime() <= existing.requestFrom.getTime() &&
+        existing.offer.until.getTime() >= existing.requestUntil.getTime();
+      const itemAccepted = item.offer.status === 'accepted';
+      const existingAccepted = existing.offer.status === 'accepted';
+      const itemNewer =
+        (item.offer.createdAt?.getTime() ?? 0) > (existing.offer.createdAt?.getTime() ?? 0);
+      const replace =
+        (itemAccepted && !existingAccepted) ||
+        (!itemAccepted && !existingAccepted && itemFull && !existingFull) ||
+        (!itemAccepted && !existingAccepted && itemFull === existingFull && itemNewer);
+      if (replace) byRequest.set(item.requestId, item);
+    }
+    return Array.from(byRequest.values()).sort(
+      (a, b) => a.offer.from.getTime() - b.offer.from.getTime(),
+    );
+  }, [offersFromAvailability]);
+
+  const freeSlots = React.useMemo(() => {
+    const avFrom = stripWindow.from.getTime();
+    const avUntil = stripWindow.until.getTime();
+    const total = avUntil - avFrom;
+    if (total <= 0) return null;
+
+    const assigned = offersFromAvailability.filter(
+      (x) => x.offer.status === 'active' || x.offer.status === 'accepted',
+    );
+    if (assigned.length === 0) return null;
+
+    const intervals = assigned
+      .map((o) => ({
+        start: Math.max(o.offer.from.getTime(), avFrom),
+        end: Math.min(o.offer.until.getTime(), avUntil),
+      }))
+      .filter((i) => i.end > i.start)
+      .sort((a, b) => a.start - b.start);
+
+    const merged: Array<{ start: number; end: number }> = [];
+    for (const it of intervals) {
+      const last = merged[merged.length - 1];
+      if (!last || it.start > last.end) merged.push({ start: it.start, end: it.end });
+      else last.end = Math.max(last.end, it.end);
+    }
+
+    let covered = 0;
+    merged.forEach((m) => (covered += m.end - m.start));
+    const percent = Math.min(100, Math.max(0, Math.round(((total - covered) / total) * 100)));
+
+    const gaps: Array<{ start: number; end: number }> = [];
+    let cursor = avFrom;
+    for (const m of merged) {
+      if (m.start > cursor) gaps.push({ start: cursor, end: m.start });
+      cursor = Math.max(cursor, m.end);
+      if (cursor >= avUntil) break;
+    }
+    if (cursor < avUntil) gaps.push({ start: cursor, end: avUntil });
+
+    return { percent, gaps };
+  }, [stripWindow, offersFromAvailability]);
+
+  const renderFreeDetails = () => {
+    if (!freeSlots || freeSlots.gaps.length === 0) return null;
+
+    return (
+      <View style={styles.freeContainer}>
+        <Text style={[styles.freeText, styles.freeHeading, {color: colors.subtext}]}>
+          Noch frei: {freeSlots.percent}%
+        </Text>
+        {freeSlots.gaps.map((g, idx) => (
+          <Text
+            key={`free-${idx}`}
+            style={[styles.freeText, styles.freeLine, {color: colors.subtext}]}>
+            {formatDateRange(new Date(g.start), new Date(g.end))}
+          </Text>
+        ))}
+      </View>
+    );
+  };
+
   const statusStripSegments = React.useMemo(() => {
     const avFrom = stripWindow.from.getTime();
     const avUntil = stripWindow.until.getTime();
@@ -229,12 +326,14 @@ const AvailabilityCard: React.FC<Props> = ({
         </Text>
       </View>
 
+      {renderFreeDetails()}
+
       {/* Bereits angeboten (wie Angebote im Offen-Screen) – nur active/accepted, keine stornierten (withdrawn) oder standby */}
-      {offersFromAvailability.length > 0 && (() => {
-        const active = offersFromAvailability.filter(
-          (x) => x.offer.status === 'active' || x.offer.status === 'accepted',
-        );
+      {deduplicatedOffers.length > 0 && (() => {
         if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          const active = offersFromAvailability.filter(
+            (x) => x.offer.status === 'active' || x.offer.status === 'accepted',
+          );
           const withdrawn = offersFromAvailability.filter((x) => x.offer.status === 'withdrawn');
           const standby = offersFromAvailability.filter((x) => x.offer.status === 'standby');
           if (offersFromAvailability.length > 0) {
@@ -255,40 +354,10 @@ const AvailabilityCard: React.FC<Props> = ({
             });
           }
         }
-        // Pro Anfrage (requestId) nur ein Eintrag: bestes Angebot wählen (accepted > vollständig > neuestes)
-        const byRequest = new Map<string, typeof active[0]>();
-        for (const item of active) {
-          const existing = byRequest.get(item.requestId);
-          if (!existing) {
-            byRequest.set(item.requestId, item);
-            continue;
-          }
-          const itemFull =
-            item.requestFrom &&
-            item.requestUntil &&
-            item.offer.from.getTime() <= item.requestFrom.getTime() &&
-            item.offer.until.getTime() >= item.requestUntil.getTime();
-          const existingFull =
-            existing.requestFrom &&
-            existing.requestUntil &&
-            existing.offer.from.getTime() <= existing.requestFrom.getTime() &&
-            existing.offer.until.getTime() >= existing.requestUntil.getTime();
-          const itemAccepted = item.offer.status === 'accepted';
-          const existingAccepted = existing.offer.status === 'accepted';
-          const itemNewer =
-            (item.offer.createdAt?.getTime() ?? 0) > (existing.offer.createdAt?.getTime() ?? 0);
-          const replace =
-            (itemAccepted && !existingAccepted) ||
-            (!itemAccepted && !existingAccepted && itemFull && !existingFull) ||
-            (!itemAccepted && !existingAccepted && itemFull === existingFull && itemNewer);
-          if (replace) byRequest.set(item.requestId, item);
-        }
-        const toShow = Array.from(byRequest.values());
-        if (toShow.length === 0) return null;
         return (
           <View style={styles.offersBox}>
             <Text style={[styles.offersTitle, {color: colors.subtext}]}>Bereits angeboten</Text>
-            {toShow.map((item) => {
+            {deduplicatedOffers.map((item) => {
               const full =
                 item.requestFrom &&
                 item.requestUntil &&
@@ -307,7 +376,9 @@ const AvailabilityCard: React.FC<Props> = ({
                       {item.offer.status === 'accepted' ? 'Angenommen' : full ? 'Vollständig' : 'Teilweise'}
                     </Text>
                     <Text style={[styles.offerDetails, {color: colors.text}]}>
-                      Anfrage von {requesterName} · {formatDateRange(item.offer.from, item.offer.until)}
+                      {item.offer.status === 'accepted'
+                        ? `${formatDateRange(item.offer.from, item.offer.until)} · Anfrage von ${requesterName}`
+                        : `Anfrage von ${requesterName} · ${formatDateRange(item.offer.from, item.offer.until)}`}
                     </Text>
                   </View>
                 </View>
@@ -517,6 +588,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     marginBottom: 6,
+  },
+  freeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 0,
+  },
+  freeContainer: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  freeHeading: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  freeLine: {
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 10,
+    fontWeight: '500',
   },
   offerRowContainer: {
     marginBottom: 8,

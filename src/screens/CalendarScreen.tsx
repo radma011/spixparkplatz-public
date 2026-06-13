@@ -12,8 +12,8 @@ import WatermarkBackground from '../components/WatermarkBackground';
 import {calculateNextOccurrences} from '../utils/recurrenceUtils';
 import {getFreeTimeWindows} from '../utils/availabilityFreeWindows';
 
-function calendarSpotKey(spotId: string): string {
-  return spotId;
+function calendarOfferKey(userId: string, spotId: string): string {
+  return `${userId}:${spotId}`;
 }
 
 interface Props {
@@ -226,7 +226,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     };
   }, [facilityCode]);
 
-  // Offers pro Spot (für „vergeben“: freie Restzeit im Kalender)
+  // Offers pro Verfügbarkeit (offerer + spot — wie Frei-Tab, zuverlässig auf allen Plattformen)
   useEffect(() => {
     if (availabilityFilter === 'none') {
       Object.values(spotOfferUnsubsRef.current).forEach((unsub) => {
@@ -239,32 +239,29 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       return;
     }
 
-    const spotsNeeded = new Set<string>();
+    const pairsNeeded = new Map<string, {userId: string; spotId: string}>();
     availabilities.forEach((av) => {
       if (!av.isActive) return;
       if (availabilityFilter === 'mine' && av.userId !== currentUserId) return;
-      spotsNeeded.add(av.spotId);
+      const key = calendarOfferKey(av.userId, av.spotId);
+      pairsNeeded.set(key, {userId: av.userId, spotId: av.spotId});
     });
 
-    spotsNeeded.forEach((spotId) => {
-      const key = calendarSpotKey(spotId);
-      try {
-        spotOfferUnsubsRef.current[key]?.();
-      } catch (_) {}
-      spotOfferUnsubsRef.current[key] = FirestoreService.watchOffersBySpot(
+    pairsNeeded.forEach(({userId, spotId}, key) => {
+      if (spotOfferUnsubsRef.current[key]) return;
+
+      spotOfferUnsubsRef.current[key] = FirestoreService.watchOffersByOffererAndSpot(
+        userId,
         spotId,
         (items) => {
-          setOffersBySpotKey((prev) => {
-            if (prev[key] === items) return prev;
-            return {...prev, [key]: items};
-          });
+          setOffersBySpotKey((prev) => ({...prev, [key]: items}));
         },
         facilityCode,
       );
     });
 
     Object.keys(spotOfferUnsubsRef.current).forEach((key) => {
-      if (spotsNeeded.has(key)) return;
+      if (pairsNeeded.has(key)) return;
       try {
         spotOfferUnsubsRef.current[key]?.();
       } catch (_) {}
@@ -325,6 +322,13 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     };
   }, []);
 
+  // Dynamic "week" view: yesterday -> today + 5 days (rolling 7-day window)
+  const weekStart = useMemo(() => {
+    const s = new Date(cursor);
+    s.setHours(0, 0, 0, 0);
+    return addDays(s, -1);
+  }, [cursor]);
+
   const entries = useMemo<CalendarEntry[]>(() => {
     const out: CalendarEntry[] = [];
     const seen = new Set<string>(); // use id only; for calendar we don't want duplicates
@@ -350,11 +354,9 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
             ? 'offer' // Eigene offene Anfragen in lila (wie "Meine" in der Legende)
             : 'hasOffer'; // Anfragen mit Angebot auch grün
       
-      // Apply filters
-      if (marker === 'open' && !showOpen) return;
+      // Apply filters (myRequests only produce 'offer' | 'hasOffer')
       if (marker === 'hasOffer' && !showHasOffer) return;
       if (marker === 'offer' && !showOffer) return;
-      if (marker === 'request' && !showRequest) return;
       
       out.push({
         id: r.id,
@@ -411,7 +413,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
 
         if (availabilityFilter === 'mine' && av.userId !== currentUserId) return;
 
-        const offers = offersBySpotKey[calendarSpotKey(av.spotId)] ?? [];
+        const offers = offersBySpotKey[calendarOfferKey(av.userId, av.spotId)] ?? [];
         const otherUsername =
           av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username);
 
@@ -529,12 +531,6 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     return map;
   }, [cursor, entries]);
 
-  // Dynamic "week" view: yesterday -> today + 5 days (rolling 7-day window)
-  const weekStart = useMemo(() => {
-    const s = new Date(cursor);
-    s.setHours(0, 0, 0, 0);
-    return addDays(s, -1);
-  }, [cursor]);
   const weekDays = useMemo(
     () => Array.from({length: 7}, (_, i) => addDays(weekStart, i)),
     [weekStart],
