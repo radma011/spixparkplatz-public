@@ -16,17 +16,57 @@ import {
   deleteDoc,
   onSnapshot,
   Timestamp,
-  FieldValue,
+  serverTimestamp,
+  deleteField,
   FieldPath,
 } from '@react-native-firebase/firestore';
 import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
 import {ParkingRequest, isOpen} from '../models/ParkingRequest';
 import {RequestOffer} from '../models/RequestOffer';
 import {RequestComment} from '../models/RequestComment';
-import {BLOCK_TOLERANCE_MS, rangesOverlapWithTolerance} from '../shared/matching';
+import {BLOCK_TOLERANCE_MS, rangesOverlapWithTolerance, toDate, mergeIntervals} from '../shared/matching';
 import {isOfferBlockingOccupancy} from '../utils/offerOccupancy';
+import {
+  CALENDAR_OFFER_DEBUG,
+  formatOfferDebugTime,
+  logCalendarOffer,
+} from '../utils/calendarOfferDebug';
 
 const db = getFirestore();
+
+function requestIdFromOfferRef(ref: {path?: string}): string | null {
+  const path = ref.path;
+  if (!path) return null;
+  const parts = path.split('/');
+  const offersIdx = parts.lastIndexOf('offers');
+  if (offersIdx <= 0) return null;
+  return parts[offersIdx - 1] ?? null;
+}
+
+function normalizeSpotId(spotId: string): string {
+  return String(spotId).trim();
+}
+
+function spotIdsMatch(a: string | undefined | null, b: string | undefined | null): boolean {
+  return normalizeSpotId(String(a ?? '')).toUpperCase() === normalizeSpotId(String(b ?? '')).toUpperCase();
+}
+
+function offererSpotKey(offererId: string, spotId: string): string {
+  return `${offererId}:${normalizeSpotId(spotId)}`;
+}
+
+export type OffererSpotPair = {
+  offererId: string;
+  spotId: string;
+  resultKey: string;
+};
+
+type DocData = FirebaseFirestoreTypes.DocumentData;
+type QueryDocSnap = FirebaseFirestoreTypes.QueryDocumentSnapshot<DocData>;
+
+function readDocData(snap: {data: () => unknown}): DocData | undefined {
+  return snap.data() as DocData | undefined;
+}
 
 /** Offer made from a specific availability (offererId + spotId), with request context for display. */
 export interface OfferFromAvailability {
@@ -103,7 +143,7 @@ class FirestoreService {
       {
         ...(data.username !== undefined ? {username: data.username} : {}),
         ...(data.phone !== undefined ? {phone: data.phone} : {}),
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {merge: true},
     );
@@ -138,10 +178,10 @@ class FirestoreService {
     try {
       const snap = await getDoc(doc(this.usersPublicCollection, uid));
       if (!snap.exists()) return null;
-      const data = snap.data();
+      const data = readDocData(snap);
       return {
-        username: data?.username,
-        phone: data?.phone,
+        username: data?.username as string | undefined,
+        phone: data?.phone as string | undefined,
       };
     } catch (e) {
       console.error('Failed to get public user:', uid, e);
@@ -189,8 +229,8 @@ class FirestoreService {
     const snapshot = await getDocs(q);
 
     return snapshot.docs
-      .map((doc) => this.parkingRequestFromDocSnap(doc))
-      .filter((r) => {
+      .map((docSnap: QueryDocSnap) => this.parkingRequestFromDocSnap(docSnap))
+      .filter((r: ParkingRequest) => {
         // Filter by facilityCode client-side (index-free)
         if (r.facilityCode !== facilityCode) {
           return false;
@@ -214,15 +254,15 @@ class FirestoreService {
     const snapshot = await getDocs(q);
 
     return snapshot.docs
-      .map((doc) => this.parkingRequestFromDocSnap(doc))
-      .filter((r) => shouldIncludeRelevantRequest(r, currentUserId, facilityCode, options));
+      .map((docSnap: QueryDocSnap) => this.parkingRequestFromDocSnap(docSnap))
+      .filter((r: ParkingRequest) => shouldIncludeRelevantRequest(r, currentUserId, facilityCode, options));
   }
 
   async archiveRequest(requestId: string, byUserId: string): Promise<void> {
     await updateDoc(doc(this.requestsCollection, requestId), {
       isArchived: true,
       archivedBy: byUserId,
-      archivedAt: FieldValue.serverTimestamp(),
+      archivedAt: serverTimestamp(),
     });
   }
 
@@ -307,7 +347,7 @@ class FirestoreService {
       until: untilTs,
       isFulfilled: false,
       isArchived: false,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
       participantIds: [userId],
       commentCount: 0,
       allowPartialOffers,
@@ -322,7 +362,7 @@ class FirestoreService {
     await setDoc(ref, {
       authorId,
       text,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
     return ref.id;
   }
@@ -332,7 +372,7 @@ class FirestoreService {
     if (!t) return;
     await updateDoc(doc(this.commentsCollection(requestId), commentId), {
       text: t,
-      editedAt: FieldValue.serverTimestamp(),
+      editedAt: serverTimestamp(),
     });
   }
 
@@ -360,7 +400,7 @@ class FirestoreService {
       from: Timestamp.fromDate(from),
       until: Timestamp.fromDate(until),
       status: 'active',
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
     return offerRef.id;
   }
@@ -374,7 +414,7 @@ class FirestoreService {
   async getOffersForRequest(requestId: string): Promise<RequestOffer[]> {
     const q = query(this.offersCollection(requestId), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => {
+    return snap.docs.map((d: QueryDocSnap) => {
       const data = d.data();
       const status = (data?.status ?? 'active') as RequestOffer['status'];
       const createdAt = data?.createdAt ? (data.createdAt as any).toDate() : undefined;
@@ -399,9 +439,15 @@ class FirestoreService {
     const requestIds = new Set<string>();
     for (const d of snap.docs) {
       const data = d.data();
-      const requestDocRef = (d.ref as any).parent?.parent;
-      const requestId = requestDocRef?.id ?? null;
+      const requestId =
+        requestIdFromOfferRef(d.ref as {path?: string}) ??
+        ((d.ref as {parent?: {parent?: {id?: string}}}).parent?.parent?.id ?? null);
       if (!requestId) continue;
+
+      const from = toDate(data?.from as Parameters<typeof toDate>[0]);
+      const until = toDate(data?.until as Parameters<typeof toDate>[0]);
+      if (!from || !until) continue;
+
       requestIds.add(requestId);
       const status = (data?.status ?? 'active') as RequestOffer['status'];
       items.push({
@@ -411,16 +457,18 @@ class FirestoreService {
           requestId,
           offererId: data?.offererId ?? '',
           spotId: data?.spotId ?? '',
-          from: (data?.from as any)?.toDate?.() ?? new Date(0),
-          until: (data?.until as any)?.toDate?.() ?? new Date(0),
+          from,
+          until,
           status,
-          createdAt: (data?.createdAt as any)?.toDate?.() ?? undefined,
+          createdAt: toDate(data?.createdAt as Parameters<typeof toDate>[0]) ?? undefined,
         },
       });
     }
     if (requestIds.size === 0) return [];
     const ids = Array.from(requestIds);
-    const requestSnaps = await Promise.all(ids.map((id) => getDoc(doc(this.requestsCollection, id))));
+    const requestSnaps = await Promise.allSettled(
+      ids.map((id) => getDoc(doc(this.requestsCollection, id))),
+    );
     const requestById: Record<
       string,
       {
@@ -433,18 +481,19 @@ class FirestoreService {
         isArchived?: boolean;
       }
     > = {};
-    requestSnaps.forEach((s, i) => {
+    requestSnaps.forEach((result, i) => {
       const id = ids[i];
-      if (!id || !s.exists()) return;
-      const d = s.data();
+      if (!id || result.status !== 'fulfilled' || !result.value.exists()) return;
+      const d = readDocData(result.value);
+      if (!d) return;
       requestById[id] = {
-        facilityCode: d?.facilityCode as string | undefined,
-        requestedBy: d?.requestedBy,
-        requestedByUsername: d?.requestedByUsername as string | undefined,
-        requestFrom: (d?.from as any)?.toDate?.() ?? undefined,
-        requestUntil: (d?.until as any)?.toDate?.() ?? undefined,
-        isFulfilled: d?.isFulfilled === true,
-        isArchived: d?.isArchived === true,
+        facilityCode: d.facilityCode as string | undefined,
+        requestedBy: d.requestedBy as string | undefined,
+        requestedByUsername: d.requestedByUsername as string | undefined,
+        requestFrom: toDate(d.from as Parameters<typeof toDate>[0]) ?? undefined,
+        requestUntil: toDate(d.until as Parameters<typeof toDate>[0]) ?? undefined,
+        isFulfilled: d.isFulfilled === true,
+        isArchived: d.isArchived === true,
       };
     });
     let result: OfferFromAvailability[] = items.map(({offer, requestId}) => ({
@@ -467,16 +516,365 @@ class FirestoreService {
     return result;
   }
 
+  private tryMapOfferDoc(
+    offerDoc: QueryDocSnap,
+    requestId: string,
+    req: Pick<
+      ParkingRequest,
+      'requestedBy' | 'requestedByUsername' | 'from' | 'until' | 'isFulfilled' | 'isArchived'
+    >,
+  ): OfferFromAvailability | null {
+    const data = offerDoc.data();
+    const rawOffererId = String(data.offererId ?? '');
+    const rawSpotId = String(data.spotId ?? '');
+    const status = (data?.status ?? 'active') as RequestOffer['status'];
+    if (!isOfferBlockingOccupancy(status)) return null;
+    const from = toDate(data.from as Parameters<typeof toDate>[0]);
+    const until = toDate(data.until as Parameters<typeof toDate>[0]);
+    if (!from || !until) return null;
+    return {
+      offer: {
+        id: offerDoc.id,
+        requestId,
+        offererId: rawOffererId,
+        spotId: rawSpotId,
+        from,
+        until,
+        status,
+        createdAt: toDate(data.createdAt as Parameters<typeof toDate>[0]) ?? undefined,
+      },
+      requestId,
+      requestedBy: req.requestedBy,
+      requestedByUsername: req.requestedByUsername,
+      requestFrom: req.from,
+      requestUntil: req.until,
+      isFulfilled: req.isFulfilled === true,
+    };
+  }
+
+  private mapRequestOffersForOffererSpot(
+    offerDocs: QueryDocSnap[],
+    offererId: string,
+    spotId: string,
+    requestId: string,
+    req: Pick<
+      ParkingRequest,
+      'requestedBy' | 'requestedByUsername' | 'from' | 'until' | 'isFulfilled' | 'isArchived'
+    >,
+  ): OfferFromAvailability[] {
+    const items: OfferFromAvailability[] = [];
+    for (const offerDoc of offerDocs) {
+      const data = offerDoc.data();
+      const rawOffererId = String(data.offererId ?? '');
+      const rawSpotId = String(data.spotId ?? '');
+      const offererMatch = rawOffererId === offererId;
+      const spotMatch = spotIdsMatch(data.spotId as string | undefined, spotId);
+      if (!offererMatch) {
+        if (CALENDAR_OFFER_DEBUG && spotMatch) {
+          logCalendarOffer('offer skipped: offererId mismatch (spot matched)', {
+            requestId,
+            offerId: offerDoc.id,
+            wantOffererId: offererId,
+            gotOffererId: rawOffererId,
+            spotId: rawSpotId,
+            status: data.status ?? 'active',
+          });
+        }
+        continue;
+      }
+      if (!spotMatch) {
+        if (CALENDAR_OFFER_DEBUG) {
+          logCalendarOffer('offer skipped: spotId mismatch (offerer matched)', {
+            requestId,
+            offerId: offerDoc.id,
+            wantSpotId: spotId,
+            gotSpotId: rawSpotId,
+            status: data.status ?? 'active',
+          });
+        }
+        continue;
+      }
+      const mapped = this.tryMapOfferDoc(offerDoc, requestId, req);
+      if (!mapped) {
+        if (CALENDAR_OFFER_DEBUG) {
+          logCalendarOffer('offer skipped: invalid or non-blocking', {
+            requestId,
+            offerId: offerDoc.id,
+            status: data.status ?? 'active',
+          });
+        }
+        continue;
+      }
+      if (CALENDAR_OFFER_DEBUG) {
+        logCalendarOffer('offer matched', {
+          requestId,
+          offerId: offerDoc.id,
+          offererId: rawOffererId,
+          spotId: rawSpotId,
+          status: mapped.offer.status,
+          from: formatOfferDebugTime(mapped.offer.from),
+          until: formatOfferDebugTime(mapped.offer.until),
+        });
+      }
+      items.push(mapped);
+    }
+    return items;
+  }
+
+  private async loadOffersBucketedFromRequestDocs(
+    requestDocs: QueryDocSnap[],
+    facilityCode: string,
+    targetSpotKeys: Set<string>,
+  ): Promise<Map<string, OfferFromAvailability[]>> {
+    const buckets = new Map<string, OfferFromAvailability[]>();
+    for (const key of targetSpotKeys) buckets.set(key, []);
+
+    const normalizedFacility = facilityCode.trim().toUpperCase();
+    const filtered = requestDocs.filter((reqDoc) => {
+      const reqData = reqDoc.data();
+      if (String(reqData.facilityCode || '').trim().toUpperCase() !== normalizedFacility) return false;
+      return reqData.isArchived !== true;
+    });
+
+    await Promise.all(
+      filtered.map(async (reqDoc) => {
+        const reqData = reqDoc.data();
+        const offersSnap = await getDocs(query(this.offersCollection(reqDoc.id)));
+        const req = {
+          requestedBy: reqData.requestedBy as string,
+          requestedByUsername: reqData.requestedByUsername as string | undefined,
+          from: toDate(reqData.from as Parameters<typeof toDate>[0]) ?? new Date(0),
+          until: toDate(reqData.until as Parameters<typeof toDate>[0]) ?? new Date(0),
+          isFulfilled: reqData.isFulfilled === true,
+          isArchived: reqData.isArchived === true,
+        };
+        for (const offerDoc of offersSnap.docs as QueryDocSnap[]) {
+          const mapped = this.tryMapOfferDoc(offerDoc, reqDoc.id, req);
+          if (!mapped) continue;
+          const key = offererSpotKey(mapped.offer.offererId, mapped.offer.spotId);
+          if (!targetSpotKeys.has(key)) continue;
+          buckets.get(key)!.push(mapped);
+        }
+      }),
+    );
+    return buckets;
+  }
+
+  private watchFacilityOfferBuckets(
+    facilityCode: string,
+    targetSpotKeys: Set<string>,
+    callback: (buckets: Record<string, OfferFromAvailability[]>) => void,
+    debugLabel: string,
+  ): () => void {
+    if (targetSpotKeys.size === 0) {
+      callback({});
+      return () => {};
+    }
+
+    const q = query(
+      this.requestsCollection,
+      where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
+      orderBy('until'),
+    );
+    let scanGeneration = 0;
+    let cancelled = false;
+    const unsub = onSnapshot(
+      q,
+      async (snap) => {
+        const generation = ++scanGeneration;
+        try {
+          const buckets = await this.loadOffersBucketedFromRequestDocs(
+            snap.docs as QueryDocSnap[],
+            facilityCode,
+            targetSpotKeys,
+          );
+          if (cancelled || generation !== scanGeneration) return;
+          const result: Record<string, OfferFromAvailability[]> = {};
+          for (const key of targetSpotKeys) {
+            result[key] = buckets.get(key) ?? [];
+          }
+          if (CALENDAR_OFFER_DEBUG) {
+            logCalendarOffer(`${debugLabel} emit`, {
+              facilityCode,
+              requestDocCount: snap.docs.length,
+              pairCount: targetSpotKeys.size,
+              offersByKey: Object.fromEntries(
+                Object.entries(result).map(([k, v]) => [k, v.length]),
+              ),
+            });
+          }
+          callback(result);
+        } catch (e) {
+          if (cancelled || generation !== scanGeneration) return;
+          console.error(`[FirestoreService] ${debugLabel} map error:`, e);
+          const empty: Record<string, OfferFromAvailability[]> = {};
+          for (const key of targetSpotKeys) empty[key] = [];
+          callback(empty);
+        }
+      },
+      (err: unknown) => {
+        if (cancelled) return;
+        console.error(`[FirestoreService] ${debugLabel} error:`, err);
+        const empty: Record<string, OfferFromAvailability[]> = {};
+        for (const key of targetSpotKeys) empty[key] = [];
+        callback(empty);
+      },
+    );
+    return () => {
+      cancelled = true;
+      scanGeneration += 1;
+      unsub();
+    };
+  }
+
+  /**
+   * One facility scan for many offerer+spot pairs (calendar, Frei tab).
+   * Much faster than one scan per availability.
+   */
+  watchOffersByOffererSpotPairs(
+    facilityCode: string,
+    pairs: OffererSpotPair[],
+    callback: (offersByKey: Record<string, OfferFromAvailability[]>) => void,
+  ): () => void {
+    const targetSpotKeys = new Set(pairs.map((p) => offererSpotKey(p.offererId, p.spotId)));
+
+    return this.watchFacilityOfferBuckets(
+      facilityCode,
+      targetSpotKeys,
+      (bucketsBySpotKey) => {
+        const result: Record<string, OfferFromAvailability[]> = {};
+        for (const p of pairs) {
+          const spotKey = offererSpotKey(p.offererId, p.spotId);
+          result[p.resultKey] = bucketsBySpotKey[spotKey] ?? [];
+        }
+        callback(result);
+      },
+      'watchOffersByOffererSpotPairs',
+    );
+  }
+
+  /**
+   * Live listeners on offers subcollections for requests already loaded in the UI.
+   * Avoids collectionGroup (Android permission issues) and facility-wide scans.
+   */
+  private watchOffersByOffererAndSpotViaRequestOffers(
+    requests: ParkingRequest[],
+    offererId: string,
+    spotId: string,
+    callback: (items: OfferFromAvailability[]) => void,
+  ): () => void {
+    const byRequestId = new Map<string, OfferFromAvailability[]>();
+    const emit = () => {
+      const all = Array.from(byRequestId.values()).flat();
+      if (CALENDAR_OFFER_DEBUG) {
+        logCalendarOffer('request-offers emit', {
+          offererId,
+          spotId,
+          requestCount: requests.length,
+          matchedOfferCount: all.length,
+          offers: all.map((o) => ({
+            requestId: o.requestId,
+            offerId: o.offer.id,
+            status: o.offer.status,
+            from: formatOfferDebugTime(o.offer.from),
+            until: formatOfferDebugTime(o.offer.until),
+          })),
+        });
+      }
+      callback(all);
+    };
+
+    if (requests.length === 0) {
+      if (CALENDAR_OFFER_DEBUG) {
+        logCalendarOffer('request-offers: no known requests, returning empty', {offererId, spotId});
+      }
+      callback([]);
+      return () => {};
+    }
+
+    if (CALENDAR_OFFER_DEBUG) {
+      logCalendarOffer('request-offers subscribe', {
+        offererId,
+        spotId,
+        requestCount: requests.length,
+        requestIds: requests.map((r) => r.id),
+      });
+    }
+
+    const unsubs = requests.map((req) => {
+      if (req.isArchived) {
+        byRequestId.set(req.id, []);
+        return () => {};
+      }
+      return onSnapshot(
+        query(this.offersCollection(req.id)),
+        (snap) => {
+          if (CALENDAR_OFFER_DEBUG) {
+            logCalendarOffer('request-offers snapshot', {
+              requestId: req.id,
+              offererId,
+              spotId,
+              totalOfferDocs: snap.docs.length,
+              offerDocIds: snap.docs.map((d: QueryDocSnap) => d.id),
+            });
+          }
+          byRequestId.set(
+            req.id,
+            this.mapRequestOffersForOffererSpot(
+              snap.docs as QueryDocSnap[],
+              offererId,
+              spotId,
+              req.id,
+              req,
+            ),
+          );
+          emit();
+        },
+        (err: unknown) => {
+          console.error(
+            '[FirestoreService] watchOffersByOffererAndSpot request offers error:',
+            req.id,
+            err,
+          );
+          byRequestId.set(req.id, []);
+          emit();
+        },
+      );
+    });
+
+    return () => unsubs.forEach((u) => u());
+  }
+
+  private watchOffersByOffererAndSpotViaFacilityRequests(
+    offererId: string,
+    spotId: string,
+    callback: (items: OfferFromAvailability[]) => void,
+    facilityCode: string,
+  ): () => void {
+    const key = offererSpotKey(offererId, spotId);
+    return this.watchFacilityOfferBuckets(
+      facilityCode,
+      new Set([key]),
+      (buckets) => callback(buckets[key] ?? []),
+      'watchOffersByOffererAndSpot',
+    );
+  }
+
   /**
    * Watch all offers on a spot (any offerer). Used by calendar for real occupancy on the spot.
-   * Collection group on spotId (field override index); optional facility filter client-side.
+   * Uses facility request scan (no collection group) when facilityCode is set.
    */
   watchOffersBySpot(
     spotId: string,
     callback: (items: OfferFromAvailability[]) => void,
     facilityCode?: string,
   ): () => void {
-    const q = query(collectionGroup(db, 'offers'), where('spotId', '==', spotId));
+    if (facilityCode?.trim()) {
+      return this.watchOffersOnSpotViaFacilityRequests(spotId, callback, facilityCode);
+    }
+
+    const normalizedSpotId = normalizeSpotId(spotId);
+    const q = query(collectionGroup(db, 'offers'), where('spotId', '==', normalizedSpotId));
     return onSnapshot(
       q,
       async (snap) => {
@@ -488,9 +886,77 @@ class FirestoreService {
           callback([]);
         }
       },
-      (err: any) => {
-        if (String(err?.code ?? '').includes('permission-denied')) return;
+      (err: unknown) => {
         console.error('[FirestoreService] watchOffersBySpot error:', err);
+        callback([]);
+      },
+    );
+  }
+
+  private watchOffersOnSpotViaFacilityRequests(
+    spotId: string,
+    callback: (items: OfferFromAvailability[]) => void,
+    facilityCode: string,
+  ): () => void {
+    const q = query(
+      this.requestsCollection,
+      where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
+      orderBy('until'),
+    );
+    return onSnapshot(
+      q,
+      async (snap) => {
+        try {
+          const normalizedFacility = facilityCode.trim().toUpperCase();
+          const filteredDocs = (snap.docs as QueryDocSnap[]).filter((reqDoc) => {
+            const reqData = reqDoc.data();
+            if (String(reqData.facilityCode || '').trim().toUpperCase() !== normalizedFacility) {
+              return false;
+            }
+            return reqData.isArchived !== true;
+          });
+          const items: OfferFromAvailability[] = [];
+          await Promise.all(
+            filteredDocs.map(async (reqDoc) => {
+              const reqData = reqDoc.data();
+              const offersSnap = await getDocs(query(this.offersCollection(reqDoc.id)));
+              for (const offerDoc of offersSnap.docs) {
+                const data = offerDoc.data();
+                if (!spotIdsMatch(data.spotId as string | undefined, spotId)) continue;
+                const status = (data?.status ?? 'active') as RequestOffer['status'];
+                if (!isOfferBlockingOccupancy(status)) continue;
+                const from = toDate(data.from as Parameters<typeof toDate>[0]);
+                const until = toDate(data.until as Parameters<typeof toDate>[0]);
+                if (!from || !until) continue;
+                items.push({
+                  offer: {
+                    id: offerDoc.id,
+                    requestId: reqDoc.id,
+                    offererId: data.offererId ?? '',
+                    spotId: String(data.spotId ?? spotId),
+                    from,
+                    until,
+                    status,
+                    createdAt: toDate(data.createdAt as Parameters<typeof toDate>[0]) ?? undefined,
+                  },
+                  requestId: reqDoc.id,
+                  requestedBy: reqData.requestedBy as string | undefined,
+                  requestedByUsername: reqData.requestedByUsername as string | undefined,
+                  requestFrom: toDate(reqData.from as Parameters<typeof toDate>[0]) ?? undefined,
+                  requestUntil: toDate(reqData.until as Parameters<typeof toDate>[0]) ?? undefined,
+                  isFulfilled: reqData.isFulfilled === true,
+                });
+              }
+            }),
+          );
+          callback(items);
+        } catch (e) {
+          console.error('[FirestoreService] watchOffersBySpot facility scan map error:', e);
+          callback([]);
+        }
+      },
+      (err: unknown) => {
+        console.error('[FirestoreService] watchOffersBySpot facility scan error:', err);
         callback([]);
       },
     );
@@ -498,22 +964,40 @@ class FirestoreService {
 
   /**
    * Watch all offers made by a given offerer for a given spot (e.g. from one availability).
-   * Used on the "Frei" tab to show "Bereits angeboten" in each availability card.
-   * Requires a composite index: collection group "offers", fields offererId (Asc), spotId (Asc).
-   * @param facilityCode If set, only offers for requests in this facility are returned.
+   * Used on the "Frei" tab and calendar. Scans recent facility requests (no collection group).
    */
   watchOffersByOffererAndSpot(
     offererId: string,
     spotId: string,
     callback: (items: OfferFromAvailability[]) => void,
     facilityCode?: string,
+    _knownRequests?: ParkingRequest[],
   ): () => void {
+    if (CALENDAR_OFFER_DEBUG) {
+      logCalendarOffer('watchOffersByOffererAndSpot start', {
+        path: facilityCode?.trim() ? 'facility-scan' : 'collection-group',
+        offererId,
+        spotId,
+        facilityCode: facilityCode ?? null,
+      });
+    }
+
+    if (facilityCode?.trim()) {
+      return this.watchOffersByOffererAndSpotViaFacilityRequests(
+        offererId,
+        spotId,
+        callback,
+        facilityCode,
+      );
+    }
+
+    const normalizedSpotId = normalizeSpotId(spotId);
     const q = query(
       collectionGroup(db, 'offers'),
       where('offererId', '==', offererId),
-      where('spotId', '==', spotId),
+      where('spotId', '==', normalizedSpotId),
     );
-    const unsubscribe = onSnapshot(
+    return onSnapshot(
       q,
       async (snap: FirebaseFirestoreTypes.QuerySnapshot) => {
         try {
@@ -523,30 +1007,28 @@ class FirestoreService {
           callback([]);
         }
       },
-      (err: any) => {
-        if (String(err?.code ?? '').includes('permission-denied')) return;
+      (err: unknown) => {
         console.error('[FirestoreService] watchOffersByOffererAndSpot error:', err);
         callback([]);
       },
     );
-    return unsubscribe;
   }
 
   async withdrawMyOffersForRequest(requestId: string, offeringUserId: string): Promise<void> {
     const q = query(this.offersCollection(requestId), where('offererId', '==', offeringUserId));
     const snap = await getDocs(q);
     // Setze sowohl 'active', 'accepted' als auch 'standby' Angebote auf 'withdrawn'
-    const toWithdraw = snap.docs.filter((d) => {
+    const toWithdraw = snap.docs.filter((d: QueryDocSnap) => {
       const status = d.data()?.status ?? 'active';
       return status === 'active' || status === 'accepted' || status === 'standby';
     });
     await Promise.all(
-      toWithdraw.map((d) =>
+      toWithdraw.map((d: QueryDocSnap) =>
         updateDoc(d.ref, {
           status: 'withdrawn',
           withdrawnBy: offeringUserId,
           withdrawnReason: 'offerer',
-          updatedAt: FieldValue.serverTimestamp(),
+          updatedAt: serverTimestamp(),
         }),
       ),
     );
@@ -557,7 +1039,7 @@ class FirestoreService {
       status: 'withdrawn',
       withdrawnBy: offeringUserId,
       withdrawnReason: 'offerer',
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   }
 
@@ -571,7 +1053,7 @@ class FirestoreService {
     await updateDoc(doc(this.offersCollection(requestId), offerId), {
       from: Timestamp.fromDate(from),
       until: Timestamp.fromDate(until),
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   }
 
@@ -680,6 +1162,92 @@ class FirestoreService {
     return null;
   }
 
+  /**
+   * Merged blocking intervals on a spot within [rangeFrom, rangeUntil].
+   * Mirrors Cloud Functions collectBlockingIntervals (calendar + auto-matching).
+   */
+  async collectBlockingIntervals(
+    spotId: string,
+    facilityCode: string,
+    rangeFrom: Date,
+    rangeUntil: Date,
+    excludeRequestId?: string,
+  ): Promise<Array<{start: number; end: number}>> {
+    const avFrom = rangeFrom.getTime();
+    const avUntil = rangeUntil.getTime();
+    const normalizedFacility = facilityCode.trim().toUpperCase();
+    const raw: Array<{start: number; end: number}> = [];
+
+    const addBlock = (startMs: number, endMs: number) => {
+      const start = Math.max(startMs, avFrom);
+      const end = Math.min(endMs, avUntil);
+      if (end > start) raw.push({start, end});
+    };
+
+    const fulfilledQuery = query(
+      this.requestsCollection,
+      where('facilityCode', '==', facilityCode),
+      where('isFulfilled', '==', true),
+      where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
+      orderBy('until'),
+    );
+    const fulfilledSnap = await getDocs(fulfilledQuery);
+
+    for (const docSnap of fulfilledSnap.docs) {
+      if (excludeRequestId && docSnap.id === excludeRequestId) continue;
+      const data = docSnap.data();
+      if (data.isArchived === true) continue;
+      const fulfilledSpots = (data.fulfilledSpotIds as string[] | undefined) ?? [];
+      if (!fulfilledSpots.some((s) => spotIdsMatch(s, spotId))) continue;
+
+      const offersSnap = await getDocs(query(this.offersCollection(docSnap.id)));
+      let matchedOffer = false;
+      for (const offerDoc of offersSnap.docs) {
+        if (!spotIdsMatch(offerDoc.data()?.spotId as string | undefined, spotId)) continue;
+        const offerStatus = offerDoc.data()?.status ?? 'active';
+        if (offerStatus !== 'accepted') continue;
+        const offerFrom = toDate(offerDoc.data()?.from as Parameters<typeof toDate>[0]);
+        const offerUntil = toDate(offerDoc.data()?.until as Parameters<typeof toDate>[0]);
+        if (!offerFrom || !offerUntil) continue;
+        matchedOffer = true;
+        addBlock(offerFrom.getTime(), offerUntil.getTime());
+      }
+
+      const reqFrom = toDate(data.from as Parameters<typeof toDate>[0]);
+      const reqUntil = toDate(data.until as Parameters<typeof toDate>[0]);
+      if (!matchedOffer && reqFrom && reqUntil) {
+        addBlock(reqFrom.getTime(), reqUntil.getTime());
+      }
+    }
+
+    const openQuery = query(
+      this.requestsCollection,
+      where('until', '>', this.cutoffTimestamp(FirestoreService.RELEVANT_HISTORY_MS)),
+      orderBy('until'),
+    );
+    const openSnap = await getDocs(openQuery);
+
+    for (const docSnap of openSnap.docs) {
+      if (excludeRequestId && docSnap.id === excludeRequestId) continue;
+      const data = docSnap.data();
+      if (String(data.facilityCode || '').trim().toUpperCase() !== normalizedFacility) continue;
+      if (data.isArchived === true || data.isFulfilled === true) continue;
+
+      const offersSnap = await getDocs(query(this.offersCollection(docSnap.id)));
+      for (const offerDoc of offersSnap.docs) {
+        if (!spotIdsMatch(offerDoc.data()?.spotId as string | undefined, spotId)) continue;
+        const status = offerDoc.data()?.status ?? 'active';
+        if (!isOfferBlockingOccupancy(status)) continue;
+        const offerFrom = toDate(offerDoc.data()?.from as Parameters<typeof toDate>[0]);
+        const offerUntil = toDate(offerDoc.data()?.until as Parameters<typeof toDate>[0]);
+        if (!offerFrom || !offerUntil) continue;
+        addBlock(offerFrom.getTime(), offerUntil.getTime());
+      }
+    }
+
+    return mergeIntervals(raw);
+  }
+
   async acceptOffer(requestId: string, offer: RequestOffer): Promise<void> {
     // Prüfe, ob das Angebot noch existiert und ob der Request noch existiert
     const requestRef = doc(this.requestsCollection, requestId);
@@ -689,7 +1257,10 @@ class FirestoreService {
       throw new Error('Anfrage existiert nicht mehr');
     }
     
-    const requestData = requestSnap.data();
+    const requestData = readDocData(requestSnap);
+    if (!requestData) {
+      throw new Error('Anfrage existiert nicht mehr');
+    }
     
     // Prüfe, ob der Request bereits erfüllt oder archiviert ist
     if (requestData.isFulfilled === true) {
@@ -709,7 +1280,7 @@ class FirestoreService {
       throw new Error('Das Angebot existiert nicht mehr');
     }
     
-    const offerData = offerSnap.data();
+    const offerData = readDocData(offerSnap);
     if (offerData?.status !== 'active') {
       throw new Error('Das Angebot ist nicht mehr aktiv');
     }
@@ -719,7 +1290,7 @@ class FirestoreService {
     // once the full window is covered without gaps.
     await updateDoc(offerRef, {
       status: 'accepted',
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   }
 
@@ -730,14 +1301,14 @@ class FirestoreService {
     // Sicherheitsprüfung: Stelle sicher, dass der Benutzer tatsächlich ein aktives Angebot hat
     const q = query(this.offersCollection(requestId), where('offererId', '==', offeringUserId));
     const snap = await getDocs(q);
-    const hasActiveOffer = snap.docs.some((d) => {
+    const hasActiveOffer = snap.docs.some((d: QueryDocSnap) => {
       const status = d.data()?.status ?? 'active';
       return status === 'active' || status === 'accepted' || status === 'standby';
     });
 
     const requestRef = doc(this.requestsCollection, requestId);
     const requestSnap = await getDoc(requestRef);
-    const requestData = requestSnap.data();
+    const requestData = readDocData(requestSnap);
     const hasFullOffer = requestData?.offeredBy === offeringUserId;
     const requestedBy = (requestData?.requestedBy as string) || null;
 
@@ -750,18 +1321,18 @@ class FirestoreService {
 
     // Dann: Request-Dokument aktualisieren (offered* Felder entfernen)
     await updateDoc(doc(this.requestsCollection, requestId), {
-      offeredSpotId: FieldValue.delete(),
-      offeredBy: FieldValue.delete(),
-      offeredAt: FieldValue.delete(),
-      fullOfferId: FieldValue.delete(),
+      offeredSpotId: deleteField(),
+      offeredBy: deleteField(),
+      offeredAt: deleteField(),
+      fullOfferId: deleteField(),
       isFulfilled: false,
       isArchived: false,
-      fulfilledAt: FieldValue.delete(),
-      fulfilledSpotIds: FieldValue.delete(),
-      fulfilledByUserIds: FieldValue.delete(),
-      fulfilledOfferIds: FieldValue.delete(),
-      archivedBy: FieldValue.delete(),
-      archivedAt: FieldValue.delete(),
+      fulfilledAt: deleteField(),
+      fulfilledSpotIds: deleteField(),
+      fulfilledByUserIds: deleteField(),
+      fulfilledOfferIds: deleteField(),
+      archivedBy: deleteField(),
+      archivedAt: deleteField(),
     });
 
     return requestedBy ? {requestedBy} : null;
@@ -815,7 +1386,7 @@ class FirestoreService {
   async fulfillRequest(requestId: string): Promise<void> {
     await updateDoc(doc(this.requestsCollection, requestId), {
       isFulfilled: true,
-      fulfilledAt: FieldValue.serverTimestamp(),
+      fulfilledAt: serverTimestamp(),
     });
   }
 
@@ -830,7 +1401,7 @@ class FirestoreService {
       return {hadOffer: false};
     }
     
-    const data = requestSnap.data();
+    const data = readDocData(requestSnap);
     const hasOffer = !!(data?.offeredSpotId || data?.offeredBy);
     const offeredBy = data?.offeredBy as string | undefined;
     
@@ -840,11 +1411,11 @@ class FirestoreService {
       await updateDoc(requestRef, {
         isArchived: true,
         archivedBy: data?.requestedBy,
-        archivedAt: FieldValue.serverTimestamp(),
+        archivedAt: serverTimestamp(),
         // Entferne offered-Felder, damit der Request nicht mehr als "mit Angebot" erscheint
-        offeredSpotId: FieldValue.delete(),
-        offeredBy: FieldValue.delete(),
-        offeredAt: FieldValue.delete(),
+        offeredSpotId: deleteField(),
+        offeredBy: deleteField(),
+        offeredAt: deleteField(),
       });
       return {hadOffer: true, offeredBy};
     }
@@ -855,6 +1426,22 @@ class FirestoreService {
   }
 
   // FCM Token speichern (pro Gerät/Installation; ein User kann mehrere Tokens haben)
+  async syncAppVersion(
+    userId: string,
+    info: {version: string; buildNumber: number; platform: string},
+  ): Promise<void> {
+    await setDoc(
+      doc(this.usersCollection, userId),
+      {
+        appVersion: info.version,
+        appBuildNumber: info.buildNumber,
+        appPlatform: info.platform,
+        appVersionSyncedAt: serverTimestamp(),
+      },
+      {merge: true},
+    );
+  }
+
   async saveFCMToken(
     userId: string,
     token: string,
@@ -867,8 +1454,8 @@ class FirestoreService {
       {
         token,
         platform: meta?.platform ?? null,
-        lastSeenAt: FieldValue.serverTimestamp(),
-        createdAt: FieldValue.serverTimestamp(),
+        lastSeenAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
       },
       {merge: true},
     );
@@ -886,7 +1473,7 @@ class FirestoreService {
       doc(this.usersCollection, userId),
       {
         parkingSpotId: spotId,
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {merge: true},
     );
@@ -897,7 +1484,8 @@ class FirestoreService {
     const docRef = doc(this.usersCollection, userId);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      return docSnap.data()?.parkingSpotId || null;
+      const data = readDocData(docSnap);
+      return (data?.parkingSpotId as string | undefined) || null;
     }
     return null;
   }
@@ -909,18 +1497,18 @@ class FirestoreService {
       // Firestore unterstützt '!=' nicht direkt für documentId, daher filtern wir manuell
       snapshot = await getDocs(this.usersCollection);
       return snapshot.docs
-        .filter((d) => d.id !== excludeUserId)
-        .map((d) => d.data())
-        .filter((data) => data.fcmToken)
-        .map((data) => data.fcmToken);
+        .filter((d: QueryDocSnap) => d.id !== excludeUserId)
+        .map((d: QueryDocSnap) => d.data())
+        .filter((data: DocData) => data.fcmToken)
+        .map((data: DocData) => data.fcmToken as string);
     } else {
       snapshot = await getDocs(this.usersCollection);
     }
 
     return snapshot.docs
-      .map((doc) => doc.data())
-      .filter((data) => data.fcmToken)
-      .map((data) => data.fcmToken);
+      .map((docSnap: QueryDocSnap) => docSnap.data())
+      .filter((data: DocData) => data.fcmToken)
+      .map((data: DocData) => data.fcmToken as string);
   }
 
   // Meine Anfragen abrufen
@@ -961,7 +1549,7 @@ class FirestoreService {
         parkingSpots: userData.parkingSpots,
         facilityCode: userData.facilityCode,
         createdAt: Timestamp.fromDate(userData.createdAt),
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
         ...(isAdmin === true ? {admin: true} : {}),
       },
       {merge: true},
@@ -990,7 +1578,10 @@ class FirestoreService {
       return null;
     }
 
-    const data = docSnap.data();
+    const data = readDocData(docSnap);
+    if (!data) {
+      return null;
+    }
     return {
       uid: docSnap.id,
       username: data.username as string,
@@ -1010,7 +1601,7 @@ class FirestoreService {
     facilityCode?: string;
   }): Promise<void> {
     const updateData: any = {
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
     if (updates.username !== undefined) {
@@ -1038,16 +1629,12 @@ class FirestoreService {
   async updateUserEmail(uid: string, email: string): Promise<void> {
     await updateDoc(doc(this.usersCollection, uid), {
       email,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   }
 
-  parkingRequestFromDocSnap(
-    docSnap:
-      | FirebaseFirestoreTypes.DocumentSnapshot
-      | FirebaseFirestoreTypes.QueryDocumentSnapshot,
-  ): ParkingRequest {
-    const data = docSnap.data();
+  parkingRequestFromDocSnap(docSnap: {id: string; data: () => unknown}): ParkingRequest {
+    const data = readDocData(docSnap);
     if (!data) {
       throw new Error('Document data is missing');
     }
@@ -1108,7 +1695,7 @@ class FirestoreService {
     if (!facilitySnap.exists()) {
       return null;
     }
-    const data = facilitySnap.data();
+    const data = readDocData(facilitySnap);
     // Code kommt von der Document-ID, nicht aus dem Dokument
     return {
       code: normalizedCode, // Document-ID
@@ -1135,9 +1722,7 @@ class FirestoreService {
       if (!projectId) return null;
       const region = 'europe-west3';
       const url = `https://${region}-${projectId}.cloudfunctions.net/getFacilityFulfilledStatsHttp`;
-      const isDev =
-        (typeof __DEV__ !== 'undefined' && __DEV__) ||
-        (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production');
+      const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
       const res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -1304,7 +1889,7 @@ class FirestoreService {
     await setDoc(facilityRef, {
       name: name || normalizedCode,
       active: true,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   }
 }

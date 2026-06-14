@@ -322,19 +322,10 @@ class ParkingRequestService {
       const myOffer = await FirestoreService.getMyActiveOfferForRequest(request.id, currentUserId);
       if (!myOffer) continue;
 
-      // Beim Recheck die eigene Anfrage von der Blockierungsprüfung ausnehmen, sonst wird das
-      // bestehende Angebot als „belegt“ gewertet und bei Verkürzung fälschlich storniert.
-      const checkSpotAvailabilityFn = (
-        sid: string,
-        fc: string,
-        from: Date,
-        until: Date,
-      ) => this.checkSpotAvailability(sid, fc, from, until, request.id);
-
       const match = await findBestMatchingAvailability(
         request,
         allAvailabilitiesAfterChange,
-        checkSpotAvailabilityFn,
+        {excludeRequestId: request.id},
       );
 
       if (!match || match.spotId !== spotId) {

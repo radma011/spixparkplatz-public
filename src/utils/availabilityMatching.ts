@@ -6,7 +6,9 @@ import {
   calculateMatchScore,
   calculateOfferTimeWindow as calculateOfferTimeWindowCore,
   toDate,
+  getFreeTimeWindowsFromBlocked,
 } from '../shared/matching';
+import FirestoreService from '../services/FirestoreService';
 import type {AvailabilityLike, TimeWindow} from '../shared/matching';
 
 /**
@@ -89,22 +91,18 @@ export async function isTimeWindowBlocked(
 
 /**
  * Find the best matching availability for a request.
- * Uses shared expand/overlap/score; checks blocking for the REQUEST window when checkSpotAvailabilityFn is provided.
+ * Splits each candidate window into spot-free sub-windows (same as Cloud Functions).
  */
 export async function findBestMatchingAvailability(
   request: ParkingRequest,
   availabilities: ParkingAvailability[],
-  checkSpotAvailabilityFn?: (
-    spotId: string,
-    facilityCode: string,
-    from: Date,
-    until: Date,
-  ) => Promise<{request: ParkingRequest; overlapMinutes: number} | null>,
+  options?: {excludeRequestId?: string},
 ): Promise<AvailabilityTimeWindow | null> {
   const requestFrom = toDate(request.from) ?? (request.from instanceof Date ? request.from : new Date(request.from as string | number));
   const requestUntil = toDate(request.until) ?? (request.until instanceof Date ? request.until : new Date(request.until as string | number));
   const allowPartialOffers = request.allowPartialOffers !== false;
   const reqCode = normalizeFacilityCode(request.facilityCode);
+  const excludeRequestId = options?.excludeRequestId ?? request.id;
   const allWindows: AvailabilityTimeWindow[] = [];
 
   for (const availability of availabilities) {
@@ -117,23 +115,27 @@ export async function findBestMatchingAvailability(
     for (const window of windows) {
       if (!overlaps(requestFrom, requestUntil, window.from, window.until)) continue;
 
-      if (!allowPartialOffers) {
-        if (window.from.getTime() > requestFrom.getTime()) continue;
-        if (window.until.getTime() < requestUntil.getTime()) continue;
-      }
+      const blocked = await FirestoreService.collectBlockingIntervals(
+        window.spotId,
+        request.facilityCode,
+        window.from,
+        window.until,
+        excludeRequestId,
+      );
+      const freeParts = getFreeTimeWindowsFromBlocked(window.from, window.until, blocked);
 
-      if (checkSpotAvailabilityFn) {
-        const isBlocked = await isTimeWindowBlocked(
-          window.spotId,
-          request.facilityCode,
-          window.from,
-          window.until,
-          checkSpotAvailabilityFn,
-        );
-        if (isBlocked) continue;
-      }
+      for (const part of freeParts) {
+        if (!allowPartialOffers) {
+          if (part.from.getTime() > requestFrom.getTime()) continue;
+          if (part.until.getTime() < requestUntil.getTime()) continue;
+        }
 
-      allWindows.push(window);
+        allWindows.push({
+          ...window,
+          from: part.from,
+          until: part.until,
+        });
+      }
     }
   }
 

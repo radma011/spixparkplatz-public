@@ -110,7 +110,6 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const [offersByAvailabilityId, setOffersByAvailabilityId] = useState<
     Record<string, OfferFromAvailability[]>
   >({});
-  const availabilityOfferUnsubsRef = useRef<Record<string, () => void>>({});
   const listRef = useRef<SectionList<ParkingRequest, RequestSection> | null>(null);
   const [offerModalRequest, setOfferModalRequest] = useState<ParkingRequest | null>(null);
   const [showOfferModal, setShowOfferModal] = useState(false);
@@ -127,6 +126,8 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   const [isAdmin, setIsAdmin] = useState(false);
   const isAdminRef = useRef(false);
   const requestsUnsubscribeRef = useRef<(() => void) | null>(null);
+  const availabilityOffersUnsubRef = useRef<(() => void) | null>(null);
+  const availabilityOffersLoadGenRef = useRef(0);
 
   const reloadRequests = useCallback(
     () =>
@@ -978,26 +979,40 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
   // Subscribe to "offers from this availability" when on Frei tab (for "Bereits angeboten" in each card).
   useEffect(() => {
     if (activeTab !== 'available') {
-      Object.values(availabilityOfferUnsubsRef.current).forEach((unsub) => {
-        try {
-          unsub();
-        } catch (_) {}
-      });
-      availabilityOfferUnsubsRef.current = {};
+      try {
+        availabilityOffersUnsubRef.current?.();
+      } catch (_) {}
+      availabilityOffersUnsubRef.current = null;
       setOffersByAvailabilityId({});
       return;
     }
     const list = displayAvailabilities;
-    list.forEach((av) => {
-      if (availabilityOfferUnsubsRef.current[av.id]) return;
-      const unsub = FirestoreService.watchOffersByOffererAndSpot(
-        av.userId,
-        av.spotId,
-        (items) => {
-          // Nur Angebote anzeigen, deren Angebots-Zeitfenster in diese Verfügbarkeit fällt.
-          // Bei wiederkehrenden: tatsächlich aktuelle Perioden (nächste Vorkommen ab jetzt) nutzen.
-          // Stornierte (withdrawn) und standby nicht anzeigen.
-          const filtered = items.filter(({offer}) => {
+    if (list.length === 0) {
+      setOffersByAvailabilityId({});
+      return;
+    }
+
+    const loadGen = ++availabilityOffersLoadGenRef.current;
+
+    try {
+      availabilityOffersUnsubRef.current?.();
+    } catch (_) {}
+
+    const pairs = list.map((av) => ({
+      offererId: av.userId,
+      spotId: av.spotId,
+      resultKey: av.id,
+    }));
+
+    availabilityOffersUnsubRef.current = FirestoreService.watchOffersByOffererSpotPairs(
+      currentUserData.facilityCode,
+      pairs,
+      (map) => {
+        if (loadGen !== availabilityOffersLoadGenRef.current) return;
+        const next: Record<string, OfferFromAvailability[]> = {};
+        list.forEach((av) => {
+          const items = map[av.id] ?? [];
+          next[av.id] = items.filter(({offer}) => {
             if (offer.status === 'withdrawn' || offer.status === 'standby') return false;
             const from = offer.from.getTime();
             const until = offer.until.getTime();
@@ -1009,32 +1024,17 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
             }
             return from < av.until.getTime() && until > av.from.getTime();
           });
-          setOffersByAvailabilityId((prev) => ({...prev, [av.id]: filtered}));
-        },
-        currentUserData.facilityCode,
-      );
-      availabilityOfferUnsubsRef.current[av.id] = unsub;
-    });
-    const currentIds = new Set(list.map((a) => a.id));
-    Object.keys(availabilityOfferUnsubsRef.current).forEach((id) => {
-      if (currentIds.has(id)) return;
-      try {
-        availabilityOfferUnsubsRef.current[id]?.();
-      } catch (_) {}
-      delete availabilityOfferUnsubsRef.current[id];
-      setOffersByAvailabilityId((prev) => {
-        const next = {...prev};
-        delete next[id];
-        return next;
-      });
-    });
+        });
+        setOffersByAvailabilityId(next);
+      },
+    );
+
     return () => {
-      list.forEach((av) => {
-        try {
-          availabilityOfferUnsubsRef.current[av.id]?.();
-        } catch (_) {}
-        delete availabilityOfferUnsubsRef.current[av.id];
-      });
+      availabilityOffersLoadGenRef.current += 1;
+      try {
+        availabilityOffersUnsubRef.current?.();
+      } catch (_) {}
+      availabilityOffersUnsubRef.current = null;
     };
   }, [activeTab, displayAvailabilities, currentUserData.facilityCode]);
 

@@ -11,6 +11,7 @@ import {
   getDocs,
   Timestamp,
   FieldValue,
+  onSnapshot,
 } from '@react-native-firebase/firestore';
 import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
 import {ParkingAvailability, RecurrenceRule} from '../models/ParkingAvailability';
@@ -265,25 +266,24 @@ class ParkingAvailabilityService {
         onNext: (snapshot: FirebaseFirestoreTypes.QuerySnapshot) => void,
         onError?: (error: Error) => void,
       ) => {
-        return q.onSnapshot(
+        return onSnapshot(
+          q,
           (snapshot) => {
-            // Filter client-side
-            const filtered = snapshot.docs.filter((doc) => {
-              const data = doc.data();
+            const filtered = snapshot.docs.filter((docSnap) => {
+              const data = docSnap.data();
               return (
                 data.facilityCode === normalizedCode &&
                 data.isArchived !== true &&
                 (data.isActive === true || data.isActive === undefined)
               );
             });
-            // Create a filtered snapshot-like object
             onNext({
               docs: filtered,
               empty: filtered.length === 0,
               size: filtered.length,
               metadata: snapshot.metadata,
               query: snapshot.query,
-            } as any);
+            } as FirebaseFirestoreTypes.QuerySnapshot);
           },
           onError,
         );

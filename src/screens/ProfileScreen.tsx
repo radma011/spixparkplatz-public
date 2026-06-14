@@ -20,6 +20,7 @@ import KeyboardAwareScreen from '../components/KeyboardAwareScreen';
 import QRCodeGenerator from '../components/QRCodeGenerator';
 import {getColors} from '../theme/colors';
 import {FacilityLayoutEditor} from '../facilityLayout';
+import {formatAppVersion, getAppVersionInfo} from '../utils/appVersion';
 
 interface Props {
   userData: UserData;
@@ -51,6 +52,7 @@ const ProfileScreen: React.FC<Props> = ({
   const [showLayoutEditor, setShowLayoutEditor] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [facilityName, setFacilityName] = useState<string | undefined>(undefined);
+  const appVersionLabel = formatAppVersion(getAppVersionInfo());
 
   // Check if user is admin and get facility info
   useEffect(() => {
@@ -604,6 +606,10 @@ const ProfileScreen: React.FC<Props> = ({
             <Text style={styles.deleteAccountButtonText}>Account löschen</Text>
           </TouchableOpacity>
         </View>
+
+        <Text style={[styles.versionText, {color: colors.subtext}]}>
+          Version {appVersionLabel}
+        </Text>
       </View>
 
       <Modal
@@ -810,6 +816,12 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 5,
+  },
+  versionText: {
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 24,
   },
 });
 

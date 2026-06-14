@@ -248,6 +248,13 @@ export const FieldValue = {
   arrayRemove: (...elements: any[]) => webArrayRemove(...elements),
 };
 
+/** Modular API parity with @react-native-firebase/firestore */
+export const serverTimestamp = () => webServerTimestamp();
+export const deleteField = () => webDeleteField();
+export const increment = (n: number) => webIncrement(n);
+export const arrayUnion = (...elements: any[]) => webArrayUnion(...elements);
+export const arrayRemove = (...elements: any[]) => webArrayRemove(...elements);
+
 export const FieldPath = {
   documentId: () => webFieldPath.documentId(),
 };

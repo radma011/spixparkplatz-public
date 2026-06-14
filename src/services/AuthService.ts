@@ -10,6 +10,7 @@ import {
   signOut,
   verifyBeforeUpdateEmail,
 } from '@react-native-firebase/auth';
+import AppVersionService from './AppVersionService';
 import FirestoreService from './FirestoreService';
 import PushNotificationService from './PushNotificationService';
 
@@ -289,6 +290,8 @@ class AuthService {
               username: userData.username,
               phone: userData.phone,
             });
+
+            await AppVersionService.syncIfNeeded(firebaseUser.uid);
           }
           console.log('[AuthService] Calling callback with userData:', userData ? `User: ${userData.uid}` : 'null');
           callback(userData);

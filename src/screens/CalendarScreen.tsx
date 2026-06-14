@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme, Dimensions, useWindowDimensions} from 'react-native';
+import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme, Dimensions, useWindowDimensions, ActivityIndicator} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import FirestoreService, {OfferFromAvailability} from '../services/FirestoreService';
@@ -11,6 +11,7 @@ import {getColors} from '../theme/colors';
 import WatermarkBackground from '../components/WatermarkBackground';
 import {calculateNextOccurrences} from '../utils/recurrenceUtils';
 import {getFreeTimeWindows} from '../utils/availabilityFreeWindows';
+import {CALENDAR_OFFER_DEBUG, formatOfferDebugTime, logCalendarOffer} from '../utils/calendarOfferDebug';
 
 function calendarOfferKey(userId: string, spotId: string): string {
   return `${userId}:${spotId}`;
@@ -156,7 +157,8 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   const [openRequests, setOpenRequests] = useState<ParkingRequest[]>([]);
   const [availabilities, setAvailabilities] = useState<ParkingAvailability[]>([]);
   const [offersBySpotKey, setOffersBySpotKey] = useState<Record<string, OfferFromAvailability[]>>({});
-  const spotOfferUnsubsRef = useRef<Record<string, () => void>>({});
+  const calendarOffersUnsubRef = useRef<(() => void) | null>(null);
+  const offersLoadGenRef = useRef(0);
   const [publicUsers, setPublicUsers] = useState<Record<string, {username?: string; phone?: string}>>({});
   const publicUserUnsubsRef = useRef<Record<string, () => void>>({});
   
@@ -166,14 +168,28 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
   const [showOffer, setShowOffer] = useState(true);
   const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'mine' | 'none'>('all');
   const [showRequest, setShowRequest] = useState(true);
+  const [requestsReady, setRequestsReady] = useState(false);
+  const [availabilitiesReady, setAvailabilitiesReady] = useState(false);
+  const [offersPendingKeys, setOffersPendingKeys] = useState<Set<string>>(() => new Set());
+  const requestsReadyRef = useRef({my: false, myOffers: false, open: false});
 
   // Subscribe: my requests + my offers
   useEffect(() => {
+    setRequestsReady(false);
+    requestsReadyRef.current = {my: false, myOffers: false, open: false};
+
+    const markRequestsReady = (which: 'my' | 'myOffers' | 'open') => {
+      requestsReadyRef.current[which] = true;
+      const r = requestsReadyRef.current;
+      if (r.my && r.myOffers && r.open) setRequestsReady(true);
+    };
+
     const unsubReq = FirestoreService.watchMyRequests(currentUserId, facilityCode).onSnapshot((snap: any) => {
       const items = snap.docs
         .map((doc: any) => FirestoreService.parkingRequestFromDocSnap(doc))
         .filter((r: ParkingRequest) => r.facilityCode === facilityCode); // Filter by facilityCode client-side
       setMyRequests(items);
+      markRequestsReady('my');
     });
 
     const unsubOffers = FirestoreService.watchMyOffers(currentUserId, facilityCode).onSnapshot((snap: any) => {
@@ -181,6 +197,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
         .map((doc: any) => FirestoreService.parkingRequestFromDocSnap(doc))
         .filter((r: ParkingRequest) => r.facilityCode === facilityCode); // Filter by facilityCode client-side
       setMyOffers(items);
+      markRequestsReady('myOffers');
     });
 
     return () => {
@@ -201,6 +218,9 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
         });
       // We only want OTHER people's open requests here; own requests are already in myRequests.
       setOpenRequests(items.filter((r: ParkingRequest) => r.requestedBy !== currentUserId));
+      requestsReadyRef.current.open = true;
+      const r = requestsReadyRef.current;
+      if (r.my && r.myOffers && r.open) setRequestsReady(true);
     });
     return () => {
       try { unsub(); } catch {}
@@ -209,6 +229,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
 
   // Subscribe: availabilities (all active availabilities in the facility)
   useEffect(() => {
+    setAvailabilitiesReady(false);
     // Watch all availabilities in the facility
     const unsub = ParkingAvailabilityService.watchFacilityAvailabilities(facilityCode).onSnapshot(
       (snapshot: any) => {
@@ -216,6 +237,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
           ParkingAvailabilityService.availabilityFromDocSnap(doc),
         );
         setAvailabilities(allAvailabilities);
+        setAvailabilitiesReady(true);
       },
       (error: any) => {
         console.error('Error watching availabilities:', error);
@@ -226,16 +248,50 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     };
   }, [facilityCode]);
 
+  useEffect(() => {
+    if (!CALENDAR_OFFER_DEBUG) return;
+    logCalendarOffer('screen opened', {
+      currentUserId,
+      facilityCode,
+      availabilityFilter,
+    });
+    return () => {
+      logCalendarOffer('screen closed');
+    };
+  }, []);
+
   // Offers pro Verfügbarkeit (offerer + spot — wie Frei-Tab, zuverlässig auf allen Plattformen)
+  const knownRequests = useMemo(() => {
+    const map = new Map<string, ParkingRequest>();
+    for (const r of [...myRequests, ...myOffers, ...openRequests]) {
+      map.set(r.id, r);
+    }
+    return Array.from(map.values());
+  }, [myRequests, myOffers, openRequests]);
+
+  useEffect(() => {
+    if (!CALENDAR_OFFER_DEBUG) return;
+    logCalendarOffer('data loaded', {
+      myRequests: myRequests.length,
+      myOffers: myOffers.length,
+      openRequests: openRequests.length,
+      availabilities: availabilities.filter((a) => a.isActive).length,
+      knownRequests: knownRequests.length,
+      offerKeysLoaded: Object.keys(offersBySpotKey),
+      offersBySpotKey: Object.fromEntries(
+        Object.entries(offersBySpotKey).map(([k, v]) => [k, v.length]),
+      ),
+    });
+  }, [myRequests, myOffers, openRequests, availabilities, knownRequests, offersBySpotKey]);
+
   useEffect(() => {
     if (availabilityFilter === 'none') {
-      Object.values(spotOfferUnsubsRef.current).forEach((unsub) => {
-        try {
-          unsub();
-        } catch (_) {}
-      });
-      spotOfferUnsubsRef.current = {};
+      try {
+        calendarOffersUnsubRef.current?.();
+      } catch (_) {}
+      calendarOffersUnsubRef.current = null;
       setOffersBySpotKey({});
+      setOffersPendingKeys(new Set());
       return;
     }
 
@@ -247,32 +303,70 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
       pairsNeeded.set(key, {userId: av.userId, spotId: av.spotId});
     });
 
-    pairsNeeded.forEach(({userId, spotId}, key) => {
-      if (spotOfferUnsubsRef.current[key]) return;
+    const pendingKeys = new Set(pairsNeeded.keys());
+    setOffersPendingKeys(pendingKeys);
 
-      spotOfferUnsubsRef.current[key] = FirestoreService.watchOffersByOffererAndSpot(
-        userId,
-        spotId,
-        (items) => {
-          setOffersBySpotKey((prev) => ({...prev, [key]: items}));
-        },
-        facilityCode,
-      );
-    });
+    if (pendingKeys.size === 0) {
+      setOffersBySpotKey({});
+      return;
+    }
 
-    Object.keys(spotOfferUnsubsRef.current).forEach((key) => {
-      if (pairsNeeded.has(key)) return;
-      try {
-        spotOfferUnsubsRef.current[key]?.();
-      } catch (_) {}
-      delete spotOfferUnsubsRef.current[key];
-      setOffersBySpotKey((prev) => {
-        const next = {...prev};
-        delete next[key];
-        return next;
+    const loadGen = ++offersLoadGenRef.current;
+
+    try {
+      calendarOffersUnsubRef.current?.();
+    } catch (_) {}
+
+    const pairs = Array.from(pairsNeeded.entries()).map(([resultKey, {userId, spotId}]) => ({
+      offererId: userId,
+      spotId,
+      resultKey,
+    }));
+
+    if (CALENDAR_OFFER_DEBUG) {
+      logCalendarOffer('subscribe offers batch', {
+        loadGen,
+        pairCount: pairs.length,
+        keys: pairs.map((p) => p.resultKey),
       });
-    });
+    }
+
+    calendarOffersUnsubRef.current = FirestoreService.watchOffersByOffererSpotPairs(
+      facilityCode,
+      pairs,
+      (map) => {
+        if (loadGen !== offersLoadGenRef.current) {
+          if (CALENDAR_OFFER_DEBUG) {
+            logCalendarOffer('offers batch callback ignored (stale)', {loadGen});
+          }
+          return;
+        }
+        if (CALENDAR_OFFER_DEBUG) {
+          logCalendarOffer('offers batch callback', {
+            loadGen,
+            keys: Object.keys(map),
+            counts: Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.length])),
+          });
+        }
+        setOffersBySpotKey(map);
+        setOffersPendingKeys(new Set());
+      },
+    );
+
+    return () => {
+      offersLoadGenRef.current += 1;
+      try {
+        calendarOffersUnsubRef.current?.();
+      } catch (_) {}
+      calendarOffersUnsubRef.current = null;
+    };
   }, [availabilities, availabilityFilter, currentUserId, facilityCode]);
+
+  const isCalendarLoading = useMemo(() => {
+    if (!requestsReady || !availabilitiesReady) return true;
+    if (availabilityFilter !== 'none' && offersPendingKeys.size > 0) return true;
+    return false;
+  }, [requestsReady, availabilitiesReady, availabilityFilter, offersPendingKeys]);
 
   // Keep a live cache of usernames for involved users (so we can show the other person's name in calendar)
   useEffect(() => {
@@ -413,7 +507,11 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
 
         if (availabilityFilter === 'mine' && av.userId !== currentUserId) return;
 
-        const offers = offersBySpotKey[calendarOfferKey(av.userId, av.spotId)] ?? [];
+        const offerKey = calendarOfferKey(av.userId, av.spotId);
+        // Erst rendern, wenn Offers geladen sind — sonst kurz voller Zeitraum (offerCount 0).
+        if (!Object.prototype.hasOwnProperty.call(offersBySpotKey, offerKey)) return;
+
+        const offers = offersBySpotKey[offerKey];
         const otherUsername =
           av.userId === currentUserId ? 'Du' : (av.username || publicUsers[av.userId]?.username);
 
@@ -426,6 +524,29 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
           const freeWindows = getFreeTimeWindows(windowFrom, windowUntil, offers, {
             includeActiveOffers: true,
           });
+          if (CALENDAR_OFFER_DEBUG) {
+            logCalendarOffer('free windows computed', {
+              availabilityId: av.id,
+              key: calendarOfferKey(av.userId, av.spotId),
+              userId: av.userId,
+              spotId: av.spotId,
+              username: otherUsername,
+              recurring,
+              windowFrom: formatOfferDebugTime(windowFrom),
+              windowUntil: formatOfferDebugTime(windowUntil),
+              offerCount: offers.length,
+              offers: offers.map((o) => ({
+                status: o.offer.status,
+                from: formatOfferDebugTime(o.offer.from),
+                until: formatOfferDebugTime(o.offer.until),
+              })),
+              freeWindowCount: freeWindows.length,
+              freeWindows: freeWindows.map((fw) => ({
+                from: formatOfferDebugTime(fw.from),
+                until: formatOfferDebugTime(fw.until),
+              })),
+            });
+          }
           freeWindows.forEach((fw, fwIdx) => {
             out.push({
               id: fwIdx === 0 ? idBase : `${idBase}-free${fwIdx}`,
@@ -663,6 +784,13 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
         </TouchableOpacity>
       </View>
 
+      {isCalendarLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.brand} />
+          <Text style={[styles.loadingText, {color: colors.subtext}]}>Kalender wird geladen…</Text>
+        </View>
+      ) : (
+        <>
       {mode === 'month' ? (
         <View style={[styles.monthContent, isLandscape && isTablet && styles.monthContentLandscapeTablet]}>
           {isLandscape && isTablet ? (
@@ -953,6 +1081,8 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
           </Text>
         </TouchableOpacity>
       </View>
+        </>
+      )}
       </View>
     </WatermarkBackground>
   );
@@ -1030,6 +1160,17 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   monthContentLandscapeTablet: {
     // No maxHeight needed - using two-column layout instead
   },
@@ -1065,20 +1206,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    height: '100%',
+    flex: 1,
+    paddingVertical: 2,
   },
   dayTextContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 24, // Fixed height to keep numbers aligned
+    width: '100%',
   },
   dayText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    lineHeight: 16,
-    height: 16, // Fixed height for the number
   },
   cellSelected: {
     borderRadius: 12,
@@ -1106,7 +1246,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
-    height: 7, // Fixed height to reserve space for dots
+    minHeight: 7,
   },
   dot: {width: 7, height: 7, borderRadius: 999},
   dotOpen: {backgroundColor: '#FF9800'},
