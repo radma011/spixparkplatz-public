@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme, Dimensions, useWindowDimensions, ActivityIndicator} from 'react-native';
+import {ScrollView, View, Text, StyleSheet, TouchableOpacity, useColorScheme, useWindowDimensions, ActivityIndicator} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import FirestoreService, {OfferFromAvailability} from '../services/FirestoreService';
@@ -137,6 +137,7 @@ type CalendarEntry = {
   isFulfilled: boolean;
   isRecurring?: boolean; // For availability entries
 };
+type MonthCell = {key: string; day?: number};
 
 const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, onOpenRequest}) => {
   const insets = useSafeAreaInsets();
@@ -613,11 +614,11 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     setCursor(selectedDate);
   }, [selectedDate]);
 
-  const grid = useMemo(() => {
+  const weeks = useMemo(() => {
     const first = startOfMonth(cursor);
     const offset = mondayFirstWeekdayIndex(first);
     const totalDays = daysInMonth(cursor);
-    const cells: Array<{key: string; day?: number}> = [];
+    const cells: MonthCell[] = [];
     for (let i = 0; i < offset; i++) {
       cells.push({key: `e-${i}`});
     }
@@ -628,7 +629,11 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     while (cells.length % 7 !== 0) {
       cells.push({key: `t-${cells.length}`});
     }
-    return cells;
+    const rows: MonthCell[][] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push(cells.slice(i, i + 7));
+    }
+    return rows;
   }, [cursor]);
 
   const monthDayStats = useMemo(() => {
@@ -707,6 +712,73 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
     if (e.marker === 'open' || e.marker === 'hasOffer' || e.marker === 'availability') return styles.eventTextWhite;
     return [styles.eventText, {color: colors.text}];
   };
+
+  const renderMonthCell = (c: MonthCell) => {
+    if (!c.day) return <View key={c.key} style={styles.cell} />;
+    const day = new Date(cursor.getFullYear(), cursor.getMonth(), c.day);
+    day.setHours(0, 0, 0, 0);
+    const k = dayKey(day);
+    const stats = monthDayStats[k] || {open: 0, hasOffer: 0, offer: 0, other: 0, availability: 0};
+    const isSelected = k === selectedKey;
+    const isToday = k === todayKey;
+
+    const hasDots =
+      (stats.open > 0 && showOpen) ||
+      (stats.hasOffer > 0 && showHasOffer) ||
+      (stats.offer > 0 && showOffer) ||
+      (stats.availability > 0 && availabilityFilter !== 'none') ||
+      (stats.other > 0 && showRequest);
+
+    return (
+      <TouchableOpacity
+        key={c.key}
+        onPress={() => setSelectedDate(day)}
+        style={[
+          styles.cell,
+          isSelected && [
+            styles.cellSelected,
+            colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
+          ],
+          isToday && styles.cellTodayOutline,
+        ]}>
+        <View style={styles.dayContent}>
+          <View style={styles.dayTextContainer}>
+            <Text
+              style={[
+                styles.dayText,
+                {color: colors.text},
+                isSelected && styles.dayTextSelected,
+              ]}>
+              {c.day}
+            </Text>
+            <View style={styles.dotsRow}>
+              {hasDots ? (
+                <>
+                  {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
+                  {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
+                  {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
+                  {stats.availability > 0 && availabilityFilter !== 'none' ? (
+                    <View style={[styles.dot, styles.dotAvailability]} />
+                  ) : null}
+                  {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
+                </>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderMonthGrid = () => (
+    <View style={styles.grid}>
+      {weeks.map((week, wi) => (
+        <View key={`w-${wi}`} style={styles.weekRow}>
+          {week.map(renderMonthCell)}
+        </View>
+      ))}
+    </View>
+  );
 
   return (
     <WatermarkBackground style={{backgroundColor: colors.isDark ? colors.screenBg : '#fff'}}>
@@ -805,61 +877,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
                     </Text>
                   ))}
                 </View>
-                <View style={styles.grid}>
-                  {grid.map((c) => {
-                    if (!c.day) return <View key={c.key} style={styles.cell} />;
-                    const day = new Date(cursor.getFullYear(), cursor.getMonth(), c.day);
-                    day.setHours(0, 0, 0, 0);
-                    const k = dayKey(day);
-                    const stats = monthDayStats[k] || {open: 0, hasOffer: 0, offer: 0, other: 0};
-                    const isSelected = k === selectedKey;
-                    const isToday = k === todayKey;
-
-                    const hasDots = (stats.open > 0 && showOpen) || 
-                                   (stats.hasOffer > 0 && showHasOffer) || 
-                                   (stats.offer > 0 && showOffer) || 
-                                   (stats.availability > 0 && availabilityFilter !== 'none') || 
-                                   (stats.other > 0 && showRequest);
-                    
-                    return (
-                      <TouchableOpacity
-                        key={c.key}
-                        onPress={() => setSelectedDate(day)}
-                        style={[
-                          styles.cell,
-                          isSelected && [
-                            styles.cellSelected,
-                            colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
-                          ],
-                          isToday && styles.cellTodayOutline,
-                        ]}>
-                        <View style={styles.dayContent}>
-                          <View style={styles.dayTextContainer}>
-                            <Text
-                              style={[
-                                styles.dayText,
-                                {color: colors.text},
-                                isSelected && styles.dayTextSelected,
-                              ]}>
-                              {c.day}
-                            </Text>
-                            <View style={styles.dotsRow}>
-                              {hasDots ? (
-                                <>
-                                  {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
-                                  {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
-                                  {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
-                                  {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
-                                  {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
-                                </>
-                              ) : null}
-                            </View>
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                {renderMonthGrid()}
               </View>
               
               {/* Right column: Day entries */}
@@ -899,61 +917,7 @@ const CalendarScreen: React.FC<Props> = ({onBack, currentUserId, facilityCode, o
                 ))}
               </View>
 
-              <View style={styles.grid}>
-                {grid.map((c) => {
-                  if (!c.day) return <View key={c.key} style={styles.cell} />;
-                  const day = new Date(cursor.getFullYear(), cursor.getMonth(), c.day);
-                  day.setHours(0, 0, 0, 0);
-                  const k = dayKey(day);
-                  const stats = monthDayStats[k] || {open: 0, hasOffer: 0, offer: 0, other: 0};
-                  const isSelected = k === selectedKey;
-                  const isToday = k === todayKey;
-
-                  const hasDots = (stats.open > 0 && showOpen) || 
-                                 (stats.hasOffer > 0 && showHasOffer) || 
-                                 (stats.offer > 0 && showOffer) || 
-                                 (stats.availability > 0 && availabilityFilter !== 'none') || 
-                                 (stats.other > 0 && showRequest);
-                  
-                  return (
-                    <TouchableOpacity
-                      key={c.key}
-                      onPress={() => setSelectedDate(day)}
-                      style={[
-                        styles.cell,
-                        isSelected && [
-                          styles.cellSelected,
-                          colors.isDark ? styles.cellSelectedDark : styles.cellSelectedLight,
-                        ],
-                        isToday && styles.cellTodayOutline,
-                      ]}>
-                      <View style={styles.dayContent}>
-                        <View style={styles.dayTextContainer}>
-                          <Text
-                            style={[
-                              styles.dayText,
-                              {color: colors.text},
-                              isSelected && styles.dayTextSelected,
-                            ]}>
-                            {c.day}
-                          </Text>
-                          <View style={styles.dotsRow}>
-                            {hasDots ? (
-                              <>
-                                {stats.open > 0 && showOpen ? <View style={[styles.dot, styles.dotOpen]} /> : null}
-                                {stats.hasOffer > 0 && showHasOffer ? <View style={[styles.dot, styles.dotHasOffer]} /> : null}
-                                {stats.offer > 0 && showOffer ? <View style={[styles.dot, styles.dotOffer]} /> : null}
-                                {stats.availability > 0 && availabilityFilter !== 'none' ? <View style={[styles.dot, styles.dotAvailability]} /> : null}
-                                {stats.other > 0 && showRequest ? <View style={[styles.dot, styles.dotRequest]} /> : null}
-                              </>
-                            ) : null}
-                          </View>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              {renderMonthGrid()}
 
               <View style={styles.dayListHeader}>
                 <Text style={[styles.dayListTitle, {color: colors.text}]}>
@@ -1181,7 +1145,6 @@ const styles = StyleSheet.create({
   },
   landscapeCalendarColumn: {
     width: '50%',
-    paddingHorizontal: 12,
   },
   landscapeEntriesColumn: {
     width: '50%',
@@ -1190,13 +1153,14 @@ const styles = StyleSheet.create({
     paddingRight: 16,
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 12,
     paddingTop: 8,
   },
+  weekRow: {
+    flexDirection: 'row',
+  },
   cell: {
-    width: `${100 / 7}%`,
+    flex: 1,
     aspectRatio: 1.2,
     padding: 4,
     alignItems: 'center',

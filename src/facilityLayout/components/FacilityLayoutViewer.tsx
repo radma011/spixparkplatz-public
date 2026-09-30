@@ -13,7 +13,7 @@ import {getColors} from '../../theme/colors';
 import FacilityLayoutService from '../FacilityLayoutService';
 import FirestoreService from '../../services/FirestoreService';
 import LayoutSurface, {type LayoutSurfaceHandle} from './LayoutSurface';
-import {SPOT_HIGHLIGHT_GREEN} from './FacilityLayoutMapModal';
+import {SPOT_HIGHLIGHT_GREEN} from '../constants';
 import {MAX_LAYOUT_ZOOM, MIN_LAYOUT_ZOOM} from '../gridMath';
 import type {FacilityLayout} from '../types';
 

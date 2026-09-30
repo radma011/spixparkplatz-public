@@ -302,7 +302,7 @@
 				CODE_SIGN_ENTITLEMENTS = spixparkplatz/spixparkplatz.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N2N8GJQSWQ;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = spixparkplatz/Info.plist;
@@ -313,7 +313,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 1.6.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -341,7 +341,7 @@
 				CODE_SIGN_ENTITLEMENTS = spixparkplatz/spixparkplatz.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N2N8GJQSWQ;
 				INFOPLIST_FILE = spixparkplatz/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Spix Parken";
@@ -351,7 +351,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 1.6.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

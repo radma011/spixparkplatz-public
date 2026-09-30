@@ -8,6 +8,9 @@ export const ELEMENT_COLORS: Record<SymbolKind | 'spot' | 'street', string> = {
   street: '#4B5563',
 };
 
+/** Highlight color for selected / offered spots on the layout map. */
+export const SPOT_HIGHLIGHT_GREEN = '#22C55E';
+
 /** Viewer: Parkplätze ohne registrierten Besitzer in der Anlage. */
 export const UNOWNED_SPOT_OPACITY = 0.5;
 

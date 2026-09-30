@@ -1,8 +1,7 @@
 import React from 'react';
 import {Modal} from 'react-native';
+import {SPOT_HIGHLIGHT_GREEN} from '../constants';
 import FacilityLayoutViewer from './FacilityLayoutViewer';
-
-export const SPOT_HIGHLIGHT_GREEN = '#22C55E';
 
 type Props = {
   visible: boolean;
