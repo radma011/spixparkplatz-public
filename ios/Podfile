@@ -10,15 +10,14 @@ require 'fileutils'
 platform :ios, '16.0'
 prepare_react_native_project!
 
-# Required for Firebase Swift pods when building Pods as static libraries.
-# (Without this, CocoaPods errors that FirebaseAuth/FirebaseFirestore deps do not define modules.)
-use_modular_headers!
+# Required by @react-native-firebase (FirebaseAuth is Swift).
+# Without static frameworks you get: 'FirebaseAuth/FirebaseAuth-Swift.h' file not found
+# See https://rnfirebase.io/#altering-cocoapods-to-use-frameworks
+$RNFirebaseAsStaticFramework = true
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
-end
+linkage = ENV['USE_FRAMEWORKS'] || 'static'
+Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+use_frameworks! :linkage => linkage.to_sym
 
 target 'spixparkplatz' do
   config = use_native_modules!

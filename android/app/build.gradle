@@ -107,11 +107,18 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
-                storeFile file(MYAPP_RELEASE_STORE_FILE)
-                storePassword MYAPP_RELEASE_STORE_PASSWORD
-                keyAlias MYAPP_RELEASE_KEY_ALIAS
-                keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            // Prefer android/keystore.properties (local); fall back to Gradle project props.
+            def keystorePropsFile = rootProject.file("keystore.properties")
+            def keystoreProps = new Properties()
+            if (keystorePropsFile.exists()) {
+                keystorePropsFile.withInputStream { keystoreProps.load(it) }
+            }
+            def storeFileName = keystoreProps['MYAPP_RELEASE_STORE_FILE'] ?: (project.hasProperty('MYAPP_RELEASE_STORE_FILE') ? MYAPP_RELEASE_STORE_FILE : null)
+            if (storeFileName) {
+                storeFile rootProject.file(storeFileName)
+                storePassword keystoreProps['MYAPP_RELEASE_STORE_PASSWORD'] ?: MYAPP_RELEASE_STORE_PASSWORD
+                keyAlias keystoreProps['MYAPP_RELEASE_KEY_ALIAS'] ?: MYAPP_RELEASE_KEY_ALIAS
+                keyPassword keystoreProps['MYAPP_RELEASE_KEY_PASSWORD'] ?: MYAPP_RELEASE_KEY_PASSWORD
             }
         }
     }
@@ -120,8 +127,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Signing config for production builds
-            // Configure MYAPP_RELEASE_* properties in android/gradle.properties
+            // Local: android/keystore.properties. EAS: injects signing in PREPARE_CREDENTIALS.
             // See PLAY_STORE_PUBLICATION.md for instructions
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
@@ -134,7 +140,7 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    if (hermesEnabled.toBoolean()) {
+    if ((findProperty("hermesEnabled") ?: "true").toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor

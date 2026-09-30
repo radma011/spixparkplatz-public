@@ -103,5 +103,6 @@ web/firebase-config.ts
 !.yarn/sdks
 !.yarn/versions
 .git.backup
-android/gradle.properties
-android/gradle.properties
+# Local signing / machine overrides (committed gradle.properties is EAS-safe)
+android/keystore.properties
+android/gradle.properties.local

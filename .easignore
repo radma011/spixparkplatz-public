@@ -1,0 +1,91 @@
+# Used by EAS Build upload (replaces .gitignore when present).
+# Keep in sync with .gitignore, but include Firebase client configs needed on the builder.
+
+# OSX
+.DS_Store
+
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+**/.xcode.env.local
+
+# Android/IntelliJ
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+.kotlin/
+
+# node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Web
+web-build/
+web/fonts/
+
+# Local env / secrets (except Firebase client configs below)
+.env
+.env.*
+functions/.runtimeconfig.json
+**/*serviceAccount*.json
+**/*ServiceAccount*.json
+**/*firebase-adminsdk*.json
+**/*FirebaseAdminSdk*.json
+firebase-config.js
+web/firebase-config.ts
+
+# fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+*.jsbundle
+
+# CocoaPods (installed on EAS)
+**/Pods/
+/vendor/bundle/
+
+.metro-health-check*
+/coverage
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.git.backup
+
+# Local-only Android overrides (not for EAS)
+android/keystore.properties
+android/gradle.properties.local
+
+# Extra local clutter
+agent-transcripts/
+*.log
+test
+
+# REQUIRED for Firebase on EAS (normally gitignored)
+!android/app/google-services.json
+!ios/spixparkplatz/GoogleService-Info.plist
