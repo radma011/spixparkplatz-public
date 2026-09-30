@@ -1294,6 +1294,52 @@ class FirestoreService {
     });
   }
 
+  /** Suchender gibt eine Annahme frei (Angebot wird withdrawn / requester_released). */
+  async releaseAcceptedOffer(
+    requestId: string,
+    offerId: string,
+    requesterId: string,
+  ): Promise<void> {
+    const requestRef = doc(this.requestsCollection, requestId);
+    const requestSnap = await getDoc(requestRef);
+
+    if (!requestSnap.exists()) {
+      throw new Error('Anfrage existiert nicht mehr');
+    }
+
+    const requestData = readDocData(requestSnap);
+    if (!requestData) {
+      throw new Error('Anfrage existiert nicht mehr');
+    }
+
+    if (requestData.requestedBy !== requesterId) {
+      throw new Error('Nur der Suchende kann eine Annahme freigeben');
+    }
+
+    if (requestData.isArchived === true) {
+      throw new Error('Die Anfrage wurde bereits archiviert');
+    }
+
+    const offerRef = doc(this.offersCollection(requestId), offerId);
+    const offerSnap = await getDoc(offerRef);
+
+    if (!offerSnap.exists()) {
+      throw new Error('Das Angebot existiert nicht mehr');
+    }
+
+    const offerData = readDocData(offerSnap);
+    if (offerData?.status !== 'accepted') {
+      throw new Error('Das Angebot ist nicht angenommen');
+    }
+
+    await updateDoc(offerRef, {
+      status: 'withdrawn',
+      withdrawnBy: requesterId,
+      withdrawnReason: 'requester_released',
+      updatedAt: serverTimestamp(),
+    });
+  }
+
   // Angebot stornieren (offered* Felder entfernen und Request wieder auf "offen" setzen)
   // WICHTIG: Diese Funktion wird vom Anbieter aufgerufen, der sein Angebot storniert
   // Gibt requestedBy zurück, damit der Aufrufer den Suchenden benachrichtigen kann.

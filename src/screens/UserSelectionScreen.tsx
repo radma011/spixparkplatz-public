@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import UserService from '../services/UserService';
 import ParkingRequestsScreen from './ParkingRequestsScreen';
+import {formatAppVersion, getAppVersionInfo} from '../utils/appVersion';
 
 interface Props {
   navigation?: any;
@@ -23,6 +24,7 @@ const availableUsers = [
 const UserSelectionScreen: React.FC<Props> = ({navigation}) => {
   const [hasUser, setHasUser] = React.useState(false);
   const [userId, setUserId] = React.useState<string | null>(null);
+  const appVersionLabel = formatAppVersion(getAppVersionInfo());
 
   useEffect(() => {
     checkExistingUser();
@@ -74,6 +76,8 @@ const UserSelectionScreen: React.FC<Props> = ({navigation}) => {
           }}>
           <Text style={styles.resetButtonText}>User zurücksetzen</Text>
         </TouchableOpacity>
+
+        <Text style={styles.versionText}>Version {appVersionLabel}</Text>
       </View>
     </ScrollView>
   );
@@ -124,6 +128,11 @@ const styles = StyleSheet.create({
   resetButtonText: {
     color: '#666',
     fontSize: 14,
+  },
+  versionText: {
+    marginTop: 32,
+    fontSize: 12,
+    color: '#999',
   },
 });
 

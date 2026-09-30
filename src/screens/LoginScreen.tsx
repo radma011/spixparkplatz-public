@@ -19,6 +19,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AuthService from '../services/AuthService';
 import KeyboardAwareScreen from '../components/KeyboardAwareScreen';
 import {getColors} from '../theme/colors';
+import {formatAppVersion, getAppVersionInfo} from '../utils/appVersion';
 
 interface Props {
   onLoginSuccess: () => void;
@@ -34,6 +35,7 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
   const [showPassword, setShowPassword] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
+  const appVersionLabel = formatAppVersion(getAppVersionInfo());
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -176,6 +178,8 @@ const LoginScreen: React.FC<Props> = ({onLoginSuccess, onNavigateToRegister}) =>
         disabled={loading}>
         <Text style={[styles.linkText, {color: colors.brand}]}>Passwort vergessen?</Text>
       </TouchableOpacity>
+
+      <Text style={[styles.versionText, {color: colors.subtext}]}>Version {appVersionLabel}</Text>
 
       <Modal
         visible={showResetPasswordModal}
@@ -338,6 +342,10 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
+  },
+  versionText: {
+    marginTop: 24,
+    fontSize: 12,
   },
   modalOverlay: {
     flex: 1,

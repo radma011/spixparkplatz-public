@@ -219,6 +219,15 @@ class ParkingRequestService {
     }
   }
 
+  /** Annahme freigeben; Push an Anbieter sendet onOfferUpdatedV2 (requester_released). */
+  async releaseAcceptedOffer(
+    requestId: string,
+    offerId: string,
+    requesterId: string,
+  ): Promise<void> {
+    await FirestoreService.releaseAcceptedOffer(requestId, offerId, requesterId);
+  }
+
   watchOffersForRequest(requestId: string) {
     return FirestoreService.watchOffersForRequest(requestId);
   }

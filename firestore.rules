@@ -233,6 +233,17 @@ service cloud.firestore {
             && request.resource.data.status == 'accepted'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
           )
+          ||
+          (
+            requesterIdForRequest(requestId) == request.auth.uid
+            && resource.data.status == 'accepted'
+            && request.resource.data.status == 'withdrawn'
+            && request.resource.data.withdrawnReason == 'requester_released'
+            && request.resource.data.withdrawnBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'updatedAt', 'withdrawnBy', 'withdrawnReason'
+            ])
+          )
         );
 
       allow delete: if false;

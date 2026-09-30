@@ -644,6 +644,33 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
     );
   };
 
+  const releaseAcceptedOffer = (request: ParkingRequest, offer: RequestOffer) => {
+    confirmAlert(
+      'Annahme freigeben',
+      'Möchtest du dieses angenommene Angebot freigeben? Der Anbieter wird benachrichtigt.',
+      async () => {
+        try {
+          await ParkingRequestService.releaseAcceptedOffer(request.id, offer.id, currentUserId);
+          showAlert('Erfolg', 'Angebot wurde freigegeben');
+          if (Platform.OS === 'web') {
+            const [newRequests, newOffers] = await Promise.all([
+              reloadRequests(),
+              ParkingRequestService.getOffersForRequest(request.id),
+            ]);
+            setRequests(newRequests);
+            setOffersByRequestId((prev) => ({...prev, [request.id]: newOffers}));
+          }
+        } catch (e: any) {
+          console.error('Fehler beim Freigeben:', e);
+          showAlert('Fehler', e?.message || 'Annahme konnte nicht freigegeben werden');
+        }
+      },
+      undefined,
+      'Freigeben',
+      'Abbrechen',
+    );
+  };
+
   const cancelOffer = (request: ParkingRequest) => {
     confirmAlert(
       'Angebot stornieren',
@@ -1301,6 +1328,7 @@ const ParkingRequestsScreen: React.FC<Props> = ({currentUserId, userData, extern
               isOffering={offeringRequestId === item.id}
               contextTab={activeTab}
               adminOverview={section.title === 'ALLE ERFÜLLTEN (ADMIN)'}
+              onReleaseOffer={(offer) => releaseAcceptedOffer(item, offer)}
               onAcceptOffer={async (offer) => {
                 try {
                   await ParkingRequestService.acceptOffer(item.id, offer);

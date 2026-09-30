@@ -1,3 +1,5 @@
+export type OfferWithdrawnReason = 'offerer' | 'requester_released' | 'auto';
+
 export type OfferStatus = 'active' | 'withdrawn' | 'accepted' | 'standby';
 
 export interface RequestOffer {
@@ -9,6 +11,8 @@ export interface RequestOffer {
   from: Date;
   until: Date;
   status: OfferStatus;
+  withdrawnBy?: string;
+  withdrawnReason?: OfferWithdrawnReason;
   createdAt?: Date;
 }
 

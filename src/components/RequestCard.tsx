@@ -27,6 +27,7 @@ interface Props {
   offers?: RequestOffer[];
   publicUsers?: Record<string, {username?: string; phone?: string}>;
   onAcceptOffer?: (offer: RequestOffer) => void;
+  onReleaseOffer?: (offer: RequestOffer) => void;
   onArchiveFulfilled?: (request: ParkingRequest) => void;
   focusOfferId?: string | null;
   onOpenComments?: (requestId: string) => void;
@@ -49,6 +50,7 @@ const RequestCard: React.FC<Props> = ({
   offers = [],
   publicUsers,
   onAcceptOffer,
+  onReleaseOffer,
   onArchiveFulfilled,
   focusOfferId,
   onOpenComments,
@@ -758,6 +760,16 @@ const RequestCard: React.FC<Props> = ({
           {(() => {
             // Filtere nur angenommene Angebote heraus (nicht zurückgezogene)
             const acceptedOffers = offers.filter((o) => o.status === 'accepted');
+            const releaseStub = (offerId: string, spotId: string, offererId?: string): RequestOffer => ({
+              id: offerId,
+              requestId: request.id,
+              offererId: offererId || '',
+              spotId,
+              from: request.from,
+              until: request.until,
+              status: 'accepted',
+            });
+
             if (acceptedOffers.length === 0) {
               const spotIds =
                 request.fulfilledSpotIds && request.fulfilledSpotIds.length > 0
@@ -771,31 +783,43 @@ const RequestCard: React.FC<Props> = ({
                   : request.offeredBy
                     ? [request.offeredBy]
                     : [];
+              const offerIds = request.fulfilledOfferIds ?? [];
               if (spotIds.length > 0) {
-                return spotIds.map((spotId, idx) => (
-                  <View
-                    key={`fulfilled-fallback-${spotId}-${idx}`}
-                    style={[
-                      styles.fulfilledRow,
-                      {borderColor: colors.border},
-                      idx === spotIds.length - 1 && {borderBottomWidth: 0},
-                    ]}>
-                    <Text style={[styles.fulfilledTime, {color: colors.text}]} numberOfLines={1}>
-                      {formatDateRange(request.from, request.until)}
-                    </Text>
-                    <View style={styles.fulfilledSpotCol}>
-                      <Text style={styles.fulfilledSpot} numberOfLines={1}>
-                        P {spotId}
-                      </Text>
-                      <SpotLayoutMapButton facilityCode={facilityCode} spotId={spotId} iconColor={colors.brand} />
+                return spotIds.map((spotId, idx) => {
+                  const offerId = offerIds[idx];
+                  const offererId = offererIds[idx] ?? request.offeredBy ?? '';
+                  return (
+                    <View
+                      key={`fulfilled-fallback-${spotId}-${idx}`}
+                      style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                      <View style={styles.offerCardHeader}>
+                        <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angenommen</Text>
+                        {isMyRequest && !isArchived && onReleaseOffer && !!offerId && (
+                          <ActionButton
+                            onPress={() => onReleaseOffer(releaseStub(offerId, spotId, offererId))}
+                            label="Freigeben"
+                            icon="backup-restore"
+                            variant="red"
+                            compact={true}
+                          />
+                        )}
+                      </View>
+                      <View style={styles.offerSpotRow}>
+                        <Text style={[styles.offerDetails, {color: colors.text}]} numberOfLines={1}>
+                          P {spotId}
+                        </Text>
+                        <SpotLayoutMapButton facilityCode={facilityCode} spotId={spotId} iconColor={colors.brand} />
+                        <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                          (
+                          {publicUsers?.[offererId]?.username ??
+                            request.offeredByUsername ??
+                            'Unbekannt'}
+                          ) · {formatDateRange(request.from, request.until)}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={[styles.fulfilledUser, {color: colors.text}]} numberOfLines={1}>
-                      {publicUsers?.[offererIds[idx] ?? request.offeredBy ?? '']?.username ??
-                        request.offeredByUsername ??
-                        'Unbekannt'}
-                    </Text>
-                  </View>
-                ));
+                  );
+                });
               }
               return (
                 <Text style={[styles.fulfilledEmpty, {color: colors.subtext}]}>
@@ -805,26 +829,30 @@ const RequestCard: React.FC<Props> = ({
             }
             return acceptedOffers
               .sort((a, b) => a.from.getTime() - b.from.getTime())
-              .map((o, idx, arr) => (
+              .map((o) => (
                 <View
                   key={o.id}
-                  style={[
-                    styles.fulfilledRow,
-                    {borderColor: colors.border},
-                    idx === arr.length - 1 && {borderBottomWidth: 0},
-                  ]}>
-                  <Text style={[styles.fulfilledTime, {color: colors.text}]} numberOfLines={1}>
-                    {formatDateRange(o.from, o.until)}
-                  </Text>
-                  <View style={styles.fulfilledSpotCol}>
-                    <Text style={styles.fulfilledSpot} numberOfLines={1}>
-                      P {o.spotId}
-                    </Text>
-                    <SpotLayoutMapButton facilityCode={facilityCode} spotId={o.spotId} iconColor={colors.brand} />
+                  style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
+                  <View style={styles.offerCardHeader}>
+                    <Text style={[styles.offerLabel, {color: colors.subtext}]}>Angenommen</Text>
+                    {isMyRequest && !isArchived && onReleaseOffer && (
+                      <ActionButton
+                        onPress={() => onReleaseOffer(o)}
+                        label="Freigeben"
+                        icon="backup-restore"
+                        variant="red"
+                        compact={true}
+                      />
+                    )}
                   </View>
-                  <Text style={[styles.fulfilledUser, {color: colors.text}]} numberOfLines={1}>
-                    {publicUsers?.[o.offererId]?.username ?? (o as any).offererUsername ?? 'Unbekannt'}
-                  </Text>
+                  <View style={styles.offerSpotRow}>
+                    <Text style={[styles.offerDetails, {color: colors.text}]}>P {o.spotId}</Text>
+                    <SpotLayoutMapButton facilityCode={facilityCode} spotId={o.spotId} iconColor={colors.brand} />
+                    <Text style={[styles.offerDetails, styles.offerDetailsRest, {color: colors.text}]} numberOfLines={2}>
+                      ({publicUsers?.[o.offererId]?.username ?? (o as any).offererUsername ?? 'Unbekannt'}) ·{' '}
+                      {formatDateRange(o.from, o.until)}
+                    </Text>
+                  </View>
                 </View>
               ));
           })()}
@@ -846,21 +874,42 @@ const RequestCard: React.FC<Props> = ({
                 o.from.getTime() <= request.from.getTime() && o.until.getTime() >= request.until.getTime();
               const isAccepted = o.status === 'accepted';
               const isFocused = !!focusOfferId && o.id === focusOfferId;
-              const offererName = publicUsers?.[o.offererId]?.username ?? 
-                                 (o as any).offererUsername ?? 
+              const offererName = publicUsers?.[o.offererId]?.username ??
+                                 (o as any).offererUsername ??
                                  'Unbekannt';
               return (
                 <View
                   key={o.id}
                   style={[
                     styles.offerRowContainer,
-                    {borderColor: colors.border},
                     isFocused && {borderWidth: 2, borderColor: '#F59E0B', borderRadius: 10},
                   ]}>
                   <View style={[styles.offerBox, {backgroundColor: colors.surface2, borderColor: colors.border}]}>
-                    <Text style={[styles.offerLabel, {color: colors.subtext}]}>
-                      {isAccepted ? 'Angenommen' : full ? 'Vollständig' : 'Teilweise'}
-                    </Text>
+                    <View style={styles.offerCardHeader}>
+                      <Text style={[styles.offerLabel, {color: colors.subtext}]}>
+                        {isAccepted ? 'Angenommen' : full ? 'Vollständig' : 'Teilweise'}
+                      </Text>
+                      {!isAccepted && (
+                        <ActionButton
+                          onPress={() => onAcceptOffer?.(o)}
+                          label="Annehmen"
+                          icon="check-circle-outline"
+                          variant="blue"
+                          compact={true}
+                          disabled={!onAcceptOffer}
+                        />
+                      )}
+                      {isAccepted && isMyRequest && !isArchived && (
+                        <ActionButton
+                          onPress={() => onReleaseOffer?.(o)}
+                          label="Freigeben"
+                          icon="backup-restore"
+                          variant="red"
+                          compact={true}
+                          disabled={!onReleaseOffer}
+                        />
+                      )}
+                    </View>
                     <View style={styles.offerSpotRow}>
                       <Text style={[styles.offerDetails, {color: colors.text}]}>
                         P {o.spotId}
@@ -871,16 +920,6 @@ const RequestCard: React.FC<Props> = ({
                       </Text>
                     </View>
                   </View>
-                  {!isAccepted && (
-                    <ActionButton
-                      onPress={() => onAcceptOffer?.(o)}
-                      label="Annehmen"
-                      icon="check-circle-outline"
-                      variant="blue"
-                      compact={true}
-                      disabled={!onAcceptOffer}
-                    />
-                  )}
                 </View>
               );
             });
@@ -1091,7 +1130,6 @@ const styles = StyleSheet.create({
   },
   offerRowContainer: {
     marginBottom: 8,
-    gap: 8,
   },
   offerBox: {
     marginTop: 8,
@@ -1099,6 +1137,14 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  offerCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 6,
+    flexWrap: 'wrap',
   },
   offerLabelRow: {
     flexDirection: 'row',

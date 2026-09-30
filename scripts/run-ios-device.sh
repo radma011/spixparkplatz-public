@@ -27,4 +27,12 @@ echo "  2. \"Debug server host & port\" → eintragen: ${IP}:8081"
 echo "  3. App neu laden"
 echo ""
 export REACT_NATIVE_PACKAGER_HOSTNAME="$IP"
-exec npx react-native run-ios --device "$DEVICE_NAME"
+if ! command -v xcbeautify >/dev/null 2>&1; then
+  echo "Tipp: brew install xcbeautify — Build-Fortschritt im Terminal."
+  echo ""
+fi
+RN_ARGS=(run-ios --mode Debug --device "$DEVICE_NAME")
+if [ "${IOS_BUILD_VERBOSE:-}" = "1" ]; then
+  RN_ARGS+=(--verbose)
+fi
+exec npx react-native "${RN_ARGS[@]}"

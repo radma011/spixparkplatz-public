@@ -1277,6 +1277,130 @@ exports.onAvailabilityUpdatedV2 = onDocumentUpdated(
 );
 
 /**
+ * Recompute coverage from accepted offers; set or clear isFulfilled on the request.
+ */
+async function recomputeRequestFulfillmentFromOffers(admin, reqRef, reqFrom, reqUntil, reqData) {
+  const offersSnap = await reqRef.collection('offers').get();
+  const accepted = offersSnap.docs
+    .filter((d) => (d.get('status') || 'active') === 'accepted')
+    .map((d) => ({
+      id: d.id,
+      offererId: d.get('offererId'),
+      spotId: d.get('spotId'),
+      from: d.get('from')?.toDate ? d.get('from').toDate() : null,
+      until: d.get('until')?.toDate ? d.get('until').toDate() : null,
+    }))
+    .filter((o) => o.from && o.until);
+
+  const minT = reqFrom.getTime();
+  const maxT = reqUntil.getTime();
+  const clearFulfillment = {
+    isFulfilled: false,
+    fulfilledAt: admin.firestore.FieldValue.delete(),
+    fulfilledOfferIds: admin.firestore.FieldValue.delete(),
+    fulfilledSpotIds: admin.firestore.FieldValue.delete(),
+    fulfilledByUserIds: admin.firestore.FieldValue.delete(),
+    reminder30mAt: admin.firestore.FieldValue.delete(),
+  };
+
+  if (!accepted.length) {
+    await reqRef.set(clearFulfillment, {merge: true});
+    return;
+  }
+
+  const intervals = accepted
+    .map((o) => ({
+      id: o.id,
+      offererId: o.offererId,
+      spotId: o.spotId,
+      start: Math.max(o.from.getTime(), minT),
+      end: Math.min(o.until.getTime(), maxT),
+    }))
+    .filter((i) => i.end > i.start)
+    .sort((a, b) => a.start - b.start);
+
+  if (!intervals.length) {
+    await reqRef.set(clearFulfillment, {merge: true});
+    return;
+  }
+
+  let currentEnd = minT;
+  for (const it of intervals) {
+    if (it.start > currentEnd) break;
+    currentEnd = Math.max(currentEnd, it.end);
+    if (currentEnd >= maxT) break;
+  }
+
+  const isCovered = currentEnd >= maxT;
+  if (!isCovered) {
+    await reqRef.set(clearFulfillment, {merge: true});
+    return;
+  }
+
+  const fulfilledOfferIds = Array.from(new Set(intervals.map((i) => i.id)));
+  const fulfilledSpotIds = Array.from(new Set(intervals.map((i) => String(i.spotId)).filter(Boolean)));
+  const fulfilledByUserIds = Array.from(new Set(intervals.map((i) => String(i.offererId)).filter(Boolean)));
+
+  const wasFulfilled = reqData.isFulfilled === true;
+
+  await reqRef.set(
+    {
+      isFulfilled: true,
+      fulfilledAt: admin.firestore.FieldValue.serverTimestamp(),
+      fulfilledOfferIds,
+      fulfilledSpotIds,
+      fulfilledByUserIds,
+      reminder30mAt: admin.firestore.Timestamp.fromMillis(maxT - 30 * 60 * 1000),
+    },
+    {merge: true},
+  );
+
+  if (wasFulfilled) return;
+
+  const batch = admin.firestore().batch();
+  const standbyOffers = [];
+  offersSnap.docs.forEach((d) => {
+    const st = d.get('status') || 'active';
+    if (st === 'active' || st === 'standby') {
+      const isStandby = st === 'standby';
+      batch.update(d.ref, {
+        status: 'withdrawn',
+        withdrawnReason: 'auto',
+        withdrawnBy: 'system',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (isStandby) {
+        standbyOffers.push({
+          offererId: d.get('offererId'),
+          spotId: d.get('spotId'),
+          offerId: d.id,
+        });
+      }
+    }
+  });
+  await batch.commit();
+
+  for (const standbyOffer of standbyOffers) {
+    if (standbyOffer.offererId) {
+      const spotId = standbyOffer.spotId ? String(standbyOffer.spotId) : '';
+      const title = '⚠️ Teilangebot storniert';
+      const body = spotId
+        ? `Dein Teilangebot für Parkplatz ${spotId} wurde storniert, da ein vollständiges Angebot angenommen wurde.`
+        : 'Dein Teilangebot wurde storniert, da ein vollständiges Angebot angenommen wurde.';
+      try {
+        await sendPushToUserByUid(admin, String(standbyOffer.offererId), title, body, {
+          type: 'offer_cancelled',
+          requestId: String(reqRef.id),
+          offerId: String(standbyOffer.offerId),
+        });
+      } catch (e) {
+        console.log('Push send (offer_cancelled) failed:', e?.message ?? e);
+      }
+    }
+  }
+}
+
+/**
  * Recompute coverage whenever an offer gets accepted/withdrawn.
  * A request becomes fulfilled ONLY when accepted offers cover the full [from, until] window without gaps.
  */
@@ -1290,9 +1414,8 @@ exports.onOfferUpdatedV2 = onDocumentUpdated(
     const reqRef = admin.firestore().collection('parking_requests').doc(requestId);
     const reqSnap = await reqRef.get();
     if (!reqSnap.exists) return;
-    const reqData = reqSnap.data() || {};
+    let reqData = reqSnap.data() || {};
     if (reqData.isArchived === true) return;
-    if (reqData.isFulfilled === true) return;
 
     const reqFrom = reqData.from?.toDate ? reqData.from.toDate() : null;
     const reqUntil = reqData.until?.toDate ? reqData.until.toDate() : null;
@@ -1302,6 +1425,41 @@ exports.onOfferUpdatedV2 = onDocumentUpdated(
     const beforeStatus = before.status || 'active';
     const afterStatus = after.status || 'active';
     const withdrawnReason = after.withdrawnReason || null;
+    if (beforeStatus !== 'withdrawn' && afterStatus === 'withdrawn' && withdrawnReason === 'requester_released') {
+      const offererUid = after.offererId;
+      if (typeof offererUid === 'string' && offererUid) {
+        const spotId = after.spotId ? String(after.spotId) : '';
+        const title = 'Annahme freigegeben';
+        const body = spotId
+          ? `Dein Angebot für Parkplatz ${spotId} wurde vom Suchenden freigegeben.`
+          : 'Dein Angebot wurde vom Suchenden freigegeben.';
+        try {
+          await sendPushToUserByUid(admin, offererUid, title, body, {
+            type: 'offer_released',
+            requestId: String(requestId),
+            offerId: String(offerId),
+          });
+        } catch (e) {
+          console.log('Push send (offer_released) failed:', e?.message ?? e);
+        }
+      }
+
+      const wasFullOffer = reqData.fullOfferId === offerId;
+      if (wasFullOffer) {
+        await reqRef.set(
+          {
+            offeredSpotId: admin.firestore.FieldValue.delete(),
+            offeredBy: admin.firestore.FieldValue.delete(),
+            offeredAt: admin.firestore.FieldValue.delete(),
+            fullOfferId: admin.firestore.FieldValue.delete(),
+          },
+          {merge: true},
+        );
+        const refreshed = await reqRef.get();
+        reqData = refreshed.data() || reqData;
+      }
+    }
+
     if (beforeStatus !== 'withdrawn' && afterStatus === 'withdrawn' && withdrawnReason === 'offerer') {
       const requesterUid = reqData.requestedBy;
       if (typeof requesterUid === 'string' && requesterUid) {
@@ -1382,111 +1540,7 @@ exports.onOfferUpdatedV2 = onDocumentUpdated(
       }
     }
 
-    const offersSnap = await reqRef.collection('offers').get();
-    const accepted = offersSnap.docs
-      .filter((d) => (d.get('status') || 'active') === 'accepted')
-      .map((d) => ({
-        id: d.id,
-        offererId: d.get('offererId'),
-        spotId: d.get('spotId'),
-        from: d.get('from')?.toDate ? d.get('from').toDate() : null,
-        until: d.get('until')?.toDate ? d.get('until').toDate() : null,
-      }))
-      .filter((o) => o.from && o.until);
-
-    if (!accepted.length) return;
-
-    // Clamp and merge intervals
-    const minT = reqFrom.getTime();
-    const maxT = reqUntil.getTime();
-    const intervals = accepted
-      .map((o) => ({
-        id: o.id,
-        offererId: o.offererId,
-        spotId: o.spotId,
-        start: Math.max(o.from.getTime(), minT),
-        end: Math.min(o.until.getTime(), maxT),
-      }))
-      .filter((i) => i.end > i.start)
-      .sort((a, b) => a.start - b.start);
-
-    if (!intervals.length) return;
-
-    // Merge and detect gaps
-    let cursor = minT;
-    let currentEnd = cursor;
-    for (const it of intervals) {
-      if (it.start > currentEnd) {
-        // gap
-        break;
-      }
-      currentEnd = Math.max(currentEnd, it.end);
-      if (currentEnd >= maxT) break;
-    }
-
-    const isCovered = currentEnd >= maxT;
-    if (!isCovered) return;
-
-    const fulfilledOfferIds = Array.from(new Set(intervals.map((i) => i.id)));
-    const fulfilledSpotIds = Array.from(new Set(intervals.map((i) => String(i.spotId)).filter(Boolean)));
-    const fulfilledByUserIds = Array.from(new Set(intervals.map((i) => String(i.offererId)).filter(Boolean)));
-
-    await reqRef.set(
-      {
-        isFulfilled: true,
-        fulfilledAt: admin.firestore.FieldValue.serverTimestamp(),
-        fulfilledOfferIds,
-        fulfilledSpotIds,
-        fulfilledByUserIds,
-        // Deterministic reminder time: exactly 30 minutes before end of window.
-        reminder30mAt: admin.firestore.Timestamp.fromMillis(maxT - 30 * 60 * 1000),
-      },
-      {merge: true},
-    );
-
-    // Withdraw remaining active and standby offers, and notify standby offerers
-    const batch = admin.firestore().batch();
-    const standbyOffers = [];
-    offersSnap.docs.forEach((d) => {
-      const st = d.get('status') || 'active';
-      if (st === 'active' || st === 'standby') {
-        const isStandby = st === 'standby';
-        batch.update(d.ref, {
-          status: 'withdrawn',
-          withdrawnReason: 'auto',
-          withdrawnBy: 'system',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        if (isStandby) {
-          standbyOffers.push({
-            offererId: d.get('offererId'),
-            spotId: d.get('spotId'),
-            offerId: d.id,
-          });
-        }
-      }
-    });
-    await batch.commit();
-
-    // Notify standby offerers that their offer was cancelled
-    for (const standbyOffer of standbyOffers) {
-      if (standbyOffer.offererId) {
-        const spotId = standbyOffer.spotId ? String(standbyOffer.spotId) : '';
-        const title = '⚠️ Teilangebot storniert';
-        const body = spotId
-          ? `Dein Teilangebot für Parkplatz ${spotId} wurde storniert, da ein vollständiges Angebot angenommen wurde.`
-          : 'Dein Teilangebot wurde storniert, da ein vollständiges Angebot angenommen wurde.';
-        try {
-          await sendPushToUserByUid(admin, String(standbyOffer.offererId), title, body, {
-            type: 'offer_cancelled',
-            requestId: String(requestId),
-            offerId: String(standbyOffer.offerId),
-          });
-        } catch (e) {
-          console.log('Push send (offer_cancelled) failed:', e?.message ?? e);
-        }
-      }
-    }
+    await recomputeRequestFulfillmentFromOffers(admin, reqRef, reqFrom, reqUntil, reqData);
   },
 );
 
